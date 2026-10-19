@@ -5,49 +5,49 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Tauri-v2-blue?logo=tauri&logoColor=white" alt="Tauri v2" />
-  <img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=black" alt="React 19" />
-  <img src="https://img.shields.io/badge/TypeScript-Ready-3178c6?logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-v4-38bdf8?logo=tailwindcss&logoColor=white" alt="Tailwind CSS v4" />
+  <img src="https://img.shields.io/badge/Tauri-v2-blue" alt="Tauri v2" />
+  <img src="https://img.shields.io/badge/React-19-61dafb" alt="React 19" />
+  <img src="https://img.shields.io/badge/TypeScript-Ready-3178c6" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-v4-38bdf8" alt="Tailwind CSS v4" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License: MIT" />
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" />
 </p>
 
 ---
 
-## 📖 Overview
+## Overview
 
 **Haze SSH** is a fast, lightweight, and extensible desktop SSH client and terminal workspace manager built with **Tauri v2**, **Rust**, and **React 19**.
 
-Designed with a **privacy-first, local-first** architecture, Haze SSH keeps your credentials, host configs, and private keys strictly on your local machine without telemetry or cloud lock-in.
+Designed with a **privacy-first, local-first** architecture, Haze SSH keeps your credentials, host configurations, and private keys strictly on your local machine without telemetry or cloud lock-in.
 
 ---
 
-## ✨ Features
+## Features
 
-- 🖥️ **Terminal Multiplexer**:
+- **Terminal Multiplexer**:
   - Recursive tree-based split panes (split horizontally or vertically with custom ratios).
   - Multi-tab workspaces with independent session states and tab switching.
-- 🌐 **Host Catalog & Tag Groups**:
+- **Host Catalog & Tag Groups**:
   - Organize servers by environment, client, or cluster tags.
   - Supports SSH key pairs, passwords, custom ports, and bastion/jump host chains.
-- 📁 **Integrated SFTP File Explorer**:
+- **Integrated SFTP File Explorer**:
   - Browse remote file systems directly alongside active terminal panes.
   - Upload, download, and manage file permissions securely.
-- 🔀 **SSH Tunnels & Port Forwarding**:
+- **SSH Tunnels & Port Forwarding**:
   - Configure Local, Remote (Reverse), and Dynamic (SOCKS5) port forwarding with live status indicators.
-- ⚡ **Snippet Library**:
+- **Snippet Library**:
   - Save, organize, and execute reusable shell commands or deployment scripts across sessions.
-- ⌨️ **Command Palette & Hotkeys**:
+- **Command Palette & Hotkeys**:
   - Quick action launcher (`Cmd+K` / `Ctrl+K`) for rapid navigation, host connection, and theme toggling.
-- 🎨 **Modern & Customizable UI**:
+- **Customizable Interface**:
   - Built with DaisyUI v5 and Tailwind CSS v4 featuring light, dark, and specialized theme presets.
-- 🔒 **Privacy-First & Secure**:
+- **Privacy-First & Secure**:
   - Zero cloud dependencies, zero analytics tracking, and encrypted local storage.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Desktop Framework**: [Tauri v2](https://v2.tauri.app/) (Rust)
 - **Frontend Core**: [React 19](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/)
@@ -57,13 +57,13 @@ Designed with a **privacy-first, local-first** architecture, Haze SSH keeps your
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
 Ensure you have the following installed on your machine:
 
-1. **Node.js** (v18 or higher) & `npm` (or `pnpm` / `yarn`)
+1. **Node.js** (v18 or higher) and `npm` (or `pnpm` / `yarn`)
 2. **Rust & Cargo** (latest stable release):
    ```bash
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -102,7 +102,7 @@ Compiled bundles (DMG, App, DEB, MSI, or EXE) will be generated in `src-tauri/ta
 
 ---
 
-## ⌨️ Default Shortcuts
+## Default Shortcuts
 
 | Shortcut | Action |
 | --- | --- |
@@ -112,7 +112,7 @@ Compiled bundles (DMG, App, DEB, MSI, or EXE) will be generated in `src-tauri/ta
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 haze-ssh/
@@ -139,7 +139,7 @@ haze-ssh/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please follow these steps:
 
@@ -160,6 +160,6 @@ Contributions are welcome! Please follow these steps:
 
 ---
 
-## 📄 License
+## License
 
 This project is open-source and available under the [MIT License](LICENSE).
