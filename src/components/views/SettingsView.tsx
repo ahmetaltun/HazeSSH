@@ -1,15 +1,26 @@
+import { useState } from "react";
 import {
   ShieldCheck,
   Lock,
   Download,
   Upload,
   HardDrive,
+  KeyRound,
 } from "lucide-react";
-import { useLayoutStore } from "@/stores/useLayoutStore";
+import { useVaultStore } from "@/stores/useVaultStore";
+import { VaultModal } from "@/components/vault/VaultModal";
 
 export function SettingsView() {
-  const { hasMasterPassword, setHasMasterPassword, isVaultLocked, setVaultLocked } =
-    useLayoutStore();
+  const { hasMasterPassword, isLocked, lock } = useVaultStore();
+  const [modalMode, setModalMode] = useState<"unlock" | "setup" | "disable" | null>(null);
+
+  const handleToggle = () => {
+    if (hasMasterPassword) {
+      setModalMode("disable");
+    } else {
+      setModalMode("setup");
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-base-100 overflow-hidden">
@@ -51,7 +62,7 @@ export function SettingsView() {
             <input
               type="checkbox"
               checked={hasMasterPassword}
-              onChange={(e) => setHasMasterPassword(e.target.checked)}
+              onChange={handleToggle}
               className="toggle toggle-primary toggle-sm"
             />
           </div>
@@ -60,18 +71,30 @@ export function SettingsView() {
             <div className="p-3 bg-base-300/60 rounded-xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-base-content/80">Vault Status:</span>
-                <span className={`badge badge-sm ${isVaultLocked ? "badge-warning" : "badge-success"}`}>
-                  {isVaultLocked ? "Locked" : "Unlocked"}
+                <span className={`badge badge-sm ${isLocked ? "badge-warning" : "badge-success"}`}>
+                  {isLocked ? "Locked" : "Unlocked"}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setVaultLocked(!isVaultLocked)}
-                className="btn btn-sm btn-outline btn-warning w-full"
-              >
-                <Lock className="w-3.5 h-3.5 mr-1" />
-                {isVaultLocked ? "Unlock Vault Now" : "Lock Vault Immediately"}
-              </button>
+
+              {isLocked ? (
+                <button
+                  type="button"
+                  onClick={() => setModalMode("unlock")}
+                  className="btn btn-sm btn-primary w-full gap-2"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Unlock Vault with Master Password</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => lock()}
+                  className="btn btn-sm btn-outline btn-warning w-full gap-2"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Lock Vault Immediately</span>
+                </button>
+              )}
             </div>
           )}
         </section>
@@ -159,6 +182,14 @@ export function SettingsView() {
           </div>
         </section>
       </div>
+
+      {modalMode && (
+        <VaultModal
+          isOpen={true}
+          mode={modalMode}
+          onClose={() => setModalMode(null)}
+        />
+      )}
     </div>
   );
 }

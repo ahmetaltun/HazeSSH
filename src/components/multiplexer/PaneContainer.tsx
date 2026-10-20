@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import type { TerminalPane } from "@/types/terminal";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
+import { XTermTerminal } from "@/components/terminal/XTermTerminal";
 
 interface PaneContainerProps {
   readonly pane: TerminalPane;
@@ -91,27 +92,8 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
       </div>
 
       {/* Pane Terminal Canvas (xterm.js mount area) */}
-      <div className="flex-1 bg-black/90 p-4 font-mono text-xs text-success flex flex-col justify-between overflow-auto relative">
-        <div className="space-y-1">
-          <p className="text-base-content/40">Haze SSH Native Terminal Environment [PTY Engine]</p>
-          <p className="text-base-content/60">
-            Target: <span className="text-info">{pane.username || "local"}@{pane.hostname || "localhost"}</span>
-          </p>
-          <p className="text-warning">Status: {pane.status.toUpperCase()}</p>
-          {pane.errorMessage && (
-            <p className="text-error bg-error/10 p-2 rounded-sm border border-error/20">
-              Error: {pane.errorMessage}
-            </p>
-          )}
-          <div className="pt-2 text-base-content/30 text-[11px]">
-            Ready for russh connection streaming in Phase 4.
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between text-[10px] text-base-content/30 pt-2 border-t border-base-300/20">
-          <span>ID: {pane.id}</span>
-          <span>{isFocused ? "● FOCUSED" : "INACTIVE"}</span>
-        </div>
+      <div className="flex-1 w-full h-full min-h-0 bg-base-100 relative overflow-hidden">
+        <XTermTerminal pane={pane} isFocused={isFocused} />
       </div>
     </div>
   );

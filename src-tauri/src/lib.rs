@@ -1,4 +1,19 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use std::sync::{Arc, Mutex};
+use tauri::Manager;
+
+pub mod commands;
+pub mod crypto;
+pub mod db;
+pub mod models;
+pub mod sftp;
+pub mod ssh;
+pub mod tunnels;
+
+use commands::AppState;
+use db::Database;
+use ssh::SshManager;
+use tunnels::TunnelManager;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -8,7 +23,70 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .setup(|app| {
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("Failed to locate local application data directory");
+
+            if !app_data_dir.exists() {
+                std::fs::create_dir_all(&app_data_dir)
+                    .expect("Failed to create application data directory");
+            }
+
+            let db_path = app_data_dir.join("haze_ssh.db");
+            let database = Database::new(&db_path)
+                .expect("Failed to initialize local SQLite database");
+
+            app.manage(AppState {
+                db: Arc::new(database),
+                active_key: Mutex::new(None),
+                ssh_manager: Arc::new(SshManager::new()),
+                tunnel_manager: Arc::new(TunnelManager::new()),
+            });
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            commands::vault_get_status,
+            commands::vault_set_master_password,
+            commands::vault_unlock,
+            commands::vault_lock,
+            commands::host_list,
+            commands::host_create,
+            commands::host_update,
+            commands::host_delete,
+            commands::group_list,
+            commands::group_create,
+            commands::group_delete,
+            commands::identity_list,
+            commands::identity_create,
+            commands::identity_delete,
+            commands::snippet_list,
+            commands::snippet_create,
+            commands::snippet_update,
+            commands::snippet_delete,
+            commands::tunnel_list,
+            commands::tunnel_create,
+            commands::tunnel_delete,
+            commands::tunnel_start,
+            commands::tunnel_stop,
+            commands::tunnel_get_statuses,
+            commands::key_generate,
+            commands::ssh_connect,
+            commands::ssh_write,
+            commands::ssh_resize,
+            commands::ssh_disconnect,
+            commands::sftp_list_remote,
+            commands::sftp_read_file,
+            commands::sftp_write_file,
+            commands::sftp_delete_file,
+            commands::sftp_mkdir,
+            commands::sftp_rename_file,
+            commands::sftp_list_local,
+            commands::sftp_get_local_home,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

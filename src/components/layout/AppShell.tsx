@@ -12,18 +12,24 @@ import { SettingsView } from "@/components/views/SettingsView";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
+import { useVaultStore } from "@/stores/useVaultStore";
+import { useHostStore } from "@/stores/useHostStore";
 import { Terminal, Layers } from "lucide-react";
 
 export function AppShell() {
   const { currentView, activeSection, setActiveSection, setCommandPaletteOpen } =
     useLayoutStore();
   const { initTheme } = useThemeStore();
+  const { fetchStatus } = useVaultStore();
+  const { fetchAll } = useHostStore();
   const { tabs, openTab, closePane, getActiveTab } =
     useMultiplexerStore();
 
   useEffect(() => {
     initTheme();
-  }, [initTheme]);
+    fetchStatus();
+    fetchAll();
+  }, [initTheme, fetchStatus, fetchAll]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
