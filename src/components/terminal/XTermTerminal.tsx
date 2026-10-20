@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { api } from "@/services/api";
 import { useThemeStore } from "@/stores/useThemeStore";
+import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
 import { getTerminalTheme } from "@/services/terminalThemes";
 import type { TerminalPane } from "@/types/terminal";
 import type { SshEvent } from "@/types/ssh";
@@ -113,6 +114,21 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
         });
 
         sessionIdRef.current = sessionId;
+
+        useTerminalRegistryStore.getState().registerSession({
+          paneId: pane.id,
+          sessionId,
+          hostId: pane.hostId,
+          hostname: pane.hostname,
+          username: pane.username,
+          port: pane.port,
+          title: pane.title,
+          sendCommand: async (command: string) => {
+            const toSend = command.endsWith("\n") ? command : `${command}\n`;
+            const bytes = Array.from(new TextEncoder().encode(toSend));
+            await api.sshWrite(sessionId, bytes);
+          },
+        });
       } catch (err: unknown) {
         if (isDisposed) return;
         const message = err instanceof Error ? err.message : String(err);
@@ -152,12 +168,21 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
         api.sshDisconnect(sessionId).catch(() => {});
       }
 
+      useTerminalRegistryStore.getState().unregisterSession(pane.id);
+
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
       sessionIdRef.current = null;
     };
   }, [pane.id, pane.hostId, pane.hostname, pane.port, pane.username]);
+
+  // Sync active pane in registry when focused
+  useEffect(() => {
+    if (isFocused) {
+      useTerminalRegistryStore.getState().setActivePaneId(pane.id);
+    }
+  }, [isFocused, pane.id]);
 
   // Sync theme changes
   useEffect(() => {
