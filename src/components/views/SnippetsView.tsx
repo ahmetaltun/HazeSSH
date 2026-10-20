@@ -12,10 +12,12 @@ import {
   Sparkles,
   Zap,
   Play,
+  Layers,
 } from "lucide-react";
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import { SnippetModal } from "@/components/snippets/SnippetModal";
 import { SnippetRunnerModal } from "@/components/snippets/SnippetRunnerModal";
+import { BatchSnippetModal } from "@/components/snippets/BatchSnippetModal";
 import type { Snippet } from "@/types/snippet";
 
 export function SnippetsView() {
@@ -38,6 +40,9 @@ export function SnippetsView() {
 
   const [isRunnerOpen, setIsRunnerOpen] = useState(false);
   const [runnerSnippet, setRunnerSnippet] = useState<Snippet | null>(null);
+
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [batchSnippet, setBatchSnippet] = useState<Snippet | null>(null);
 
   useEffect(() => {
     fetchSnippets();
@@ -133,6 +138,19 @@ export function SnippetsView() {
         </div>
 
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setBatchSnippet(null);
+              setIsBatchModalOpen(true);
+            }}
+            disabled={snippets.length === 0}
+            className="btn btn-sm btn-outline border-base-300 gap-1.5 shadow-xs"
+          >
+            <Layers className="w-4 h-4 text-secondary" />
+            <span>Batch Run</span>
+          </button>
+
           <button
             type="button"
             onClick={handleOpenCreate}
@@ -389,6 +407,19 @@ export function SnippetsView() {
 
                       <button
                         type="button"
+                        onClick={() => {
+                          setBatchSnippet(snippet);
+                          setIsBatchModalOpen(true);
+                        }}
+                        className="btn btn-xs btn-ghost border border-base-300 rounded-lg gap-1 font-medium text-xs text-base-content/70 hover:text-base-content"
+                        title="Run across multiple hosts"
+                      >
+                        <Layers className="w-3 h-3 text-secondary" />
+                        <span>Batch</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleOpenRunner(snippet)}
                         className="btn btn-xs btn-primary gap-1 font-medium text-xs shadow-sm"
                       >
@@ -416,6 +447,13 @@ export function SnippetsView() {
         isOpen={isRunnerOpen}
         snippet={runnerSnippet}
         onClose={() => setIsRunnerOpen(false)}
+      />
+
+      {/* Multi-Host Batch Execution Modal */}
+      <BatchSnippetModal
+        isOpen={isBatchModalOpen}
+        initialSnippet={batchSnippet}
+        onClose={() => setIsBatchModalOpen(false)}
       />
     </div>
   );

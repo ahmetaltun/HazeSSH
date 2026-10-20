@@ -9,10 +9,20 @@ import {
 } from "lucide-react";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { VaultModal } from "@/components/vault/VaultModal";
+import { ExportBackupModal } from "@/components/settings/ExportBackupModal";
+import { RestoreBackupModal } from "@/components/settings/RestoreBackupModal";
+import { OpenSshImportModal } from "@/components/settings/OpenSshImportModal";
+import { TermiusImportModal } from "@/components/settings/TermiusImportModal";
+import { PuttyImportModal } from "@/components/settings/PuttyImportModal";
 
 export function SettingsView() {
   const { hasMasterPassword, isLocked, lock } = useVaultStore();
   const [modalMode, setModalMode] = useState<"unlock" | "setup" | "disable" | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [isOpenSshModalOpen, setIsOpenSshModalOpen] = useState(false);
+  const [isTermiusModalOpen, setIsTermiusModalOpen] = useState(false);
+  const [isPuttyModalOpen, setIsPuttyModalOpen] = useState(false);
 
   const handleToggle = () => {
     if (hasMasterPassword) {
@@ -123,7 +133,11 @@ export function SettingsView() {
                   Secure read-only parse of your system SSH config and known_hosts.
                 </p>
               </div>
-              <button type="button" className="btn btn-xs btn-outline btn-primary">
+              <button
+                type="button"
+                onClick={() => setIsOpenSshModalOpen(true)}
+                className="btn btn-xs btn-outline btn-primary"
+              >
                 Import from OpenSSH
               </button>
             </div>
@@ -135,7 +149,11 @@ export function SettingsView() {
                   Import exported Termius hosts, snippets, and connection groups.
                 </p>
               </div>
-              <button type="button" className="btn btn-xs btn-outline btn-secondary">
+              <button
+                type="button"
+                onClick={() => setIsTermiusModalOpen(true)}
+                className="btn btn-xs btn-outline btn-secondary"
+              >
                 Import Termius Export
               </button>
             </div>
@@ -147,7 +165,11 @@ export function SettingsView() {
                   Import saved sessions from Windows Registry or .reg export.
                 </p>
               </div>
-              <button type="button" className="btn btn-xs btn-outline btn-accent">
+              <button
+                type="button"
+                onClick={() => setIsPuttyModalOpen(true)}
+                className="btn btn-xs btn-outline btn-accent"
+              >
                 Import PuTTY
               </button>
             </div>
@@ -171,11 +193,19 @@ export function SettingsView() {
           <div className="divider my-1"></div>
 
           <div className="flex flex-col sm:flex-row gap-3">
-            <button type="button" className="btn btn-sm btn-primary flex-1 gap-2">
+            <button
+              type="button"
+              onClick={() => setIsExportModalOpen(true)}
+              className="btn btn-sm btn-primary flex-1 gap-2"
+            >
               <Download className="w-4 h-4" />
               <span>Export Encrypted Backup (.haze)</span>
             </button>
-            <button type="button" className="btn btn-sm btn-ghost border border-base-300 flex-1 gap-2">
+            <button
+              type="button"
+              onClick={() => setIsRestoreModalOpen(true)}
+              className="btn btn-sm btn-ghost border border-base-300 flex-1 gap-2"
+            >
               <Upload className="w-4 h-4" />
               <span>Restore from Backup File</span>
             </button>
@@ -190,6 +220,31 @@ export function SettingsView() {
           onClose={() => setModalMode(null)}
         />
       )}
+
+      <ExportBackupModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+      />
+
+      <RestoreBackupModal
+        isOpen={isRestoreModalOpen}
+        onClose={() => setIsRestoreModalOpen(false)}
+      />
+
+      <OpenSshImportModal
+        isOpen={isOpenSshModalOpen}
+        onClose={() => setIsOpenSshModalOpen(false)}
+      />
+
+      <TermiusImportModal
+        isOpen={isTermiusModalOpen}
+        onClose={() => setIsTermiusModalOpen(false)}
+      />
+
+      <PuttyImportModal
+        isOpen={isPuttyModalOpen}
+        onClose={() => setIsPuttyModalOpen(false)}
+      />
     </div>
   );
 }

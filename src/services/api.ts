@@ -14,6 +14,15 @@ import type { Tunnel, CreateTunnelInput, TunnelRuntimeStatus } from "@/types/tun
 import type { GeneratedKeyPair } from "@/types/crypto";
 import type { SshEvent } from "@/types/ssh";
 import type { FileEntry } from "@/types/sftp";
+import type { BackupSummary, RestoreStrategy } from "@/types/backup";
+import type {
+  SshConfigParseResult,
+  ImportSshHostsInput,
+  ImportResultSummary,
+  TermiusParseResult,
+  ImportTermiusInput,
+  SshConfigHostCandidate,
+} from "@/types/importer";
 
 export const api = {
   // --- Vault ---
@@ -192,5 +201,49 @@ export const api = {
 
   sftpGetLocalHome: async (): Promise<string> => {
     return await invoke<string>("sftp_get_local_home");
+  },
+
+  // --- Backup & Restore ---
+  backupExport: async (passphrase: string): Promise<string> => {
+    return await invoke<string>("backup_export", { passphrase });
+  },
+
+  backupInspect: async (backupJson: string, passphrase: string): Promise<BackupSummary> => {
+    return await invoke<BackupSummary>("backup_inspect", { backupJson, passphrase });
+  },
+
+  backupRestore: async (
+    backupJson: string,
+    passphrase: string,
+    strategy: RestoreStrategy,
+  ): Promise<BackupSummary> => {
+    return await invoke<BackupSummary>("backup_restore", { backupJson, passphrase, strategy });
+  },
+
+  // --- OpenSSH Importer ---
+  sshConfigParse: async (customPath?: string): Promise<SshConfigParseResult> => {
+    return await invoke<SshConfigParseResult>("ssh_config_parse", { customPath });
+  },
+
+  sshConfigImport: async (input: ImportSshHostsInput): Promise<ImportResultSummary> => {
+    return await invoke<ImportResultSummary>("ssh_config_import", { input });
+  },
+
+  // --- Termius Importer ---
+  termiusParse: async (jsonContent: string): Promise<TermiusParseResult> => {
+    return await invoke<TermiusParseResult>("termius_parse", { jsonContent });
+  },
+
+  termiusImport: async (input: ImportTermiusInput): Promise<ImportResultSummary> => {
+    return await invoke<ImportResultSummary>("termius_import", { input });
+  },
+
+  // --- PuTTY Importer ---
+  puttyParse: async (regContent: string): Promise<SshConfigHostCandidate[]> => {
+    return await invoke<SshConfigHostCandidate[]>("putty_parse", { regContent });
+  },
+
+  puttyImport: async (input: ImportSshHostsInput): Promise<ImportResultSummary> => {
+    return await invoke<ImportResultSummary>("putty_import", { input });
   },
 };

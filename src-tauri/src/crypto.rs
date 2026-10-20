@@ -13,6 +13,8 @@ use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use thiserror::Error;
 use zeroize::Zeroize;
 
+use crate::models::BackupEnvelope;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneratedKeyPair {
     pub algorithm: String,
@@ -160,4 +162,73 @@ pub fn generate_ssh_key(
         private_key: (*priv_openssh).to_string(),
         fingerprint,
     })
+}
+
+/// Encrypts a full backup payload using ChaCha20-Poly1305 with a key derived from an export passphrase.
+pub fn export_backup_envelope(payload: &str, passphrase: &str) -> Result<BackupEnvelope, CryptoError> {
+    let mut salt = [0u8; 16];
+    OsRng.fill_bytes(&mut salt);
+
+    let key = derive_key(passphrase, &salt)?;
+
+    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
+
+    let mut nonce_bytes = [0u8; 12];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let ciphertext = cipher
+        .encrypt(nonce, payload.as_bytes())
+        .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
+
+    Ok(BackupEnvelope {
+        format: "HAZE_BACKUP".to_string(),
+        version: 1,
+        salt: BASE64.encode(salt),
+        nonce: BASE64.encode(nonce_bytes),
+        ciphertext: BASE64.encode(ciphertext),
+    })
+}
+
+/// Decrypts a BackupEnvelope with the user-provided passphrase.
+pub fn decrypt_backup_envelope(
+    envelope: &BackupEnvelope,
+    passphrase: &str,
+) -> Result<String, CryptoError> {
+    if envelope.format != "HAZE_BACKUP" {
+        return Err(CryptoError::DecryptionFailed(
+            "Invalid backup format: expected HAZE_BACKUP header".to_string(),
+        ));
+    }
+
+    let salt = BASE64.decode(&envelope.salt)?;
+    let nonce_bytes = BASE64.decode(&envelope.nonce)?;
+    let ciphertext = BASE64.decode(&envelope.ciphertext)?;
+
+    if nonce_bytes.len() != 12 {
+        return Err(CryptoError::DecryptionFailed(
+            "Invalid nonce length in backup archive".to_string(),
+        ));
+    }
+
+    let key = derive_key(passphrase, &salt)?;
+    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        .map_err(|e| CryptoError::DecryptionFailed(e.to_string()))?;
+
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let mut decrypted_bytes = cipher
+        .decrypt(nonce, ciphertext.as_ref())
+        .map_err(|_| {
+            CryptoError::DecryptionFailed(
+                "Incorrect passphrase or corrupted backup file (authentication tag mismatch)"
+                    .to_string(),
+            )
+        })?;
+
+    let result = String::from_utf8(decrypted_bytes.clone())
+        .map_err(|e| CryptoError::DecryptionFailed(format!("Invalid UTF-8 payload: {}", e)));
+
+    decrypted_bytes.zeroize();
+    result
 }

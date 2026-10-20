@@ -206,16 +206,37 @@ flowchart LR
 - [x] Visual Tunnel Configuration modal (`TunnelModal.tsx`) with real-time routing preview and validation.
 - [x] Full Tunnel Dashboard (`TunnelsView.tsx`) with status badges, bandwidth meters, search, type filters, and 1-click OpenSSH command generation.
 
-### Phase 7: Snippets & Command Automation
-- Implement Snippets database and management UI.
-- Support dynamic variable interpolation (`{{var}}`) and interactive prompts before execution.
-- Add Run-on-Connect hooks to host profiles.
-- Build Multi-host batch snippet execution modal.
+### Phase 7: Snippets & Command Automation [Completed]
+- [x] Rust backend mutation support (`snippet_update` command, `UpdateSnippetInput`, foreign reference cleanups on deletion).
+- [x] Zustand snippet store (`useSnippetStore.ts`) with tag filtering, search, and full CRUD operations.
+- [x] Snippet editor modal (`SnippetModal.tsx`) with template token pills (`{{host.hostname}}`, `{{prompt:...}}`), tag manager, and startup toggle.
+- [x] Snippets dashboard (`SnippetsView.tsx`) with search, tag carousel, script preview cards, and one-click actions.
+- [x] Dynamic variable interpolation engine (`snippetInterpolation.ts`) supporting host context auto-resolution and custom prompt parameters.
+- [x] Decoupled terminal registry store (`useTerminalRegistryStore.ts`) enabling cross-component command dispatch to active terminal sessions.
+- [x] Interactive snippet runner modal (`SnippetRunnerModal.tsx`) with destination selector, real-time command preview, and direct terminal injection.
+- [x] Run-on-Connect hooks: Configurable `startup_snippet_id` in `HostModal.tsx` and automated execution upon connection in `XTermTerminal.tsx`.
+- [x] Multi-host batch execution modal (`BatchSnippetModal.tsx`) supporting both headless concurrent execution board with live logs and multi-tab interactive spawning.
 
-### Phase 8: Backup, Export & Importers
-- Full backup export: Encrypted `.haze` archive creation.
-- Full backup import: Decryption, schema verification, and restore.
-- Importers: Parse `~/.ssh/config`, Termius JSON exports, and PuTTY configurations.
+### Phase 8: Backup, Export & Importers [Completed]
+- [x] Step 8.1: Full backup export & restore engine (`.haze` archive):
+  - [x] Portable cryptographic envelope (`BackupEnvelope`) using Argon2id key derivation and ChaCha20-Poly1305 with explicit user passphrase.
+  - [x] Decryption & inspection pipeline (`backup_inspect`) with pre-restore summary verification.
+  - [x] Transactional restore engine (`backup_restore`) with dual collision strategies: **Merge** (safe automatic UUID remapping and foreign key resolution) and **Clean Overwrite** (clean slate wipe and reload).
+  - [x] Frontend UI modals (`ExportBackupModal`, `RestoreBackupModal`) connected to `SettingsView.tsx` with instant global store synchronization.
+- [x] Step 8.2: OpenSSH Importer (`~/.ssh/config` & `known_hosts` read-only selective importer):
+  - [x] Dedicated OpenSSH configuration parser (`ssh_config_parser.rs`) supporting `Host`, `HostName`, `User`, `Port`, `IdentityFile`, `ProxyJump`, and comment group hints.
+  - [x] `~/.ssh/known_hosts` fingerprint parser providing verified known host badges.
+  - [x] Batch database importer (`import_ssh_config_hosts`) with automatic group generation, key discovery into Haze encrypted identities, and ProxyJump link resolution.
+  - [x] Interactive selective import UI (`OpenSshImportModal.tsx`) with search, duplicate detection, and live store refresh.
+- [x] Step 8.3: Third-Party Importers (Termius JSON and PuTTY `.reg` session formats):
+  - [x] Flexible Termius JSON parser (`third_party_importer.rs`) extracting polymorphic host records, folder hierarchies, and automation snippets.
+  - [x] Windows Registry PuTTY session parser supporting URL-percent-decoded session names, hex dword port extraction, usernames, and key files.
+  - [x] Database batch import engine (`import_termius_data`) persisting imported snippets and hosts with duplicate checks.
+  - [x] Dedicated UI migration modals (`TermiusImportModal.tsx`, `PuttyImportModal.tsx`) integrated into `SettingsView.tsx`.
+- [x] Step 8.4: Verification, Security Review & Settings UI Polish:
+  - [x] End-to-end TypeScript compilation validation with 0 errors.
+  - [x] Responsive layout integration in `SettingsView.tsx` across all importers and backup tools.
+  - [x] Memory wiping (`zeroize`) and local key re-encryption for all imported credentials.
 
 ### Phase 9: Hardware (Serial), Telnet & Server Health Monitor
 - Serial port integration via `tokio-serial` for hardware consoles.

@@ -7,11 +7,16 @@ use zeroize::Zeroize;
 use crate::crypto;
 use crate::db::Database;
 use crate::models::{
-    CreateGroupInput, CreateHostInput, CreateIdentityInput, CreateSnippetInput, CreateTunnelInput,
-    Host, HostGroup, Identity, Snippet, Tunnel, UpdateHostInput, UpdateSnippetInput, VaultStatus,
+    BackupData, BackupEnvelope, BackupSummary, CreateGroupInput, CreateHostInput,
+    CreateIdentityInput, CreateSnippetInput, CreateTunnelInput, Host, HostGroup, Identity,
+    ImportResultSummary, ImportSshHostsInput, ImportTermiusInput, Snippet,
+    SshConfigHostCandidate, SshConfigParseResult, TermiusParseResult, Tunnel, UpdateHostInput,
+    UpdateSnippetInput, VaultStatus,
 };
 use crate::sftp::{self, FileEntry};
 use crate::ssh::{SshEvent, SshManager};
+use crate::ssh_config_parser;
+use crate::third_party_importer;
 use crate::tunnels::{TunnelManager, TunnelRuntimeStatus};
 
 pub struct AppState {
@@ -560,4 +565,200 @@ pub fn sftp_list_local(path: String) -> Result<Vec<FileEntry>, String> {
 #[tauri::command]
 pub fn sftp_get_local_home() -> Result<String, String> {
     Ok(sftp::get_local_home())
+}
+
+// --- Backup & Restore Commands ---
+
+#[tauri::command]
+pub fn backup_export(passphrase: String, state: State<'_, AppState>) -> Result<String, String> {
+    if passphrase.trim().is_empty() {
+        return Err("Export passphrase cannot be empty. A strong passphrase is required to secure your backup.".into());
+    }
+
+    let active_key = state.get_encryption_key()?;
+    let backup_data = state
+        .db
+        .export_backup_data(&active_key)
+        .map_err(|e| format!("Failed to export backup data from database: {}", e))?;
+
+    let json_payload = serde_json::to_string(&backup_data)
+        .map_err(|e| format!("Serialization error during backup generation: {}", e))?;
+
+    let envelope = crypto::export_backup_envelope(&json_payload, &passphrase)
+        .map_err(|e| format!("Encryption error during backup package generation: {}", e))?;
+
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|e| format!("Failed to serialize backup envelope: {}", e))
+}
+
+#[tauri::command]
+pub fn backup_inspect(backup_json: String, passphrase: String) -> Result<BackupSummary, String> {
+    if passphrase.trim().is_empty() {
+        return Err("Decryption passphrase cannot be empty.".into());
+    }
+
+    let envelope: BackupEnvelope = serde_json::from_str(&backup_json)
+        .map_err(|e| format!("Invalid backup file format. Expected a valid Haze SSH .haze JSON archive: {}", e))?;
+
+    let decrypted_payload = crypto::decrypt_backup_envelope(&envelope, &passphrase)
+        .map_err(|e| format!("Failed to decrypt backup: {}", e))?;
+
+    let data: BackupData = serde_json::from_str(&decrypted_payload)
+        .map_err(|e| format!("Corrupted backup payload: unable to parse data structure ({})", e))?;
+
+    Ok(BackupSummary {
+        version: data.version,
+        exported_at: data.exported_at,
+        groups_count: data.groups.len(),
+        identities_count: data.identities.len(),
+        hosts_count: data.hosts.len(),
+        snippets_count: data.snippets.len(),
+        tunnels_count: data.tunnels.len(),
+    })
+}
+
+#[tauri::command]
+pub fn backup_restore(
+    backup_json: String,
+    passphrase: String,
+    strategy: String,
+    state: State<'_, AppState>,
+) -> Result<BackupSummary, String> {
+    if passphrase.trim().is_empty() {
+        return Err("Decryption passphrase cannot be empty.".into());
+    }
+
+    let is_overwrite = match strategy.to_lowercase().as_str() {
+        "overwrite" => true,
+        "merge" => false,
+        other => {
+            return Err(format!(
+                "Invalid restore strategy '{}'. Supported strategies are 'merge' and 'overwrite'.",
+                other
+            ))
+        }
+    };
+
+    let active_key = state.get_encryption_key()?;
+
+    let envelope: BackupEnvelope = serde_json::from_str(&backup_json)
+        .map_err(|e| format!("Invalid backup file format. Expected a valid Haze SSH .haze JSON archive: {}", e))?;
+
+    let decrypted_payload = crypto::decrypt_backup_envelope(&envelope, &passphrase)
+        .map_err(|e| format!("Failed to decrypt backup: {}", e))?;
+
+    let data: BackupData = serde_json::from_str(&decrypted_payload)
+        .map_err(|e| format!("Corrupted backup payload: unable to parse data structure ({})", e))?;
+
+    state
+        .db
+        .restore_backup_data(data, &active_key, is_overwrite)
+        .map_err(|e| format!("Failed to apply restored backup: {}", e))
+}
+
+// --- OpenSSH Config Importer Commands ---
+
+#[tauri::command]
+pub fn ssh_config_parse(
+    custom_path: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<SshConfigParseResult, String> {
+    let existing_hosts = state
+        .db
+        .list_hosts()
+        .map_err(|e| format!("Failed to load existing hosts: {}", e))?;
+
+    ssh_config_parser::parse_ssh_config(custom_path.as_deref(), &existing_hosts)
+}
+
+#[tauri::command]
+pub fn ssh_config_import(
+    input: ImportSshHostsInput,
+    state: State<'_, AppState>,
+) -> Result<ImportResultSummary, String> {
+    if input.candidates.is_empty() {
+        return Err("No hosts selected for import. Please select at least one host.".into());
+    }
+
+    let active_key = state.get_encryption_key()?;
+
+    state
+        .db
+        .import_ssh_config_hosts(
+            input.candidates,
+            input.import_keys_as_identities,
+            &active_key,
+        )
+        .map_err(|e| format!("Failed to import OpenSSH hosts: {}", e))
+}
+
+// --- Termius & PuTTY Importer Commands ---
+
+#[tauri::command]
+pub fn termius_parse(
+    json_content: String,
+    state: State<'_, AppState>,
+) -> Result<TermiusParseResult, String> {
+    let existing_hosts = state
+        .db
+        .list_hosts()
+        .map_err(|e| format!("Failed to load existing hosts: {}", e))?;
+
+    third_party_importer::parse_termius_json(&json_content, &existing_hosts)
+}
+
+#[tauri::command]
+pub fn termius_import(
+    input: ImportTermiusInput,
+    state: State<'_, AppState>,
+) -> Result<ImportResultSummary, String> {
+    if input.candidates.is_empty() && input.snippets.is_empty() {
+        return Err("No hosts or snippets selected for import.".into());
+    }
+
+    let active_key = state.get_encryption_key()?;
+
+    state
+        .db
+        .import_termius_data(
+            input.candidates,
+            input.snippets,
+            input.import_keys_as_identities,
+            &active_key,
+        )
+        .map_err(|e| format!("Failed to import Termius configurations: {}", e))
+}
+
+#[tauri::command]
+pub fn putty_parse(
+    reg_content: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SshConfigHostCandidate>, String> {
+    let existing_hosts = state
+        .db
+        .list_hosts()
+        .map_err(|e| format!("Failed to load existing hosts: {}", e))?;
+
+    third_party_importer::parse_putty_reg(&reg_content, &existing_hosts)
+}
+
+#[tauri::command]
+pub fn putty_import(
+    input: ImportSshHostsInput,
+    state: State<'_, AppState>,
+) -> Result<ImportResultSummary, String> {
+    if input.candidates.is_empty() {
+        return Err("No PuTTY sessions selected for import.".into());
+    }
+
+    let active_key = state.get_encryption_key()?;
+
+    state
+        .db
+        .import_ssh_config_hosts(
+            input.candidates,
+            input.import_keys_as_identities,
+            &active_key,
+        )
+        .map_err(|e| format!("Failed to import PuTTY sessions: {}", e))
 }

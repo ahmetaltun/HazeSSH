@@ -149,3 +149,92 @@ pub struct CreateTunnelInput {
     pub remote_port: Option<u16>,
     pub auto_start: Option<bool>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupEnvelope {
+    pub format: String,
+    pub version: u32,
+    pub salt: String,
+    pub nonce: String,
+    pub ciphertext: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupIdentity {
+    pub id: String,
+    pub name: String,
+    pub identity_type: String,
+    pub username: Option<String>,
+    pub secret: String,
+    pub passphrase: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupData {
+    pub version: u32,
+    pub exported_at: i64,
+    pub groups: Vec<HostGroup>,
+    pub identities: Vec<BackupIdentity>,
+    pub hosts: Vec<Host>,
+    pub snippets: Vec<Snippet>,
+    pub tunnels: Vec<Tunnel>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupSummary {
+    pub version: u32,
+    pub exported_at: i64,
+    pub groups_count: usize,
+    pub identities_count: usize,
+    pub hosts_count: usize,
+    pub snippets_count: usize,
+    pub tunnels_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshConfigHostCandidate {
+    pub label: String,
+    pub hostname: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub identity_file: Option<String>,
+    pub proxy_jump: Option<String>,
+    pub group_name: Option<String>,
+    pub is_duplicate: bool,
+    pub is_known_host: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshConfigParseResult {
+    pub config_path: String,
+    pub found_config: bool,
+    pub found_known_hosts: bool,
+    pub candidates: Vec<SshConfigHostCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportSshHostsInput {
+    pub candidates: Vec<SshConfigHostCandidate>,
+    pub import_keys_as_identities: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportResultSummary {
+    pub imported_hosts_count: usize,
+    pub imported_groups_count: usize,
+    pub imported_identities_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TermiusParseResult {
+    pub candidates: Vec<SshConfigHostCandidate>,
+    pub snippets: Vec<CreateSnippetInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportTermiusInput {
+    pub candidates: Vec<SshConfigHostCandidate>,
+    pub snippets: Vec<CreateSnippetInput>,
+    pub import_keys_as_identities: bool,
+}

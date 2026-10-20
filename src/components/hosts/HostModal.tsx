@@ -1,6 +1,7 @@
 import { useState, useEffect, type FormEvent, type KeyboardEvent } from "react";
-import { Server, Plus, X, Network } from "lucide-react";
+import { Server, Plus, X, Network, Code2 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
+import { useSnippetStore } from "@/stores/useSnippetStore";
 import type { Host } from "@/types/host";
 import { IdentityModal } from "@/components/identities/IdentityModal";
 import { GroupModal } from "@/components/hosts/GroupModal";
@@ -31,6 +32,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
   const [authType, setAuthType] = useState<"identity" | "interactive" | "agent">("identity");
   const [identityId, setIdentityId] = useState("");
   const [jumpHostId, setJumpHostId] = useState("");
+  const [startupSnippetId, setStartupSnippetId] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [color, setColor] = useState(PRESET_COLORS[0]);
@@ -42,6 +44,13 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { hosts, groups, identities, createHost, updateHost } = useHostStore();
+  const { snippets, fetchSnippets } = useSnippetStore();
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchSnippets();
+    }
+  }, [isOpen, fetchSnippets]);
 
   useEffect(() => {
     if (hostToEdit) {
@@ -53,6 +62,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
       setAuthType(hostToEdit.auth_type as "identity" | "interactive" | "agent");
       setIdentityId(hostToEdit.identity_id || "");
       setJumpHostId(hostToEdit.jump_host_id || "");
+      setStartupSnippetId(hostToEdit.startup_snippet_id || "");
       setTags(hostToEdit.tags || []);
       setColor(hostToEdit.color || PRESET_COLORS[0]);
     } else {
@@ -64,6 +74,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
       setAuthType("identity");
       setIdentityId(identities[0]?.id || "");
       setJumpHostId("");
+      setStartupSnippetId("");
       setTags([]);
       setColor(PRESET_COLORS[0]);
     }
@@ -115,7 +126,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
           tags,
           color,
           terminal_theme: hostToEdit.terminal_theme,
-          startup_snippet_id: hostToEdit.startup_snippet_id,
+          startup_snippet_id: startupSnippetId.trim() || undefined,
           created_at: hostToEdit.created_at,
           updated_at: Date.now(),
         });
@@ -132,6 +143,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
           jump_host_id: jumpHostId.trim() || undefined,
           tags,
           color,
+          startup_snippet_id: startupSnippetId.trim() || undefined,
         });
         onSaved?.(created);
       }
@@ -323,6 +335,28 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                       via {h.label} ({h.hostname}:{h.port})
                     </option>
                   ))}
+              </select>
+            </div>
+
+            {/* Startup Snippet (Run on Connect) */}
+            <div className="form-control">
+              <label className="label py-1">
+                <span className="label-text text-xs font-semibold flex items-center gap-1.5">
+                  <Code2 className="w-3.5 h-3.5 text-warning" />
+                  Startup Snippet (Run on Connect)
+                </span>
+              </label>
+              <select
+                value={startupSnippetId}
+                onChange={(e) => setStartupSnippetId(e.target.value)}
+                className="select select-sm select-bordered w-full bg-base-100 text-xs"
+              >
+                <option value="">None (Standard Interactive Shell)</option>
+                {snippets.map((snip) => (
+                  <option key={snip.id} value={snip.id}>
+                    {snip.title} {snip.run_on_connect ? "★" : ""}
+                  </option>
+                ))}
               </select>
             </div>
 

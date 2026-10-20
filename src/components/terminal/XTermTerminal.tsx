@@ -8,6 +8,9 @@ import "@xterm/xterm/css/xterm.css";
 import { api } from "@/services/api";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
+import { useHostStore } from "@/stores/useHostStore";
+import { useSnippetStore } from "@/stores/useSnippetStore";
+import { resolveHostVariables } from "@/services/snippetInterpolation";
 import { getTerminalTheme } from "@/services/terminalThemes";
 import type { TerminalPane } from "@/types/terminal";
 import type { SshEvent } from "@/types/ssh";
@@ -22,6 +25,7 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const hasRunStartupSnippetRef = useRef<boolean>(false);
 
   const [connectionStatus, setConnectionStatus] = useState<string>("initializing");
   const { currentTheme } = useThemeStore();
@@ -97,6 +101,50 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
                 if (event.payload.message) {
                   term.writeln(`\r\n\x1b[33m[Haze SSH] ${event.payload.message}\x1b[0m`);
                 }
+
+                // Run startup snippet on successful connection if configured
+                if (
+                  event.payload.status === "connected" &&
+                  !hasRunStartupSnippetRef.current &&
+                  pane.hostId
+                ) {
+                  hasRunStartupSnippetRef.current = true;
+                  const host = useHostStore
+                    .getState()
+                    .hosts.find((h) => h.id === pane.hostId);
+
+                  if (host?.startup_snippet_id) {
+                    const snippet = useSnippetStore
+                      .getState()
+                      .snippets.find((s) => s.id === host.startup_snippet_id);
+
+                    if (snippet) {
+                      const { resolvedScript } = resolveHostVariables(snippet.script, {
+                        hostname: host.hostname,
+                        username: host.username,
+                        port: host.port,
+                        label: host.label,
+                      });
+
+                      term.writeln(
+                        `\r\n\x1b[36m[Haze SSH] Executing startup snippet: ${snippet.title}...\x1b[0m\r\n`
+                      );
+
+                      const toSend = resolvedScript.endsWith("\n")
+                        ? resolvedScript
+                        : `${resolvedScript}\n`;
+                      const bytes = Array.from(new TextEncoder().encode(toSend));
+
+                      setTimeout(() => {
+                        if (!isDisposed && sessionIdRef.current) {
+                          api.sshWrite(sessionIdRef.current, bytes).catch((err) => {
+                            console.error("Failed to run startup snippet:", err);
+                          });
+                        }
+                      }, 600);
+                    }
+                  }
+                }
                 break;
               }
               case "Error": {
@@ -169,6 +217,7 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
       }
 
       useTerminalRegistryStore.getState().unregisterSession(pane.id);
+      hasRunStartupSnippetRef.current = false;
 
       term.dispose();
       termRef.current = null;

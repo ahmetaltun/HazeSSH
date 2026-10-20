@@ -7,6 +7,8 @@ pub mod db;
 pub mod models;
 pub mod sftp;
 pub mod ssh;
+pub mod ssh_config_parser;
+pub mod third_party_importer;
 pub mod tunnels;
 
 use commands::AppState;
@@ -86,6 +88,15 @@ pub fn run() {
             commands::sftp_rename_file,
             commands::sftp_list_local,
             commands::sftp_get_local_home,
+            commands::backup_export,
+            commands::backup_inspect,
+            commands::backup_restore,
+            commands::ssh_config_parse,
+            commands::ssh_config_import,
+            commands::termius_parse,
+            commands::termius_import,
+            commands::putty_parse,
+            commands::putty_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
