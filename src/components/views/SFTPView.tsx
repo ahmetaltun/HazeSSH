@@ -8,6 +8,10 @@ import {
   XCircle,
   Clock,
   Layers,
+  Plug,
+  Unplug,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
@@ -21,13 +25,18 @@ export function SFTPView() {
   const { sftpTargetHostId, setSftpTargetHostId } = useLayoutStore();
   const [selectedHostId, setSelectedHostId] = useState<string>("");
 
+  // Connection states
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
   // Navigation states
   const [localPath, setLocalPath] = useState<string>("");
   const [remotePath, setRemotePath] = useState<string>(".");
 
   // Selection states
-  const [selectedLocalFile, setSelectedLocalFile] = useState<FileEntry | null>(null);
-  const [selectedRemoteFile, setSelectedRemoteFile] = useState<FileEntry | null>(null);
+  const [selectedLocalFiles, setSelectedLocalFiles] = useState<FileEntry[]>([]);
+  const [selectedRemoteFiles, setSelectedRemoteFiles] = useState<FileEntry[]>([]);
 
   // Refresh keys to trigger pane reloads after transfers
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
@@ -40,7 +49,7 @@ export function SFTPView() {
   const [queue, setQueue] = useState<TransferTask[]>([]);
   const [isQueueExpanded, setIsQueueExpanded] = useState(false);
 
-  const selectedHost = hosts.find((h) => h.id === selectedHostId) || hosts[0];
+  const selectedHost = hosts.find((h) => h.id === selectedHostId) || (hosts.length > 0 ? hosts[0] : null);
 
   const remotePathRef = useRef(remotePath);
   remotePathRef.current = remotePath;
@@ -51,147 +60,194 @@ export function SFTPView() {
   const selectedHostRef = useRef(selectedHost);
   selectedHostRef.current = selectedHost;
 
+  // Auto-connect if navigated here with an explicit target host
   useEffect(() => {
     if (sftpTargetHostId) {
       setSelectedHostId(sftpTargetHostId);
       setSftpTargetHostId(null);
+      void handleConnect(sftpTargetHostId);
     }
   }, [sftpTargetHostId, setSftpTargetHostId]);
 
+  // Set default selected host dropdown value if none set, without connecting
   useEffect(() => {
-    // Select first host by default if none selected
     if (!selectedHostId && hosts.length > 0) {
       setSelectedHostId(hosts[0].id);
     }
   }, [hosts, selectedHostId]);
 
+  // Fetch local user home directory on mount
   useEffect(() => {
-    // Fetch local user home directory
     api.sftpGetLocalHome().then(setLocalPath).catch(() => setLocalPath("/"));
   }, []);
 
-  // Canonicalize remote path on host selection to avoid starting at raw "."
-  useEffect(() => {
-    if (selectedHost) {
-      api
-        .sftpCanonicalize(selectedHost.id, ".")
-        .then((canonical) => setRemotePath(canonical))
-        .catch(() => setRemotePath("."));
+  const handleConnect = async (hostIdOverride?: string) => {
+    const hostToConnect = hosts.find((h) => h.id === (hostIdOverride || selectedHostId)) || selectedHost;
+    if (!hostToConnect) {
+      setConnectionError("No remote host selected. Please choose a host to connect.");
+      return;
     }
-  }, [selectedHost?.id]);
+
+    setIsConnecting(true);
+    setConnectionError(null);
+
+    try {
+      // Canonicalize remote path to verify authentication & retrieve home directory
+      const canonical = await api.sftpCanonicalize(hostToConnect.id, ".");
+      setRemotePath(canonical || ".");
+      setIsConnected(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setConnectionError(`Could not establish SFTP session to ${hostToConnect.label}: ${msg}`);
+      setIsConnected(false);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    setIsConnected(false);
+    setSelectedRemoteFiles([]);
+    setRemotePath(".");
+    setConnectionError(null);
+  };
+
+  const handleHostChange = (newHostId: string) => {
+    if (newHostId !== selectedHostId) {
+      if (isConnected) {
+        handleDisconnect();
+      }
+      setSelectedHostId(newHostId);
+    }
+  };
 
   const handleOpenRemoteFile = (file: FileEntry) => {
     setEditingFile(file);
   };
 
-  const handleUploadFile = async (file: FileEntry) => {
+  const handleUploadFiles = async (files: FileEntry[]) => {
     const host = selectedHostRef.current || selectedHost;
-    if (!host) return;
+    if (!host || !isConnected || files.length === 0) return;
     const currentRemote = remotePathRef.current || remotePath;
-    const dest = currentRemote.endsWith("/")
-      ? `${currentRemote}${file.name}`
-      : `${currentRemote}/${file.name}`;
 
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const task: TransferTask = {
-      id: taskId,
-      filename: file.name,
-      sourcePath: file.path,
-      destinationPath: dest,
-      direction: "upload",
-      size: file.size,
-      status: "transferring",
-      progress: 25,
-    };
-
-    setQueue((prev) => [task, ...prev]);
     setIsQueueExpanded(true);
 
-    try {
-      await api.sftpUploadFile(host.id, file.path, dest);
-      setQueue((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "completed", progress: 100 } : t
-        )
-      );
-      setRemoteRefreshKey((k) => k + 1);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setQueue((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "error", errorMessage: msg } : t
-        )
-      );
+    for (const file of files) {
+      const dest = currentRemote.endsWith("/")
+        ? `${currentRemote}${file.name}`
+        : `${currentRemote}/${file.name}`;
+
+      const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const task: TransferTask = {
+        id: taskId,
+        filename: file.name,
+        sourcePath: file.path,
+        destinationPath: dest,
+        direction: "upload",
+        size: file.size,
+        status: "transferring",
+        progress: 25,
+      };
+
+      setQueue((prev) => [task, ...prev]);
+
+      try {
+        await api.sftpUploadFile(host.id, file.path, dest);
+        setQueue((prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, status: "completed", progress: 100 } : t
+          )
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setQueue((prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, status: "error", errorMessage: msg } : t
+          )
+        );
+      }
     }
+    setRemoteRefreshKey((k) => k + 1);
   };
 
-  const handleDownloadFile = async (file: FileEntry) => {
+  const handleDownloadFiles = async (files: FileEntry[]) => {
     const host = selectedHostRef.current || selectedHost;
-    if (!host) return;
+    if (!host || !isConnected || files.length === 0) return;
     const currentLocal = localPathRef.current || localPath;
-    const dest = currentLocal.endsWith("/")
-      ? `${currentLocal}${file.name}`
-      : `${currentLocal}/${file.name}`;
 
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const task: TransferTask = {
-      id: taskId,
-      filename: file.name,
-      sourcePath: file.path,
-      destinationPath: dest,
-      direction: "download",
-      size: file.size,
-      status: "transferring",
-      progress: 25,
-    };
-
-    setQueue((prev) => [task, ...prev]);
     setIsQueueExpanded(true);
 
-    try {
-      await api.sftpDownloadFile(host.id, file.path, dest);
-      setQueue((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "completed", progress: 100 } : t
-        )
-      );
-      setLocalRefreshKey((k) => k + 1);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setQueue((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "error", errorMessage: msg } : t
-        )
-      );
+    for (const file of files) {
+      const dest = currentLocal.endsWith("/")
+        ? `${currentLocal}${file.name}`
+        : `${currentLocal}/${file.name}`;
+
+      const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const task: TransferTask = {
+        id: taskId,
+        filename: file.name,
+        sourcePath: file.path,
+        destinationPath: dest,
+        direction: "download",
+        size: file.size,
+        status: "transferring",
+        progress: 25,
+      };
+
+      setQueue((prev) => [task, ...prev]);
+
+      try {
+        await api.sftpDownloadFile(host.id, file.path, dest);
+        setQueue((prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, status: "completed", progress: 100 } : t
+          )
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setQueue((prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, status: "error", errorMessage: msg } : t
+          )
+        );
+      }
     }
+    setLocalRefreshKey((k) => k + 1);
   };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-base-100 overflow-hidden">
-      {/* View Header with Host Selector */}
+      {/* View Header with Host Selector and Session Status */}
       <div className="h-14 border-b border-base-200 px-5 flex items-center justify-between gap-4 shrink-0 bg-base-200/40 select-none">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-info/10 text-info flex items-center justify-center">
             <FolderGit2 className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-bold leading-tight">SFTP File Manager</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold leading-tight">SFTP File Manager</h2>
+              {isConnected && selectedHost && (
+                <span className="badge badge-success badge-xs gap-1 py-1 font-semibold text-[10px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  Connected
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-base-content/60">
               Dual-pane file transfer, directory navigation, and remote file editing
             </p>
           </div>
         </div>
 
-        {/* Remote Host Picker */}
+        {/* Remote Host Picker & Session Actions */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-base-content/60 font-semibold flex items-center gap-1">
-            <Server className="w-3.5 h-3.5" /> Target Host:
+            <Server className="w-3.5 h-3.5" /> Host:
           </span>
           <select
             value={selectedHostId}
-            onChange={(e) => {
-              setSelectedHostId(e.target.value);
-            }}
+            onChange={(e) => handleHostChange(e.target.value)}
+            disabled={isConnecting}
             className="select select-sm select-bordered bg-base-100 text-xs font-semibold max-w-xs"
           >
             {hosts.length === 0 && <option value="">(No Hosts Configured)</option>}
@@ -201,8 +257,57 @@ export function SFTPView() {
               </option>
             ))}
           </select>
+
+          {isConnected ? (
+            <button
+              type="button"
+              onClick={handleDisconnect}
+              className="btn btn-sm btn-outline btn-error text-xs gap-1.5 shadow-sm"
+              title="Close SFTP session"
+            >
+              <Unplug className="w-3.5 h-3.5" />
+              <span>Close Session</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleConnect()}
+              disabled={isConnecting || !selectedHost}
+              className="btn btn-sm btn-primary text-xs gap-1.5 shadow-sm"
+              title="Connect to selected host"
+            >
+              {isConnecting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Connecting...</span>
+                </>
+              ) : (
+                <>
+                  <Plug className="w-3.5 h-3.5" />
+                  <span>Connect</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Connection Error Banner */}
+      {connectionError && (
+        <div className="bg-error/15 border-b border-error/30 px-5 py-2 flex items-center justify-between text-xs text-error">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span className="font-medium">{connectionError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConnectionError(null)}
+            className="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/20"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Dual Pane Workspace */}
       <div className="flex-1 min-h-0 p-3 flex gap-3 overflow-hidden">
@@ -212,10 +317,10 @@ export function SFTPView() {
             title="Local Computer"
             mode="local"
             currentPath={localPath}
-            selectedFile={selectedLocalFile}
-            onSelectFile={setSelectedLocalFile}
+            selectedFiles={selectedLocalFiles}
+            onSelectFiles={setSelectedLocalFiles}
             onNavigate={setLocalPath}
-            onTransfer={handleUploadFile}
+            onTransfer={handleUploadFiles}
             transferLabel="Upload"
             refreshKey={localRefreshKey}
           />
@@ -223,31 +328,51 @@ export function SFTPView() {
 
         {/* Center Transfer Buttons */}
         <div className="flex flex-col justify-center items-center gap-2 shrink-0 select-none">
-          <div className="tooltip tooltip-right" data-tip="Upload to Remote">
+          <div
+            className="tooltip tooltip-right"
+            data-tip={
+              !isConnected
+                ? "Connect to Remote first"
+                : selectedLocalFiles.length > 0
+                ? `Upload ${selectedLocalFiles.length} selected item${selectedLocalFiles.length > 1 ? "s" : ""} to Remote`
+                : "Select local file(s) to upload"
+            }
+          >
             <button
               type="button"
-              onClick={() => selectedLocalFile && handleUploadFile(selectedLocalFile)}
-              disabled={!selectedLocalFile || !selectedHost}
+              onClick={() => handleUploadFiles(selectedLocalFiles)}
+              disabled={selectedLocalFiles.length === 0 || !isConnected || !selectedHost}
               className="btn btn-sm btn-circle btn-primary shadow-md disabled:opacity-40"
               title={
-                selectedLocalFile
-                  ? `Upload "${selectedLocalFile.name}" to Remote`
-                  : "Select a local file to upload"
+                selectedLocalFiles.length > 0
+                  ? isConnected
+                    ? `Upload ${selectedLocalFiles.length} item(s) to Remote`
+                    : "Connect to remote server to upload"
+                  : "Select local file(s) to upload"
               }
             >
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="tooltip tooltip-right" data-tip="Download to Local">
+          <div
+            className="tooltip tooltip-right"
+            data-tip={
+              !isConnected
+                ? "Connect to Remote first"
+                : selectedRemoteFiles.length > 0
+                ? `Download ${selectedRemoteFiles.length} selected item${selectedRemoteFiles.length > 1 ? "s" : ""} to Local`
+                : "Select remote file(s) to download"
+            }
+          >
             <button
               type="button"
-              onClick={() => selectedRemoteFile && handleDownloadFile(selectedRemoteFile)}
-              disabled={!selectedRemoteFile || !selectedHost}
+              onClick={() => handleDownloadFiles(selectedRemoteFiles)}
+              disabled={selectedRemoteFiles.length === 0 || !isConnected || !selectedHost}
               className="btn btn-sm btn-circle btn-secondary shadow-md disabled:opacity-40"
               title={
-                selectedRemoteFile
-                  ? `Download "${selectedRemoteFile.name}" to Local`
-                  : "Select a remote file to download"
+                selectedRemoteFiles.length > 0
+                  ? `Download ${selectedRemoteFiles.length} item(s) to Local`
+                  : "Select remote file(s) to download"
               }
             >
               <ArrowLeft className="w-4 h-4" />
@@ -255,28 +380,58 @@ export function SFTPView() {
           </div>
         </div>
 
-        {/* Right Pane: Remote SFTP Filesystem */}
+        {/* Right Pane: Remote SFTP Filesystem / Disconnected State */}
         <div className="flex-1 min-w-0 h-full">
-          {selectedHost ? (
+          {isConnected && selectedHost ? (
             <FileExplorerPane
               title={`Remote: ${selectedHost.label}`}
               mode="remote"
               hostId={selectedHost.id}
               currentPath={remotePath}
-              selectedFile={selectedRemoteFile}
-              onSelectFile={setSelectedRemoteFile}
+              selectedFiles={selectedRemoteFiles}
+              onSelectFiles={setSelectedRemoteFiles}
               onNavigate={setRemotePath}
               onOpenFile={handleOpenRemoteFile}
-              onTransfer={handleDownloadFile}
+              onTransfer={handleDownloadFiles}
               transferLabel="Download"
               refreshKey={remoteRefreshKey}
             />
           ) : (
-            <div className="border border-base-300 rounded-xl h-full flex flex-col items-center justify-center p-6 text-center space-y-3 bg-base-200/20">
-              <Server className="w-8 h-8 text-base-content/30" />
-              <p className="text-xs text-base-content/60">
-                Please add or select a host to open an SFTP connection.
-              </p>
+            <div className="border border-base-300 rounded-xl h-full flex flex-col items-center justify-center p-6 text-center space-y-4 bg-base-200/20">
+              <div className="w-14 h-14 rounded-2xl bg-base-300/50 flex items-center justify-center text-base-content/40">
+                <Server className="w-7 h-7" />
+              </div>
+              <div className="max-w-xs space-y-1">
+                <h3 className="text-sm font-bold text-base-content/90">
+                  {selectedHost ? `Ready to connect: ${selectedHost.label}` : "No Remote Host Selected"}
+                </h3>
+                <p className="text-xs text-base-content/60 leading-relaxed">
+                  {selectedHost
+                    ? `Select "${selectedHost.label}" (${selectedHost.hostname}:${selectedHost.port}) and click Connect to browse and transfer remote files.`
+                    : "Please add or configure a host in the Hosts tab to open an SFTP connection."}
+                </p>
+              </div>
+
+              {selectedHost && (
+                <button
+                  type="button"
+                  onClick={() => handleConnect()}
+                  disabled={isConnecting}
+                  className="btn btn-sm btn-primary gap-2 shadow-sm"
+                >
+                  {isConnecting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Connecting to {selectedHost.label}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plug className="w-4 h-4" />
+                      <span>Connect to {selectedHost.label}</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>

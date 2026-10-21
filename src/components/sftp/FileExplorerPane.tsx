@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type FormEvent } from "react";
+import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
 import {
   Folder,
   File,
@@ -23,11 +23,11 @@ interface FileExplorerPaneProps {
   readonly mode: "local" | "remote";
   readonly hostId?: string;
   readonly currentPath: string;
-  readonly selectedFile?: FileEntry | null;
-  readonly onSelectFile?: (file: FileEntry | null) => void;
+  readonly selectedFiles?: FileEntry[];
+  readonly onSelectFiles?: (files: FileEntry[]) => void;
   readonly onNavigate: (path: string) => void;
   readonly onOpenFile?: (file: FileEntry) => void;
-  readonly onTransfer?: (file: FileEntry) => void;
+  readonly onTransfer?: (files: FileEntry[]) => void;
   readonly transferLabel?: string;
   readonly refreshKey?: number;
 }
@@ -67,8 +67,8 @@ export function FileExplorerPane({
   mode,
   hostId,
   currentPath,
-  selectedFile: externalSelectedFile,
-  onSelectFile,
+  selectedFiles: externalSelectedFiles,
+  onSelectFiles,
   onNavigate,
   onOpenFile,
   onTransfer,
@@ -76,7 +76,9 @@ export function FileExplorerPane({
   refreshKey = 0,
 }: FileExplorerPaneProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [internalSelectedFile, setInternalSelectedFile] = useState<FileEntry | null>(null);
+  const [internalSelectedFiles, setInternalSelectedFiles] = useState<FileEntry[]>([]);
+  const lastClickedEntryRef = useRef<FileEntry | null>(null);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -92,22 +94,24 @@ export function FileExplorerPane({
 
   // Delete confirmation dialog (native in-app)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [fileToDelete, setFileToDelete] = useState<FileEntry | null>(null);
+  const [filesToDelete, setFilesToDelete] = useState<FileEntry[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const activeSelectedFile = externalSelectedFile !== undefined ? externalSelectedFile : internalSelectedFile;
+  const activeSelectedFiles = externalSelectedFiles !== undefined ? externalSelectedFiles : internalSelectedFiles;
+  const singleSelectedFile = activeSelectedFiles.length === 1 ? activeSelectedFiles[0] : null;
 
-  const handleSelect = (file: FileEntry | null) => {
-    if (externalSelectedFile === undefined) {
-      setInternalSelectedFile(file);
+  const handleSelectFiles = (files: FileEntry[]) => {
+    if (externalSelectedFiles === undefined) {
+      setInternalSelectedFiles(files);
     }
-    onSelectFile?.(file);
+    onSelectFiles?.(files);
   };
 
   const loadDirectory = async (path: string) => {
     setIsLoading(true);
     setErrorMsg(null);
-    handleSelect(null);
+    handleSelectFiles([]);
+    lastClickedEntryRef.current = null;
 
     try {
       if (mode === "remote") {
@@ -151,6 +155,70 @@ export function FileExplorerPane({
     }
   };
 
+  const filteredEntries = useMemo(() => {
+    if (!searchTerm.trim()) return entries;
+    const q = searchTerm.toLowerCase();
+    return entries.filter((e) => e.name.toLowerCase().includes(q));
+  }, [entries, searchTerm]);
+
+  // Multi-selection click handler with Shift and Cmd/Ctrl
+  const handleRowClick = (entry: FileEntry, e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) {
+      // Toggle individual entry
+      const exists = activeSelectedFiles.some((f) => f.path === entry.path);
+      const updated = exists
+        ? activeSelectedFiles.filter((f) => f.path !== entry.path)
+        : [...activeSelectedFiles, entry];
+      lastClickedEntryRef.current = entry;
+      handleSelectFiles(updated);
+    } else if (e.shiftKey && lastClickedEntryRef.current) {
+      // Range selection
+      const fromIdx = filteredEntries.findIndex((f) => f.path === lastClickedEntryRef.current?.path);
+      const toIdx = filteredEntries.findIndex((f) => f.path === entry.path);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const start = Math.min(fromIdx, toIdx);
+        const end = Math.max(fromIdx, toIdx);
+        const range = filteredEntries.slice(start, end + 1);
+
+        const rangePaths = new Set(range.map((r) => r.path));
+        const nonRangeSelected = activeSelectedFiles.filter((f) => !rangePaths.has(f.path));
+        handleSelectFiles([...nonRangeSelected, ...range]);
+      } else {
+        lastClickedEntryRef.current = entry;
+        handleSelectFiles([entry]);
+      }
+    } else {
+      // Single selection
+      lastClickedEntryRef.current = entry;
+      handleSelectFiles([entry]);
+    }
+  };
+
+  const handleToggleEntryCheckbox = (entry: FileEntry, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const exists = activeSelectedFiles.some((f) => f.path === entry.path);
+    const updated = exists
+      ? activeSelectedFiles.filter((f) => f.path !== entry.path)
+      : [...activeSelectedFiles, entry];
+    lastClickedEntryRef.current = entry;
+    handleSelectFiles(updated);
+  };
+
+  const isAllSelected =
+    filteredEntries.length > 0 &&
+    filteredEntries.every((e) => activeSelectedFiles.some((f) => f.path === e.path));
+
+  const isIndeterminate =
+    activeSelectedFiles.length > 0 && !isAllSelected;
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      handleSelectFiles([]);
+    } else {
+      handleSelectFiles([...filteredEntries]);
+    }
+  };
+
   const handleCreateFolder = async (e: FormEvent) => {
     e.preventDefault();
     if (!newFolderName.trim()) return;
@@ -173,28 +241,29 @@ export function FileExplorerPane({
     }
   };
 
-  const handleOpenDelete = (entry: FileEntry) => {
-    setFileToDelete(entry);
+  const handleOpenDelete = (targets: FileEntry[]) => {
+    if (targets.length === 0) return;
+    setFilesToDelete(targets);
     setIsDeleteOpen(true);
   };
 
   const handleConfirmDelete = async () => {
-    if (!fileToDelete) return;
+    if (filesToDelete.length === 0) return;
     setIsDeleting(true);
     setErrorMsg(null);
 
     try {
-      if (mode === "remote" && hostId) {
-        await api.sftpDeleteFile(hostId, fileToDelete.path, fileToDelete.is_dir);
-      } else {
-        await api.sftpLocalDelete(fileToDelete.path, fileToDelete.is_dir);
+      for (const item of filesToDelete) {
+        if (mode === "remote" && hostId) {
+          await api.sftpDeleteFile(hostId, item.path, item.is_dir);
+        } else {
+          await api.sftpLocalDelete(item.path, item.is_dir);
+        }
       }
       setIsDeleteOpen(false);
-      setFileToDelete(null);
+      setFilesToDelete([]);
+      handleSelectFiles([]);
       loadDirectory(currentPath);
-      if (activeSelectedFile?.path === fileToDelete.path) {
-        handleSelect(null);
-      }
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     } finally {
@@ -225,12 +294,6 @@ export function FileExplorerPane({
       setErrorMsg(err instanceof Error ? err.message : String(err));
     }
   };
-
-  const filteredEntries = useMemo(() => {
-    if (!searchTerm.trim()) return entries;
-    const q = searchTerm.toLowerCase();
-    return entries.filter((e) => e.name.toLowerCase().includes(q));
-  }, [entries, searchTerm]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-base-100 border border-base-300 rounded-xl overflow-hidden select-none relative">
@@ -325,6 +388,18 @@ export function FileExplorerPane({
           <table className="table table-xs table-pin-rows w-full font-mono">
             <thead>
               <tr className="bg-base-200/50 text-[10px] text-base-content/60">
+                <th className="w-8 px-2 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isIndeterminate;
+                    }}
+                    onChange={handleToggleSelectAll}
+                    className="checkbox checkbox-xs rounded"
+                    title={isAllSelected ? "Deselect All" : "Select All"}
+                  />
+                </th>
                 <th>Name</th>
                 <th className="w-20 text-right">Size</th>
                 <th className="w-28 text-right hidden sm:table-cell">Modified</th>
@@ -333,12 +408,12 @@ export function FileExplorerPane({
             </thead>
             <tbody>
               {filteredEntries.map((entry) => {
-                const isSelected = activeSelectedFile?.path === entry.path;
+                const isSelected = activeSelectedFiles.some((f) => f.path === entry.path);
 
                 return (
                   <tr
                     key={entry.path}
-                    onClick={() => handleSelect(entry)}
+                    onClick={(e) => handleRowClick(entry, e)}
                     onDoubleClick={() => handleRowDoubleClick(entry)}
                     className={`cursor-pointer transition-colors text-xs ${
                       isSelected
@@ -346,6 +421,17 @@ export function FileExplorerPane({
                         : "hover:bg-base-200/50"
                     }`}
                   >
+                    <td
+                      className="w-8 px-2 text-center"
+                      onClick={(e) => handleToggleEntryCheckbox(entry, e)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}}
+                        className="checkbox checkbox-xs rounded pointer-events-none"
+                      />
+                    </td>
                     <td className="truncate max-w-[180px] flex items-center gap-2 font-sans">
                       {getFileIcon(entry)}
                       <span className="truncate">{entry.name}</span>
@@ -369,16 +455,24 @@ export function FileExplorerPane({
 
       {/* Pane Footer / Selected File Actions */}
       <div className="h-9 bg-base-200/50 border-t border-base-300 px-3 flex items-center justify-between text-xs shrink-0">
-        <span className="text-[11px] text-base-content/50 truncate max-w-[150px]">
-          {activeSelectedFile ? activeSelectedFile.name : `${filteredEntries.length} items`}
+        <span className="text-[11px] text-base-content/60 truncate max-w-[220px]">
+          {activeSelectedFiles.length === 0
+            ? `${filteredEntries.length} items`
+            : activeSelectedFiles.length === 1
+            ? `${activeSelectedFiles[0].name} (${
+                activeSelectedFiles[0].is_dir ? "folder" : formatBytes(activeSelectedFiles[0].size)
+              })`
+            : `${activeSelectedFiles.length} items selected (${formatBytes(
+                activeSelectedFiles.reduce((acc, cur) => acc + (cur.is_dir ? 0 : cur.size), 0)
+              )})`}
         </span>
 
-        {activeSelectedFile && (
+        {activeSelectedFiles.length > 0 && (
           <div className="flex items-center gap-1">
-            {!activeSelectedFile.is_dir && onOpenFile && (
+            {singleSelectedFile && !singleSelectedFile.is_dir && onOpenFile && (
               <button
                 type="button"
-                onClick={() => onOpenFile(activeSelectedFile)}
+                onClick={() => onOpenFile(singleSelectedFile)}
                 className="btn btn-ghost btn-xs text-info gap-1"
                 title="Edit in In-App Editor"
               >
@@ -390,32 +484,41 @@ export function FileExplorerPane({
             {onTransfer && (
               <button
                 type="button"
-                onClick={() => onTransfer(activeSelectedFile)}
+                onClick={() => onTransfer(activeSelectedFiles)}
                 className="btn btn-primary btn-xs gap-1"
               >
                 <CornerDownRight className="w-3 h-3" />
-                <span>{transferLabel}</span>
+                <span>
+                  {transferLabel}
+                  {activeSelectedFiles.length > 1 ? ` (${activeSelectedFiles.length})` : ""}
+                </span>
+              </button>
+            )}
+
+            {singleSelectedFile && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRenameTarget(singleSelectedFile);
+                  setNewFileName(singleSelectedFile.name);
+                  setIsRenameOpen(true);
+                }}
+                className="btn btn-ghost btn-xs btn-square text-base-content/70 hover:text-base-content"
+                title="Rename"
+              >
+                <FilePenLine className="w-3 h-3" />
               </button>
             )}
 
             <button
               type="button"
-              onClick={() => {
-                setRenameTarget(activeSelectedFile);
-                setNewFileName(activeSelectedFile.name);
-                setIsRenameOpen(true);
-              }}
-              className="btn btn-ghost btn-xs btn-square text-base-content/70 hover:text-base-content"
-              title="Rename"
-            >
-              <FilePenLine className="w-3 h-3" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleOpenDelete(activeSelectedFile)}
+              onClick={() => handleOpenDelete(activeSelectedFiles)}
               className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/20"
-              title="Delete"
+              title={
+                activeSelectedFiles.length > 1
+                  ? `Delete ${activeSelectedFiles.length} items`
+                  : "Delete item"
+              }
             >
               <Trash2 className="w-3 h-3" />
             </button>
@@ -424,22 +527,34 @@ export function FileExplorerPane({
       </div>
 
       {/* Delete Confirmation Modal (Native In-App) */}
-      {isDeleteOpen && fileToDelete && (
+      {isDeleteOpen && filesToDelete.length > 0 && (
         <div className="modal modal-open z-50">
           <div className="modal-box bg-base-200 border border-base-300 max-w-sm shadow-2xl">
             <h4 className="font-bold text-sm mb-2 text-error flex items-center gap-2">
-              <Trash2 className="w-4 h-4" /> Delete {fileToDelete.is_dir ? "Folder" : "File"}
+              <Trash2 className="w-4 h-4" />
+              {filesToDelete.length === 1
+                ? `Delete ${filesToDelete[0].is_dir ? "Folder" : "File"}`
+                : `Delete ${filesToDelete.length} Items`}
             </h4>
             <p className="text-xs text-base-content/80 mt-1 leading-relaxed">
-              Are you sure you want to permanently delete{" "}
-              <span className="font-mono font-bold text-base-content">
-                &ldquo;{fileToDelete.name}&rdquo;
-              </span>
-              ?
+              {filesToDelete.length === 1 ? (
+                <>
+                  Are you sure you want to permanently delete{" "}
+                  <span className="font-mono font-bold text-base-content">
+                    &ldquo;{filesToDelete[0].name}&rdquo;
+                  </span>
+                  ?
+                </>
+              ) : (
+                <>
+                  Are you sure you want to permanently delete these{" "}
+                  <span className="font-bold text-base-content">{filesToDelete.length}</span> items?
+                </>
+              )}
             </p>
-            {fileToDelete.is_dir && (
+            {filesToDelete.some((f) => f.is_dir) && (
               <p className="text-[11px] text-warning mt-1.5">
-                Warning: This folder and all its contents will be permanently removed.
+                Warning: Any selected folders and their contents will be permanently removed.
               </p>
             )}
             <div className="modal-action mt-4 gap-2">
@@ -447,7 +562,7 @@ export function FileExplorerPane({
                 type="button"
                 onClick={() => {
                   setIsDeleteOpen(false);
-                  setFileToDelete(null);
+                  setFilesToDelete([]);
                 }}
                 disabled={isDeleting}
                 className="btn btn-xs btn-ghost border border-base-300"
@@ -469,7 +584,7 @@ export function FileExplorerPane({
             onClick={() => {
               if (!isDeleting) {
                 setIsDeleteOpen(false);
-                setFileToDelete(null);
+                setFilesToDelete([]);
               }
             }}
           />
