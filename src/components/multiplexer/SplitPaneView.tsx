@@ -85,6 +85,7 @@ export function SplitPaneView({
     >
       {/* First split branch/leaf */}
       <div
+        key={`first-${node.first.id}`}
         style={{ flex: `${firstRatio} 1 0%` }}
         className="overflow-hidden min-w-[100px] min-h-[60px]"
       >
@@ -123,6 +124,7 @@ export function SplitPaneView({
 
       {/* Second split branch/leaf */}
       <div
+        key={`second-${node.second.id}`}
         style={{ flex: `${secondRatio} 1 0%` }}
         className="overflow-hidden min-w-[100px] min-h-[60px]"
       >

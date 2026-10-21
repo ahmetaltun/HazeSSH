@@ -10,6 +10,7 @@ import type { TerminalPane } from "@/types/terminal";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { XTermTerminal } from "@/components/terminal/XTermTerminal";
+import { PaneHostSelector } from "@/components/terminal/PaneHostSelector";
 
 interface PaneContainerProps {
   readonly pane: TerminalPane;
@@ -22,8 +23,15 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
   const { isBroadcastEnabled, isPaneExcluded, togglePaneExclusion } = useBroadcastStore();
 
   const isExcludedFromBroadcast = isPaneExcluded(pane.id);
+  const isConfigured = Boolean(
+    pane.hostId || pane.hostname || pane.serialOptions || pane.telnetOptions
+  );
 
   const getStatusBadge = () => {
+    if (!isConfigured) {
+      return <span className="badge badge-ghost badge-xs font-mono">select host</span>;
+    }
+
     switch (pane.status) {
       case "connecting":
         return <span className="badge badge-warning badge-xs">connecting...</span>;
@@ -41,7 +49,7 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
       case "disconnected":
         return <span className="badge badge-neutral badge-xs">disconnected</span>;
       default:
-        return <span className="badge badge-neutral badge-xs">local</span>;
+        return <span className="badge badge-neutral badge-xs">idle</span>;
     }
   };
 
@@ -73,12 +81,12 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
         <div className="flex items-center gap-2 overflow-hidden">
           <Terminal className={`w-3.5 h-3.5 shrink-0 ${isFocused ? "text-primary" : "text-base-content/40"}`} />
           <span className="font-mono text-xs font-semibold truncate max-w-[200px]">
-            {pane.title}
+            {isConfigured ? pane.title : "New Split Pane"}
           </span>
           {getStatusBadge()}
 
           {/* Broadcast Exclusion Status Toggle */}
-          {isBroadcastEnabled && (
+          {isBroadcastEnabled && isConfigured && (
             <button
               type="button"
               onClick={(e) => {
@@ -117,6 +125,7 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              setActivePane(tabId, pane.id);
               splitActivePane("horizontal");
             }}
             className="btn btn-ghost btn-xs btn-square p-0.5 hover:bg-base-300 text-base-content/60 hover:text-base-content"
@@ -128,6 +137,7 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              setActivePane(tabId, pane.id);
               splitActivePane("vertical");
             }}
             className="btn btn-ghost btn-xs btn-square p-0.5 hover:bg-base-300 text-base-content/60 hover:text-base-content"
@@ -149,9 +159,13 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
         </div>
       </div>
 
-      {/* Pane Terminal Canvas (xterm.js mount area) */}
-      <div className="flex-1 w-full h-full min-h-0 bg-base-100 relative overflow-hidden">
-        <XTermTerminal pane={pane} isFocused={isFocused} />
+      {/* Pane Content: Terminal Canvas or Host Selector */}
+      <div className="flex-1 w-full min-h-0 bg-base-100 relative overflow-hidden">
+        {isConfigured ? (
+          <XTermTerminal pane={pane} isFocused={isFocused} />
+        ) : (
+          <PaneHostSelector pane={pane} tabId={tabId} />
+        )}
       </div>
     </div>
   );

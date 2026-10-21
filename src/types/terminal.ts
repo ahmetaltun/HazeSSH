@@ -16,6 +16,14 @@ export interface TerminalPane {
   readonly status: "idle" | "connecting" | "connected" | "disconnected" | "error";
   readonly errorMessage?: string;
   readonly createdAt: number;
+  readonly sourceHost?: {
+    readonly hostId?: string;
+    readonly hostname?: string;
+    readonly port?: number;
+    readonly username?: string;
+    readonly title?: string;
+    readonly connectionType?: "ssh" | "serial" | "telnet";
+  };
 }
 
 export interface SplitBranchNode {

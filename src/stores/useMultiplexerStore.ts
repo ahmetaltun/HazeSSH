@@ -8,8 +8,16 @@ import type {
   SplitDirection,
 } from "@/types/terminal";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { terminalSessionManager } from "@/services/terminalSessionManager";
 
 // Helper utilities for immutable recursive split-tree transformations
+
+function collectPaneIds(node: SplitNode): string[] {
+  if (node.type === "leaf") {
+    return [node.pane.id];
+  }
+  return [...collectPaneIds(node.first), ...collectPaneIds(node.second)];
+}
 
 function createLeaf(pane: TerminalPane): SplitLeafNode {
   return {
@@ -135,6 +143,7 @@ interface MultiplexerState {
   readonly splitActivePane: (direction: SplitDirection, newPaneData?: Partial<TerminalPane>) => string | null;
   readonly closePane: (tabId: string, paneId: string) => void;
   readonly setActivePane: (tabId: string, paneId: string) => void;
+  readonly updatePane: (paneId: string, updates: Partial<TerminalPane>) => void;
   readonly updatePaneStatus: (paneId: string, status: TerminalPane["status"], errorMessage?: string) => void;
   readonly updateBranchRatio: (tabId: string, branchId: string, ratio: number) => void;
   readonly getActiveTab: () => WorkspaceTab | null;
@@ -177,6 +186,14 @@ export const useMultiplexerStore = create<MultiplexerState>((set, get) => ({
   },
 
   closeTab: (tabId) => {
+    const tabToClose = get().tabs.find((t) => t.id === tabId);
+    if (tabToClose) {
+      const paneIds = collectPaneIds(tabToClose.rootNode);
+      for (const pid of paneIds) {
+        void terminalSessionManager.destroySession(pid);
+      }
+    }
+
     set((state) => {
       const remainingTabs = state.tabs.filter((t) => t.id !== tabId);
       let nextActiveId = state.activeTabId;
@@ -208,15 +225,32 @@ export const useMultiplexerStore = create<MultiplexerState>((set, get) => ({
     const activeTab = state.getActiveTab();
     if (!activeTab) return null;
 
+    const currentPane = state.getActivePane();
+
     const newPaneId = `pane_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newPane: TerminalPane = {
       id: newPaneId,
-      title: newPaneData?.title || newPaneData?.hostname || "Terminal",
+      title: newPaneData?.title || (newPaneData?.hostname ? newPaneData.hostname : "New Terminal"),
       hostId: newPaneData?.hostId,
       hostname: newPaneData?.hostname,
+      port: newPaneData?.port,
       username: newPaneData?.username,
-      status: newPaneData?.status || "idle",
+      connectionType: newPaneData?.connectionType,
+      serialOptions: newPaneData?.serialOptions,
+      telnetOptions: newPaneData?.telnetOptions,
+      status: newPaneData?.status || (newPaneData?.hostname || newPaneData?.hostId ? "connecting" : "idle"),
       createdAt: Date.now(),
+      sourceHost:
+        currentPane && (currentPane.hostname || currentPane.hostId)
+          ? {
+              hostId: currentPane.hostId,
+              hostname: currentPane.hostname,
+              port: currentPane.port,
+              username: currentPane.username,
+              title: currentPane.title,
+              connectionType: currentPane.connectionType,
+            }
+          : undefined,
     };
 
     const updatedRoot = splitTargetPane(
@@ -242,6 +276,8 @@ export const useMultiplexerStore = create<MultiplexerState>((set, get) => ({
   },
 
   closePane: (tabId, paneId) => {
+    void terminalSessionManager.destroySession(paneId);
+
     const state = get();
     const tab = state.tabs.find((t) => t.id === tabId);
     if (!tab) return;
@@ -279,6 +315,18 @@ export const useMultiplexerStore = create<MultiplexerState>((set, get) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId ? { ...t, activePaneId: paneId } : t
       ),
+    }));
+  },
+
+  updatePane: (paneId, updates) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) => ({
+        ...tab,
+        rootNode: updatePaneInTree(tab.rootNode, paneId, (pane) => ({
+          ...pane,
+          ...updates,
+        })),
+      })),
     }));
   },
 
