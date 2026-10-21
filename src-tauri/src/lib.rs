@@ -5,9 +5,12 @@ pub mod commands;
 pub mod crypto;
 pub mod db;
 pub mod models;
+pub mod monitor;
+pub mod serial;
 pub mod sftp;
 pub mod ssh;
 pub mod ssh_config_parser;
+pub mod telnet;
 pub mod third_party_importer;
 pub mod tunnels;
 
@@ -45,6 +48,8 @@ pub fn run() {
                 active_key: Mutex::new(None),
                 ssh_manager: Arc::new(SshManager::new()),
                 tunnel_manager: Arc::new(TunnelManager::new()),
+                serial_manager: Arc::new(serial::SerialSessionManager::new()),
+                telnet_manager: Arc::new(telnet::TelnetSessionManager::new()),
             });
 
             Ok(())
@@ -97,6 +102,14 @@ pub fn run() {
             commands::termius_import,
             commands::putty_parse,
             commands::putty_import,
+            commands::host_fetch_metrics,
+            commands::serial_list_ports,
+            commands::serial_connect,
+            commands::serial_write,
+            commands::serial_disconnect,
+            commands::telnet_connect,
+            commands::telnet_write,
+            commands::telnet_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

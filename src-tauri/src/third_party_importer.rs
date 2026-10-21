@@ -56,19 +56,19 @@ pub fn parse_termius_json(
     };
 
     // Helper to process a group JSON object
-    let mut process_group = |obj: &serde_json::Map<String, Value>| {
+    let process_group = |obj: &serde_json::Map<String, Value>, group_map: &mut HashMap<String, String>| {
         let label = get_first_str(obj, &["label", "name", "title"]);
         let id = get_first_str(obj, &["id", "_id", "uuid"]);
         if let (Some(l), Some(i)) = (label, id) {
-            group_id_map.insert(i, l);
+            group_map.insert(i, l);
         }
     };
 
     // Helper to process a host JSON object
-    let mut process_host = |obj: &serde_json::Map<String, Value>,
-                            existing: &[Host],
-                            candidates: &mut Vec<SshConfigHostCandidate>,
-                            group_map: &HashMap<String, String>| {
+    let process_host = |obj: &serde_json::Map<String, Value>,
+                        existing: &[Host],
+                        candidates: &mut Vec<SshConfigHostCandidate>,
+                        group_map: &HashMap<String, String>| {
         let label = get_first_str(obj, &["label", "name", "alias"])
             .unwrap_or_else(|| "Unnamed Host".to_string());
 
@@ -113,8 +113,8 @@ pub fn parse_termius_json(
     };
 
     // Helper to process a snippet JSON object
-    let mut process_snippet = |obj: &serde_json::Map<String, Value>,
-                               snippets: &mut Vec<CreateSnippetInput>| {
+    let process_snippet = |obj: &serde_json::Map<String, Value>,
+                           snippets: &mut Vec<CreateSnippetInput>| {
         let title = get_first_str(obj, &["label", "name", "title"])
             .unwrap_or_else(|| "Untitled Snippet".to_string());
 
@@ -136,7 +136,7 @@ pub fn parse_termius_json(
         if let Some(groups_arr) = root_obj.get("groups").and_then(|v| v.as_array()) {
             for item in groups_arr {
                 if let Some(obj) = item.as_object() {
-                    process_group(obj);
+                    process_group(obj, &mut group_id_map);
                 }
             }
         }
@@ -165,7 +165,7 @@ pub fn parse_termius_json(
                 if let Some(obj) = item.as_object() {
                     let entry_type = get_first_str(obj, &["_type", "type"]).unwrap_or_default();
                     match entry_type.as_str() {
-                        "group" | "folder" => process_group(obj),
+                        "group" | "folder" => process_group(obj, &mut group_id_map),
                         "snippet" => process_snippet(obj, &mut snippets),
                         "host" | _ => {
                             if obj.contains_key("address") || obj.contains_key("hostname") {
@@ -182,7 +182,7 @@ pub fn parse_termius_json(
             if let Some(obj) = item.as_object() {
                 let entry_type = get_first_str(obj, &["_type", "type"]).unwrap_or_default();
                 match entry_type.as_str() {
-                    "group" | "folder" => process_group(obj),
+                    "group" | "folder" => process_group(obj, &mut group_id_map),
                     "snippet" => process_snippet(obj, &mut snippets),
                     "host" | _ => {
                         if obj.contains_key("address") || obj.contains_key("hostname") {

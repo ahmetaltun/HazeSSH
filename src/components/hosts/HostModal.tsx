@@ -29,7 +29,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
   const [port, setPort] = useState(22);
   const [username, setUsername] = useState("");
   const [groupId, setGroupId] = useState("");
-  const [authType, setAuthType] = useState<"identity" | "interactive" | "agent">("identity");
+  const [authType, setAuthType] = useState<"identity" | "interactive" | "agent" | "telnet">("identity");
   const [identityId, setIdentityId] = useState("");
   const [jumpHostId, setJumpHostId] = useState("");
   const [startupSnippetId, setStartupSnippetId] = useState("");
@@ -59,7 +59,9 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
       setPort(hostToEdit.port);
       setUsername(hostToEdit.username || "");
       setGroupId(hostToEdit.group_id || "");
-      setAuthType(hostToEdit.auth_type as "identity" | "interactive" | "agent");
+      setAuthType(
+        (hostToEdit.auth_type as "identity" | "interactive" | "agent" | "telnet") || "identity"
+      );
       setIdentityId(hostToEdit.identity_id || "");
       setJumpHostId(hostToEdit.jump_host_id || "");
       setStartupSnippetId(hostToEdit.startup_snippet_id || "");
@@ -270,16 +272,25 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
 
               <div className="form-control">
                 <label className="label py-1">
-                  <span className="label-text text-xs font-semibold">Authentication</span>
+                  <span className="label-text text-xs font-semibold">Protocol / Auth</span>
                 </label>
                 <select
                   value={authType}
-                  onChange={(e) => setAuthType(e.target.value as "identity" | "interactive" | "agent")}
+                  onChange={(e) => {
+                    const newType = e.target.value as "identity" | "interactive" | "agent" | "telnet";
+                    setAuthType(newType);
+                    if (newType === "telnet" && port === 22) {
+                      setPort(23);
+                    } else if (newType !== "telnet" && port === 23) {
+                      setPort(22);
+                    }
+                  }}
                   className="select select-sm select-bordered w-full bg-base-100 text-xs"
                 >
-                  <option value="identity">Vault Identity</option>
-                  <option value="agent">Local SSH Agent</option>
-                  <option value="interactive">Prompt on Connect</option>
+                  <option value="identity">SSH (Vault Identity)</option>
+                  <option value="agent">SSH (Local Agent)</option>
+                  <option value="interactive">SSH (Prompt on Connect)</option>
+                  <option value="telnet">Telnet (Legacy RFC 854)</option>
                 </select>
               </div>
             </div>
@@ -314,29 +325,31 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
               </div>
             )}
 
-            {/* Bastion / Jump Host */}
-            <div className="form-control">
-              <label className="label py-1">
-                <span className="label-text text-xs font-semibold flex items-center gap-1.5">
-                  <Network className="w-3.5 h-3.5 text-secondary" />
-                  Jump Host / Bastion (ProxyJump)
-                </span>
-              </label>
-              <select
-                value={jumpHostId}
-                onChange={(e) => setJumpHostId(e.target.value)}
-                className="select select-sm select-bordered w-full bg-base-100 text-xs"
-              >
-                <option value="">Direct Connection (No Jump Host)</option>
-                {hosts
-                  .filter((h) => !hostToEdit || h.id !== hostToEdit.id)
-                  .map((h) => (
-                    <option key={h.id} value={h.id}>
-                      via {h.label} ({h.hostname}:{h.port})
-                    </option>
-                  ))}
-              </select>
-            </div>
+            {/* Bastion / Jump Host (SSH only) */}
+            {authType !== "telnet" && (
+              <div className="form-control">
+                <label className="label py-1">
+                  <span className="label-text text-xs font-semibold flex items-center gap-1.5">
+                    <Network className="w-3.5 h-3.5 text-secondary" />
+                    Jump Host / Bastion (ProxyJump)
+                  </span>
+                </label>
+                <select
+                  value={jumpHostId}
+                  onChange={(e) => setJumpHostId(e.target.value)}
+                  className="select select-sm select-bordered w-full bg-base-100 text-xs"
+                >
+                  <option value="">Direct Connection (No Jump Host)</option>
+                  {hosts
+                    .filter((h) => !hostToEdit || h.id !== hostToEdit.id)
+                    .map((h) => (
+                      <option key={h.id} value={h.id}>
+                        via {h.label} ({h.hostname}:{h.port})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
 
             {/* Startup Snippet (Run on Connect) */}
             <div className="form-control">

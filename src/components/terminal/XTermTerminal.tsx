@@ -65,101 +65,150 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
       const sessionId = sessionIdRef.current;
       if (!sessionId) return;
       const bytes = Array.from(new TextEncoder().encode(data));
-      api.sshWrite(sessionId, bytes).catch((err) => {
-        console.error("Failed to send terminal input:", err);
-      });
+      if (pane.connectionType === "serial") {
+        api.serialWrite(sessionId, bytes).catch((err) => {
+          console.error("Failed to send serial input:", err);
+        });
+      } else if (pane.connectionType === "telnet") {
+        api.telnetWrite(sessionId, bytes).catch((err) => {
+          console.error("Failed to send telnet input:", err);
+        });
+      } else {
+        api.sshWrite(sessionId, bytes).catch((err) => {
+          console.error("Failed to send terminal input:", err);
+        });
+      }
     });
 
-    // 5. Connect to SSH backend
+    // 5. Connect to Backend (SSH or Hardware Serial)
     let isDisposed = false;
 
-    const connectToSsh = async () => {
+    const connectToBackend = async () => {
       try {
-        term.writeln("\x1b[90m[Haze SSH] Initializing SSH session...\x1b[0m");
+        const handleTerminalEvent = (event: SshEvent) => {
+          if (isDisposed) return;
 
-        const cols = term.cols || 80;
-        const rows = term.rows || 24;
-
-        const sessionId = await api.sshConnect({
-          hostId: pane.hostId,
-          hostname: pane.hostname || "127.0.0.1",
-          port: pane.port || 22,
-          username: pane.username,
-          cols,
-          rows,
-          onEvent: (event: SshEvent) => {
-            if (isDisposed) return;
-
-            switch (event.type) {
-              case "Data": {
-                const uint8 = new Uint8Array(event.payload);
-                term.write(uint8);
-                break;
+          switch (event.type) {
+            case "Data": {
+              const uint8 = new Uint8Array(event.payload);
+              term.write(uint8);
+              break;
+            }
+            case "StatusChange": {
+              setConnectionStatus(event.payload.status);
+              if (event.payload.message) {
+                term.writeln(`\r\n\x1b[33m[Haze] ${event.payload.message}\x1b[0m`);
               }
-              case "StatusChange": {
-                setConnectionStatus(event.payload.status);
-                if (event.payload.message) {
-                  term.writeln(`\r\n\x1b[33m[Haze SSH] ${event.payload.message}\x1b[0m`);
-                }
 
-                // Run startup snippet on successful connection if configured
-                if (
-                  event.payload.status === "connected" &&
-                  !hasRunStartupSnippetRef.current &&
-                  pane.hostId
-                ) {
-                  hasRunStartupSnippetRef.current = true;
-                  const host = useHostStore
+              // Run startup snippet on successful connection if configured (SSH only)
+              if (
+                event.payload.status === "connected" &&
+                !hasRunStartupSnippetRef.current &&
+                pane.hostId &&
+                pane.connectionType !== "serial"
+              ) {
+                hasRunStartupSnippetRef.current = true;
+                const host = useHostStore
+                  .getState()
+                  .hosts.find((h) => h.id === pane.hostId);
+
+                if (host?.startup_snippet_id) {
+                  const snippet = useSnippetStore
                     .getState()
-                    .hosts.find((h) => h.id === pane.hostId);
+                    .snippets.find((s) => s.id === host.startup_snippet_id);
 
-                  if (host?.startup_snippet_id) {
-                    const snippet = useSnippetStore
-                      .getState()
-                      .snippets.find((s) => s.id === host.startup_snippet_id);
+                  if (snippet) {
+                    const { resolvedScript } = resolveHostVariables(snippet.script, {
+                      hostname: host.hostname,
+                      username: host.username,
+                      port: host.port,
+                      label: host.label,
+                    });
 
-                    if (snippet) {
-                      const { resolvedScript } = resolveHostVariables(snippet.script, {
-                        hostname: host.hostname,
-                        username: host.username,
-                        port: host.port,
-                        label: host.label,
-                      });
+                    term.writeln(
+                      `\r\n\x1b[36m[Haze SSH] Executing startup snippet: ${snippet.title}...\x1b[0m\r\n`
+                    );
 
-                      term.writeln(
-                        `\r\n\x1b[36m[Haze SSH] Executing startup snippet: ${snippet.title}...\x1b[0m\r\n`
-                      );
+                    const toSend = resolvedScript.endsWith("\n")
+                      ? resolvedScript
+                      : `${resolvedScript}\n`;
+                    const bytes = Array.from(new TextEncoder().encode(toSend));
 
-                      const toSend = resolvedScript.endsWith("\n")
-                        ? resolvedScript
-                        : `${resolvedScript}\n`;
-                      const bytes = Array.from(new TextEncoder().encode(toSend));
-
-                      setTimeout(() => {
-                        if (!isDisposed && sessionIdRef.current) {
-                          api.sshWrite(sessionIdRef.current, bytes).catch((err) => {
-                            console.error("Failed to run startup snippet:", err);
-                          });
-                        }
-                      }, 600);
-                    }
+                    setTimeout(() => {
+                      if (!isDisposed && sessionIdRef.current) {
+                        api.sshWrite(sessionIdRef.current, bytes).catch((err) => {
+                          console.error("Failed to run startup snippet:", err);
+                        });
+                      }
+                    }, 600);
                   }
                 }
-                break;
               }
-              case "Error": {
-                setConnectionStatus("error");
-                term.writeln(`\r\n\x1b[31m[Haze SSH Error] ${event.payload}\x1b[0m\r\n`);
-                break;
-              }
-              case "Exit": {
-                setConnectionStatus("disconnected");
-                term.writeln(`\r\n\x1b[90m[Process finished with exit code ${event.payload.code}]\x1b[0m\r\n`);
-                break;
-              }
+              break;
             }
-          },
-        });
+            case "Error": {
+              setConnectionStatus("error");
+              term.writeln(`\r\n\x1b[31m[Haze Error] ${event.payload}\x1b[0m\r\n`);
+              break;
+            }
+            case "Exit": {
+              setConnectionStatus("disconnected");
+              term.writeln(`\r\n\x1b[90m[Session closed with exit code ${event.payload.code}]\x1b[0m\r\n`);
+              break;
+            }
+          }
+        };
+
+        let sessionId: string;
+
+        if (pane.connectionType === "serial") {
+          term.writeln(
+            `\x1b[90m[Haze Serial] Opening hardware port ${
+              pane.serialOptions?.port_name || pane.title
+            } at ${pane.serialOptions?.baud_rate || 115200} baud...\x1b[0m`
+          );
+
+          sessionId = await api.serialConnect({
+            options: pane.serialOptions || {
+              port_name: pane.title,
+              baud_rate: 115200,
+            },
+            onEvent: handleTerminalEvent,
+          });
+        } else if (pane.connectionType === "telnet") {
+          const cols = term.cols || 80;
+          const rows = term.rows || 24;
+          const host = pane.telnetOptions?.host || pane.hostname || "127.0.0.1";
+          const port = pane.telnetOptions?.port || pane.port || 23;
+
+          term.writeln(`\x1b[90m[Haze Telnet] Connecting to ${host}:${port}...\x1b[0m`);
+
+          sessionId = await api.telnetConnect({
+            options: pane.telnetOptions || {
+              host,
+              port,
+              terminal_type: "xterm-256color",
+              cols,
+              rows,
+            },
+            onEvent: handleTerminalEvent,
+          });
+        } else {
+          term.writeln("\x1b[90m[Haze SSH] Initializing SSH session...\x1b[0m");
+
+          const cols = term.cols || 80;
+          const rows = term.rows || 24;
+
+          sessionId = await api.sshConnect({
+            hostId: pane.hostId,
+            hostname: pane.hostname || "127.0.0.1",
+            port: pane.port || 22,
+            username: pane.username,
+            cols,
+            rows,
+            onEvent: handleTerminalEvent,
+          });
+        }
 
         sessionIdRef.current = sessionId;
 
@@ -174,18 +223,24 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
           sendCommand: async (command: string) => {
             const toSend = command.endsWith("\n") ? command : `${command}\n`;
             const bytes = Array.from(new TextEncoder().encode(toSend));
-            await api.sshWrite(sessionId, bytes);
+            if (pane.connectionType === "serial") {
+              await api.serialWrite(sessionId, bytes);
+            } else if (pane.connectionType === "telnet") {
+              await api.telnetWrite(sessionId, bytes);
+            } else {
+              await api.sshWrite(sessionId, bytes);
+            }
           },
         });
       } catch (err: unknown) {
         if (isDisposed) return;
         const message = err instanceof Error ? err.message : String(err);
         setConnectionStatus("error");
-        term.writeln(`\r\n\x1b[31m[Haze SSH Connection Failed] ${message}\x1b[0m\r\n`);
+        term.writeln(`\r\n\x1b[31m[Haze Connection Failed] ${message}\x1b[0m\r\n`);
       }
     };
 
-    connectToSsh();
+    connectToBackend();
 
     // 6. Handle container resize
     const resizeObserver = new ResizeObserver(() => {
@@ -193,7 +248,13 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
       try {
         fitAddon.fit();
         const sessionId = sessionIdRef.current;
-        if (sessionId && term.cols && term.rows) {
+        if (
+          sessionId &&
+          term.cols &&
+          term.rows &&
+          pane.connectionType !== "serial" &&
+          pane.connectionType !== "telnet"
+        ) {
           api.sshResize(sessionId, term.cols, term.rows).catch((err) => {
             console.warn("Resize notification failed:", err);
           });
@@ -213,7 +274,13 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
 
       const sessionId = sessionIdRef.current;
       if (sessionId) {
-        api.sshDisconnect(sessionId).catch(() => {});
+        if (pane.connectionType === "serial") {
+          api.serialDisconnect(sessionId).catch(() => {});
+        } else if (pane.connectionType === "telnet") {
+          api.telnetDisconnect(sessionId).catch(() => {});
+        } else {
+          api.sshDisconnect(sessionId).catch(() => {});
+        }
       }
 
       useTerminalRegistryStore.getState().unregisterSession(pane.id);
@@ -224,7 +291,16 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
       fitAddonRef.current = null;
       sessionIdRef.current = null;
     };
-  }, [pane.id, pane.hostId, pane.hostname, pane.port, pane.username]);
+  }, [
+    pane.id,
+    pane.hostId,
+    pane.hostname,
+    pane.port,
+    pane.username,
+    pane.connectionType,
+    pane.serialOptions,
+    pane.telnetOptions,
+  ]);
 
   // Sync active pane in registry when focused
   useEffect(() => {

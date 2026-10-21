@@ -238,3 +238,60 @@ pub struct ImportTermiusInput {
     pub snippets: Vec<CreateSnippetInput>,
     pub import_keys_as_identities: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerMetrics {
+    pub host_id: String,
+    pub os_name: Option<String>,
+    pub uptime_seconds: Option<u64>,
+    pub uptime_formatted: Option<String>,
+    pub cpu_cores: u32,
+    pub load_1m: Option<f32>,
+    pub load_5m: Option<f32>,
+    pub load_15m: Option<f32>,
+    pub cpu_usage_percent: Option<f32>,
+    pub memory_total_bytes: Option<u64>,
+    pub memory_used_bytes: Option<u64>,
+    pub memory_free_bytes: Option<u64>,
+    pub memory_usage_percent: Option<f32>,
+    pub disk_total_bytes: Option<u64>,
+    pub disk_used_bytes: Option<u64>,
+    pub disk_free_bytes: Option<u64>,
+    pub disk_usage_percent: Option<f32>,
+    pub disk_mount_path: Option<String>,
+    pub timestamp: i64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerialPortInfo {
+    pub port_name: String,
+    pub port_type: String, // "usb", "pci", "bluetooth", "unknown"
+    pub manufacturer: Option<String>,
+    pub product: Option<String>,
+    pub serial_number: Option<String>,
+    pub vid: Option<u16>,
+    pub pid: Option<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerialConnectOptions {
+    pub port_name: String,
+    pub baud_rate: u32,
+    pub data_bits: Option<u8>,
+    pub parity: Option<String>,
+    pub stop_bits: Option<u8>,
+    pub flow_control: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelnetConnectOptions {
+    pub host: String,
+    pub port: u16,
+    pub terminal_type: Option<String>,
+    pub cols: Option<u16>,
+    pub rows: Option<u16>,
+}
+
+
+

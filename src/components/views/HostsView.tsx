@@ -14,14 +14,18 @@ import {
   Network,
   KeyRound,
   MoreVertical,
+  Activity,
+  RefreshCw,
 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { useServerMonitorStore } from "@/stores/useServerMonitorStore";
 import type { Host } from "@/types/host";
 import { HostModal } from "@/components/hosts/HostModal";
 import { GroupModal } from "@/components/hosts/GroupModal";
 import { IdentityModal } from "@/components/identities/IdentityModal";
+import { ServerHealthGauges } from "@/components/hosts/ServerHealthGauges";
 
 export function HostsView() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -38,6 +42,7 @@ export function HostsView() {
   const { hosts, groups, identities, deleteHost, deleteGroup } = useHostStore();
   const { openTab } = useMultiplexerStore();
   const { setView } = useLayoutStore();
+  const { fetchAllMetrics, isAutoPolling, toggleAutoPolling } = useServerMonitorStore();
 
   // All unique tags across all hosts
   const allTags = useMemo(() => {
@@ -77,6 +82,25 @@ export function HostsView() {
   }, [hosts, selectedGroupId, selectedTag, searchTerm]);
 
   const handleConnect = (host: Host) => {
+    if (host.auth_type === "telnet") {
+      openTab(
+        {
+          title: `Telnet: ${host.label}`,
+          connectionType: "telnet",
+          hostname: host.hostname,
+          port: host.port,
+          telnetOptions: {
+            host: host.hostname,
+            port: host.port,
+            terminal_type: "xterm-256color",
+          },
+          status: "connecting",
+        },
+        `Telnet: ${host.label}`
+      );
+      return;
+    }
+
     openTab(
       {
         hostId: host.id,
@@ -241,6 +265,32 @@ export function HostsView() {
 
           {/* Right Controls */}
           <div className="flex items-center gap-2">
+            {/* Server Monitor Controls */}
+            {filteredHosts.length > 0 && (
+              <div className="flex items-center gap-1.5 mr-1">
+                <button
+                  type="button"
+                  onClick={() => fetchAllMetrics(filteredHosts.map((h) => h.id))}
+                  className="btn btn-xs btn-ghost border border-base-300 gap-1 text-[11px] text-base-content/75 hover:text-base-content"
+                  title="Probe server health metrics for all visible hosts"
+                >
+                  <Activity className="w-3 h-3 text-primary" />
+                  <span>Probe All</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleAutoPolling(() => filteredHosts.map((h) => h.id))}
+                  className={`btn btn-xs gap-1 text-[11px] border border-base-300 ${
+                    isAutoPolling ? "btn-success text-white" : "btn-ghost text-base-content/75"
+                  }`}
+                  title="Toggle 30-second automated telemetry polling for visible hosts"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isAutoPolling ? "animate-spin" : ""}`} />
+                  <span>{isAutoPolling ? "Live 30s" : "Auto-Probe"}</span>
+                </button>
+              </div>
+            )}
+
             {/* View Mode Toggle */}
             <div className="join bg-base-200 p-0.5 rounded-lg border border-base-300">
               <button
@@ -433,12 +483,17 @@ export function HostsView() {
                           ))}
                         </div>
                       )}
+
+                      {/* Server Health Gauges */}
+                      <div className="pt-1">
+                        <ServerHealthGauges hostId={host.id} variant="card" />
+                      </div>
                     </div>
 
                     {/* Card Footer */}
                     <div className="px-4 py-2.5 border-t border-base-300/40 bg-base-200/80 flex items-center justify-between rounded-b-2xl">
-                      <span className="text-[10px] text-base-content/40 font-mono">
-                        SSH2
+                      <span className="text-[10px] text-base-content/40 font-mono uppercase">
+                        {host.auth_type === "telnet" ? "Telnet" : "SSH2"}
                       </span>
                       <button
                         type="button"
@@ -466,6 +521,7 @@ export function HostsView() {
                     <th>Auth</th>
                     <th>Jump Host</th>
                     <th>Tags</th>
+                    <th>Health</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -508,6 +564,9 @@ export function HostsView() {
                               </span>
                             ))}
                           </div>
+                        </td>
+                        <td>
+                          <ServerHealthGauges hostId={host.id} variant="table" />
                         </td>
                         <td className="text-right">
                           <div className="flex items-center justify-end gap-1.5">

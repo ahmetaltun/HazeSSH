@@ -9,13 +9,17 @@ use crate::db::Database;
 use crate::models::{
     BackupData, BackupEnvelope, BackupSummary, CreateGroupInput, CreateHostInput,
     CreateIdentityInput, CreateSnippetInput, CreateTunnelInput, Host, HostGroup, Identity,
-    ImportResultSummary, ImportSshHostsInput, ImportTermiusInput, Snippet,
-    SshConfigHostCandidate, SshConfigParseResult, TermiusParseResult, Tunnel, UpdateHostInput,
-    UpdateSnippetInput, VaultStatus,
+    ImportResultSummary, ImportSshHostsInput, ImportTermiusInput, SerialConnectOptions,
+    SerialPortInfo, ServerMetrics, Snippet, SshConfigHostCandidate, SshConfigParseResult,
+    TelnetConnectOptions, TermiusParseResult, Tunnel, UpdateHostInput, UpdateSnippetInput,
+    VaultStatus,
 };
+use crate::monitor;
+use crate::serial::{self, SerialSessionManager};
 use crate::sftp::{self, FileEntry};
 use crate::ssh::{SshEvent, SshManager};
 use crate::ssh_config_parser;
+use crate::telnet::TelnetSessionManager;
 use crate::third_party_importer;
 use crate::tunnels::{TunnelManager, TunnelRuntimeStatus};
 
@@ -24,6 +28,8 @@ pub struct AppState {
     pub active_key: Mutex<Option<[u8; 32]>>,
     pub ssh_manager: Arc<SshManager>,
     pub tunnel_manager: Arc<TunnelManager>,
+    pub serial_manager: Arc<SerialSessionManager>,
+    pub telnet_manager: Arc<TelnetSessionManager>,
 }
 
 impl AppState {
@@ -762,3 +768,81 @@ pub fn putty_import(
         )
         .map_err(|e| format!("Failed to import PuTTY sessions: {}", e))
 }
+
+#[tauri::command]
+pub async fn host_fetch_metrics(
+    host_id: String,
+    state: State<'_, AppState>,
+) -> Result<ServerMetrics, String> {
+    monitor::fetch_server_metrics(&host_id, &state).await
+}
+
+#[tauri::command]
+pub fn serial_list_ports() -> Result<Vec<SerialPortInfo>, String> {
+    serial::list_serial_ports()
+}
+
+#[tauri::command]
+pub async fn serial_connect(
+    options: SerialConnectOptions,
+    on_event: Channel<SshEvent>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let session_id = Uuid::new_v4().to_string();
+    state
+        .serial_manager
+        .start_session(session_id.clone(), options, on_event)
+        .await?;
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn serial_write(
+    session_id: String,
+    data: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.serial_manager.write(&session_id, data).await
+}
+
+#[tauri::command]
+pub async fn serial_disconnect(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.serial_manager.disconnect(&session_id).await
+}
+
+#[tauri::command]
+pub async fn telnet_connect(
+    options: TelnetConnectOptions,
+    on_event: Channel<SshEvent>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let session_id = Uuid::new_v4().to_string();
+    state
+        .telnet_manager
+        .start_session(session_id.clone(), options, on_event)
+        .await?;
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn telnet_write(
+    session_id: String,
+    data: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.telnet_manager.write(&session_id, data).await
+}
+
+#[tauri::command]
+pub async fn telnet_disconnect(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.telnet_manager.disconnect(&session_id).await
+}
+
+
+

@@ -6,13 +6,19 @@ import {
   Rows2,
   Palette,
   Zap,
+  Cpu,
+  Network,
 } from "lucide-react";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useThemeStore, AVAILABLE_THEMES } from "@/stores/useThemeStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { SerialConnectModal } from "@/components/terminal/SerialConnectModal";
+import { TelnetConnectModal } from "@/components/terminal/TelnetConnectModal";
 
 export function Topbar() {
   const [quickConnectInput, setQuickConnectInput] = useState("");
+  const [isSerialModalOpen, setIsSerialModalOpen] = useState(false);
+  const [isTelnetModalOpen, setIsTelnetModalOpen] = useState(false);
   const { openTab, splitActivePane, activeTabId } = useMultiplexerStore();
   const { currentTheme, setTheme } = useThemeStore();
   const { setCommandPaletteOpen } = useLayoutStore();
@@ -22,9 +28,64 @@ export function Topbar() {
     const query = quickConnectInput.trim();
     if (!query) return;
 
-    // Parse user@host:port pattern
+    // 1. Telnet URL Scheme: telnet://host:port
+    if (query.toLowerCase().startsWith("telnet://")) {
+      const rest = query.slice(9);
+      const [h, p] = rest.split(":");
+      const port = parseInt(p, 10) || 23;
+      openTab(
+        {
+          title: `Telnet: ${h}:${port}`,
+          connectionType: "telnet",
+          hostname: h,
+          port,
+          telnetOptions: { host: h, port },
+          status: "connecting",
+        },
+        `Telnet: ${h}`
+      );
+      setQuickConnectInput("");
+      return;
+    }
+
+    // 2. Serial URL Scheme: serial://port@baud or serial://COM3:115200
+    if (query.toLowerCase().startsWith("serial://")) {
+      const rest = query.slice(9);
+      let portName = rest;
+      let baudRate = 115200;
+
+      if (rest.includes("@")) {
+        const [p, b] = rest.split("@");
+        portName = p;
+        baudRate = parseInt(b, 10) || 115200;
+      } else if (rest.includes(":") && !rest.includes("/")) {
+        const [p, b] = rest.split(":");
+        portName = p;
+        baudRate = parseInt(b, 10) || 115200;
+      }
+
+      const shortName = portName.split("/").pop() || portName;
+      openTab(
+        {
+          title: `Serial: ${shortName} (${baudRate})`,
+          connectionType: "serial",
+          serialOptions: { port_name: portName, baud_rate: baudRate },
+          status: "connecting",
+        },
+        `Serial: ${shortName}`
+      );
+      setQuickConnectInput("");
+      return;
+    }
+
+    // 3. SSH (optional ssh:// scheme) or standard user@host:port
+    let rawSsh = query;
+    if (rawSsh.toLowerCase().startsWith("ssh://")) {
+      rawSsh = rawSsh.slice(6);
+    }
+
     let username: string | undefined;
-    let hostname = query;
+    let hostname = rawSsh;
     let port = 22;
 
     if (hostname.includes("@")) {
@@ -117,6 +178,28 @@ export function Topbar() {
           </div>
         )}
 
+        {/* Serial Console Trigger */}
+        <button
+          type="button"
+          onClick={() => setIsSerialModalOpen(true)}
+          className="btn btn-sm btn-ghost gap-1.5 text-base-content/80 hover:bg-base-100 border border-base-300"
+          title="Connect to Hardware Serial (UART) Console"
+        >
+          <Cpu className="w-4 h-4 text-warning" />
+          <span className="text-xs font-medium">Serial Port</span>
+        </button>
+
+        {/* Telnet Trigger */}
+        <button
+          type="button"
+          onClick={() => setIsTelnetModalOpen(true)}
+          className="btn btn-sm btn-ghost gap-1.5 text-base-content/80 hover:bg-base-100 border border-base-300"
+          title="Connect via Telnet Protocol"
+        >
+          <Network className="w-4 h-4 text-info" />
+          <span className="text-xs font-medium">Telnet</span>
+        </button>
+
         {/* New Terminal Tab */}
         <button
           type="button"
@@ -164,6 +247,20 @@ export function Topbar() {
           </ul>
         </div>
       </div>
+
+      {isSerialModalOpen && (
+        <SerialConnectModal
+          isOpen={true}
+          onClose={() => setIsSerialModalOpen(false)}
+        />
+      )}
+
+      {isTelnetModalOpen && (
+        <TelnetConnectModal
+          isOpen={true}
+          onClose={() => setIsTelnetModalOpen(false)}
+        />
+      )}
     </header>
   );
 }

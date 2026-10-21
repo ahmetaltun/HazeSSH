@@ -23,6 +23,9 @@ import type {
   ImportTermiusInput,
   SshConfigHostCandidate,
 } from "@/types/importer";
+import type { ServerMetrics } from "@/types/monitor";
+import type { SerialPortInfo, SerialConnectOptions } from "@/types/serial";
+import type { TelnetConnectOptions } from "@/types/telnet";
 
 export const api = {
   // --- Vault ---
@@ -245,5 +248,56 @@ export const api = {
 
   puttyImport: async (input: ImportSshHostsInput): Promise<ImportResultSummary> => {
     return await invoke<ImportResultSummary>("putty_import", { input });
+  },
+
+  // --- Server Health Monitor ---
+  hostFetchMetrics: async (hostId: string): Promise<ServerMetrics> => {
+    return await invoke<ServerMetrics>("host_fetch_metrics", { hostId });
+  },
+
+  // --- Hardware Serial Console ---
+  serialListPorts: async (): Promise<SerialPortInfo[]> => {
+    return await invoke<SerialPortInfo[]>("serial_list_ports");
+  },
+
+  serialConnect: async (params: {
+    options: SerialConnectOptions;
+    onEvent: (event: SshEvent) => void;
+  }): Promise<string> => {
+    const channel = new Channel<SshEvent>();
+    channel.onmessage = params.onEvent;
+    return await invoke<string>("serial_connect", {
+      options: params.options,
+      onEvent: channel,
+    });
+  },
+
+  serialWrite: async (sessionId: string, data: number[]): Promise<void> => {
+    return await invoke<void>("serial_write", { sessionId, data });
+  },
+
+  serialDisconnect: async (sessionId: string): Promise<void> => {
+    return await invoke<void>("serial_disconnect", { sessionId });
+  },
+
+  // --- Telnet Client Engine ---
+  telnetConnect: async (params: {
+    options: TelnetConnectOptions;
+    onEvent: (event: SshEvent) => void;
+  }): Promise<string> => {
+    const channel = new Channel<SshEvent>();
+    channel.onmessage = params.onEvent;
+    return await invoke<string>("telnet_connect", {
+      options: params.options,
+      onEvent: channel,
+    });
+  },
+
+  telnetWrite: async (sessionId: string, data: number[]): Promise<void> => {
+    return await invoke<void>("telnet_write", { sessionId, data });
+  },
+
+  telnetDisconnect: async (sessionId: string): Promise<void> => {
+    return await invoke<void>("telnet_disconnect", { sessionId });
   },
 };

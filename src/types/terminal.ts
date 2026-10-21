@@ -1,12 +1,18 @@
+import type { SerialConnectOptions } from "@/types/serial";
+import type { TelnetConnectOptions } from "@/types/telnet";
+
 export type SplitDirection = "horizontal" | "vertical";
 
 export interface TerminalPane {
   readonly id: string;
   readonly title: string;
+  readonly connectionType?: "ssh" | "serial" | "telnet";
   readonly hostId?: string;
   readonly hostname?: string;
   readonly port?: number;
   readonly username?: string;
+  readonly serialOptions?: SerialConnectOptions;
+  readonly telnetOptions?: TelnetConnectOptions;
   readonly status: "idle" | "connecting" | "connected" | "disconnected" | "error";
   readonly errorMessage?: string;
   readonly createdAt: number;

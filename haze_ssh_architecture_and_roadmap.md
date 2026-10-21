@@ -238,10 +238,31 @@ flowchart LR
   - [x] Responsive layout integration in `SettingsView.tsx` across all importers and backup tools.
   - [x] Memory wiping (`zeroize`) and local key re-encryption for all imported credentials.
 
-### Phase 9: Hardware (Serial), Telnet & Server Health Monitor
-- Serial port integration via `tokio-serial` for hardware consoles.
-- Telnet client integration for legacy systems.
-- Agentless Server Health widget: execute non-intrusive resource checks and display CPU/RAM/Disk gauges.
+### Phase 9: Hardware (Serial), Telnet & Server Health Monitor [Completed]
+- [x] Step 9.1: Agentless Server Health Monitor:
+  - [x] Single round-trip non-intrusive POSIX probe runner (`src-tauri/src/monitor.rs`) via SSH exec channel.
+  - [x] Resilient multi-platform stdout parser for CPU cores, load averages, memory (MemAvailable/Buffers/Cached), and root disk utilization.
+  - [x] IPC bridge command `host_fetch_metrics` registered in Tauri runtime.
+  - [x] Frontend state management (`useServerMonitorStore.ts`) with parallel polling and auto-refresh intervals.
+  - [x] Reusable `ServerHealthGauges.tsx` component with dynamic status thresholds and explanatory error handling.
+  - [x] Host dashboard integration: mini gauges in both Grid cards and Table list view, plus "Probe All" and "Live (30s)" toolbar actions in `HostsView.tsx`.
+- [x] Step 9.2: Hardware Serial Port (UART) Console:
+  - [x] Port enumeration (`serial_list_ports`) and USB device metadata discovery using `tokio-serial` & `serialport`.
+  - [x] Async serial session manager (`src-tauri/src/serial.rs`) with split read/write channels and configurable baud rate, data bits, parity, stop bits, and flow control.
+  - [x] Channel streaming directly into `xterm.js` terminal multiplexer (`XTermTerminal.tsx`).
+  - [x] Interactive `SerialConnectModal.tsx` with device scanning, baud rate presets, custom path override, and advanced 8N1 controls.
+  - [x] Topbar "Serial Port" launcher button integrated into app shell.
+- [x] Step 9.3: Telnet Client Engine:
+  - [x] Pure async Tokio TCP client (`src-tauri/src/telnet.rs`) with RFC 854 IAC state machine option negotiation.
+  - [x] Full-duplex handling: Suppress Go Ahead, Echo, Transmit Binary, Terminal Type subnegotiation (RFC 1091), and NAWS window sizing (RFC 1073).
+  - [x] Clean byte streaming to `xterm.js` terminal multiplexer (`XTermTerminal.tsx`).
+  - [x] Interactive `TelnetConnectModal.tsx` with port presets, terminal emulation presets, and error handling.
+  - [x] Topbar "Telnet" launcher button integrated into app shell.
+- [x] Step 9.4: Multi-Protocol Connection Hub & Phase Polish:
+  - [x] Unified Quick Connect URI scheme parser in `Topbar.tsx` supporting `telnet://host:port`, `serial://port@baud`, and `ssh://user@host:port`.
+  - [x] Protocol selector in `HostModal.tsx` supporting saved Telnet hosts with automatic port 23 suggestions.
+  - [x] Protocol badges and 1-click launch for saved Telnet hosts in `HostsView.tsx`.
+  - [x] End-to-end verification: 100% passing Rust test suite, 0 TypeScript errors, clean Vite production build.
 
 ### Phase 10: Performance Optimization, Auditing & GitHub Release
 - Binary size optimization (LTO, strip, release profile tuning).
