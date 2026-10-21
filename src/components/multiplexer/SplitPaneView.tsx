@@ -22,6 +22,7 @@ export function SplitPaneView({
         pane={node.pane}
         tabId={tabId}
         isFocused={node.pane.id === activePaneId}
+        isTabActive={isTabActive}
       />
     );
   }

@@ -10,8 +10,10 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useVaultStore } from "@/stores/useVaultStore";
+import { useHostStore } from "@/stores/useHostStore";
 import { useTerminalSettingsStore, POPULAR_TERMINAL_FONTS } from "@/stores/useTerminalSettingsStore";
 import { VaultModal } from "@/components/vault/VaultModal";
+import { IdentityManagerModal } from "@/components/identities/IdentityManagerModal";
 import { ExportBackupModal } from "@/components/settings/ExportBackupModal";
 import { RestoreBackupModal } from "@/components/settings/RestoreBackupModal";
 import { OpenSshImportModal } from "@/components/settings/OpenSshImportModal";
@@ -20,6 +22,7 @@ import { PuttyImportModal } from "@/components/settings/PuttyImportModal";
 
 export function SettingsView() {
   const { hasMasterPassword, isLocked, lock } = useVaultStore();
+  const { identities } = useHostStore();
   const {
     fontFamily,
     fontSize,
@@ -39,6 +42,7 @@ export function SettingsView() {
   } = useTerminalSettingsStore();
 
   const [modalMode, setModalMode] = useState<"unlock" | "setup" | "disable" | null>(null);
+  const [isIdentityManagerOpen, setIsIdentityManagerOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [isOpenSshModalOpen, setIsOpenSshModalOpen] = useState(false);
@@ -128,6 +132,24 @@ export function SettingsView() {
               )}
             </div>
           )}
+
+          <div className="pt-2 flex items-center justify-between border-t border-base-300">
+            <div className="space-y-0.5">
+              <span className="text-xs font-semibold">Vault Credentials</span>
+              <p className="text-[11px] text-base-content/60">
+                View, add, or permanently delete encrypted SSH keys and passwords stored in the vault.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsIdentityManagerOpen(true)}
+              className="btn btn-sm btn-outline gap-1.5 text-xs"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-warning" />
+              <span>Manage Credentials ({identities.length})</span>
+            </button>
+          </div>
         </section>
 
         {/* Terminal Appearance & Typography Section */}
@@ -491,6 +513,11 @@ export function SettingsView() {
           onClose={() => setModalMode(null)}
         />
       )}
+
+      <IdentityManagerModal
+        isOpen={isIdentityManagerOpen}
+        onClose={() => setIsIdentityManagerOpen(false)}
+      />
 
       <ExportBackupModal
         isOpen={isExportModalOpen}

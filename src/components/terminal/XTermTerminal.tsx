@@ -18,9 +18,14 @@ const textEncoder = new TextEncoder();
 interface XTermTerminalProps {
   readonly pane: TerminalPane;
   readonly isFocused: boolean;
+  readonly isTabActive?: boolean;
 }
 
-export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
+export function XTermTerminal({
+  pane,
+  isFocused,
+  isTabActive = true,
+}: XTermTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [droppedFile, setDroppedFile] = useState<DroppedFileInfo | null>(null);
@@ -203,15 +208,34 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
     pane.connectionType,
   ]);
 
-  // Sync active pane in registry and refit when focused
+  // Sync active pane in registry and refit/focus when focused & tab is visible
   useEffect(() => {
-    if (isFocused) {
+    if (isFocused && isTabActive) {
       useTerminalRegistryStore.getState().setActivePaneId(pane.id);
-      terminalSessionManager.fitAndResize(pane.id);
-      const session = terminalSessionManager.getSession(pane.id);
-      session?.term.focus();
+
+      let cancelled = false;
+
+      const frameId = requestAnimationFrame(() => {
+        if (cancelled) return;
+        terminalSessionManager.fitAndResize(pane.id);
+        const session = terminalSessionManager.getSession(pane.id);
+        session?.term.focus();
+      });
+
+      const timerId = setTimeout(() => {
+        if (cancelled) return;
+        terminalSessionManager.fitAndResize(pane.id);
+        const session = terminalSessionManager.getSession(pane.id);
+        session?.term.focus();
+      }, 50);
+
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(frameId);
+        clearTimeout(timerId);
+      };
     }
-  }, [isFocused, pane.id]);
+  }, [isFocused, isTabActive, pane.id]);
 
   // Sync theme changes live
   useEffect(() => {

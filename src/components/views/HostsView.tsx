@@ -26,7 +26,7 @@ import { useServerMonitorStore } from "@/stores/useServerMonitorStore";
 import type { Host } from "@/types/host";
 import { HostModal } from "@/components/hosts/HostModal";
 import { GroupModal } from "@/components/hosts/GroupModal";
-import { IdentityModal } from "@/components/identities/IdentityModal";
+import { IdentityManagerModal } from "@/components/identities/IdentityManagerModal";
 import { ServerHealthGauges } from "@/components/hosts/ServerHealthGauges";
 
 export function HostsView() {
@@ -691,7 +691,7 @@ export function HostsView() {
       )}
 
       {isIdentityModalOpen && (
-        <IdentityModal
+        <IdentityManagerModal
           isOpen={true}
           onClose={() => setIsIdentityModalOpen(false)}
         />

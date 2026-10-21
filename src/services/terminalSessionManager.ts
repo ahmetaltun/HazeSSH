@@ -378,7 +378,29 @@ class TerminalSessionManager {
     const session = this.sessions.get(paneId);
     if (!session || session.isDisposed) return;
 
+    // Guard 1: Ensure wrapper is mounted in the live DOM
+    const wrapper = session.wrapperEl;
+    if (!wrapper.isConnected) return;
+
+    // Guard 2: Ensure parent container is mounted and not hidden (e.g. display: none)
+    const parent = wrapper.parentElement;
+    if (!parent || parent.clientWidth < 80 || parent.clientHeight < 50) {
+      return;
+    }
+
     try {
+      // Guard 3: Check proposed dimensions before calling fit() to prevent 1-row/2-col collapse
+      const proposed = session.fitAddon.proposeDimensions();
+      if (
+        !proposed ||
+        isNaN(proposed.cols) ||
+        isNaN(proposed.rows) ||
+        proposed.cols < 10 ||
+        proposed.rows < 3
+      ) {
+        return;
+      }
+
       session.fitAddon.fit();
       const cols = session.term.cols;
       const rows = session.term.rows;
@@ -386,8 +408,8 @@ class TerminalSessionManager {
 
       if (
         sessionId &&
-        cols > 0 &&
-        rows > 0 &&
+        cols >= 10 &&
+        rows >= 3 &&
         session.pane.connectionType !== "serial" &&
         session.pane.connectionType !== "telnet"
       ) {
@@ -426,6 +448,20 @@ class TerminalSessionManager {
     const session = this.sessions.get(paneId);
     if (!session) return;
     session.wrapperEl.remove();
+  }
+
+  public focusPane(paneId: string): void {
+    const session = this.sessions.get(paneId);
+    if (!session || session.isDisposed) return;
+
+    const wrapper = session.wrapperEl;
+    if (!wrapper.isConnected) return;
+
+    const parent = wrapper.parentElement;
+    if (!parent || parent.clientWidth < 80 || parent.clientHeight < 50) return;
+
+    this.fitAndResize(paneId);
+    session.term.focus();
   }
 
   public async destroySession(paneId: string): Promise<void> {

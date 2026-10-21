@@ -1,5 +1,6 @@
 import { Plus, X, Terminal } from "lucide-react";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
+import { terminalSessionManager } from "@/services/terminalSessionManager";
 
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab, openTab } = useMultiplexerStore();
@@ -16,7 +17,13 @@ export function TabBar() {
         return (
           <div
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              setActiveTab(tab.id);
+              if (isActive && tab.activePaneId) {
+                // Focus active pane if already active/visible
+                terminalSessionManager.focusPane(tab.activePaneId);
+              }
+            }}
             className={`group relative flex items-center gap-2 h-8 px-3 rounded-t-md text-xs font-medium cursor-pointer transition-all duration-150 border-t-2 ${
               isActive
                 ? "bg-base-100 text-base-content border-primary shadow-xs"

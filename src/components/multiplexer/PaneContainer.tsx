@@ -16,9 +16,15 @@ interface PaneContainerProps {
   readonly pane: TerminalPane;
   readonly tabId: string;
   readonly isFocused: boolean;
+  readonly isTabActive?: boolean;
 }
 
-export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
+export function PaneContainer({
+  pane,
+  tabId,
+  isFocused,
+  isTabActive = true,
+}: PaneContainerProps) {
   const { splitActivePane, closePane, setActivePane } = useMultiplexerStore();
   const { isBroadcastEnabled, isPaneExcluded, togglePaneExclusion } = useBroadcastStore();
 
@@ -56,6 +62,8 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
   return (
     <div
       onClick={() => setActivePane(tabId, pane.id)}
+      onMouseDownCapture={() => setActivePane(tabId, pane.id)}
+      onFocusCapture={() => setActivePane(tabId, pane.id)}
       className={`flex flex-col h-full w-full bg-base-100 overflow-hidden border transition-colors duration-150 ${
         isBroadcastEnabled && !isExcludedFromBroadcast
           ? isFocused
@@ -162,7 +170,11 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
       {/* Pane Content: Terminal Canvas or Host Selector */}
       <div className="flex-1 w-full min-h-0 bg-base-100 relative overflow-hidden">
         {isConfigured ? (
-          <XTermTerminal pane={pane} isFocused={isFocused} />
+          <XTermTerminal
+            pane={pane}
+            isFocused={isFocused}
+            isTabActive={isTabActive}
+          />
         ) : (
           <PaneHostSelector pane={pane} tabId={tabId} />
         )}

@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { KeyRound, ShieldCheck, Copy, Check, Sparkles } from "lucide-react";
+import { KeyRound, ShieldCheck, Copy, Check, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { api } from "@/services/api";
 import type { GeneratedKeyPair } from "@/types/crypto";
+import { KeyFileDropzone } from "@/components/identities/KeyFileDropzone";
+import { inspectKeyFormat, type KeyInspectionResult } from "@/utils/keyUtils";
 
 interface IdentityModalProps {
   readonly isOpen: boolean;
@@ -18,6 +20,12 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
   const [privateKey, setPrivateKey] = useState("");
   const [passphrase, setPassphrase] = useState("");
 
+  // Key file import state
+  const [selectedKeyFileName, setSelectedKeyFileName] = useState<string | null>(null);
+  const [keyFormatLabel, setKeyFormatLabel] = useState<string | null>(null);
+  const [isKeyEncrypted, setIsKeyEncrypted] = useState(false);
+  const [showRawKey, setShowRawKey] = useState(false);
+
   // Key generator state
   const [keyType, setKeyType] = useState<"ed25519" | "rsa">("ed25519");
   const [keyComment, setKeyComment] = useState("");
@@ -30,6 +38,50 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
   const { createIdentity } = useHostStore();
 
   if (!isOpen) return null;
+
+  const handleKeyFileLoaded = (
+    content: string,
+    filename: string,
+    inspection: KeyInspectionResult
+  ) => {
+    setErrorMsg(null);
+    setPrivateKey(content);
+    setSelectedKeyFileName(filename);
+    setKeyFormatLabel(inspection.formatLabel);
+    setIsKeyEncrypted(inspection.isEncrypted);
+
+    // Auto-suggest identity name if user hasn't typed one yet
+    if (!name.trim() && inspection.suggestedLabel) {
+      setName(inspection.suggestedLabel);
+    }
+  };
+
+  const handleClearKeyFile = () => {
+    setSelectedKeyFileName(null);
+    setPrivateKey("");
+    setKeyFormatLabel(null);
+    setIsKeyEncrypted(false);
+    setShowRawKey(false);
+  };
+
+  const handleManualKeyChange = (val: string) => {
+    setPrivateKey(val);
+    setSelectedKeyFileName(null);
+    if (val.trim()) {
+      const inspection = inspectKeyFormat(val);
+      if (!inspection.isValid && inspection.error) {
+        setErrorMsg(inspection.error);
+      } else {
+        setErrorMsg(null);
+        setKeyFormatLabel(inspection.formatLabel);
+        setIsKeyEncrypted(inspection.isEncrypted);
+      }
+    } else {
+      setErrorMsg(null);
+      setKeyFormatLabel(null);
+      setIsKeyEncrypted(false);
+    }
+  };
 
   const handleGenerateKey = async () => {
     setErrorMsg(null);
@@ -192,33 +244,103 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
           )}
 
           {tab === "key" && (
-            <>
+            <div className="space-y-3">
               <div className="form-control">
                 <label className="label py-1">
-                  <span className="label-text text-xs font-semibold">Private Key (OpenSSH / PEM)</span>
+                  <span className="label-text text-xs font-semibold">Private Key</span>
+                  {keyFormatLabel && (
+                    <span className="label-text-alt text-[10px] text-primary font-medium">
+                      {keyFormatLabel}
+                    </span>
+                  )}
                 </label>
-                <textarea
-                  value={privateKey}
-                  onChange={(e) => setPrivateKey(e.target.value)}
-                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
-                  rows={4}
-                  className="textarea textarea-bordered w-full bg-base-100 font-mono text-[11px]"
+
+                <KeyFileDropzone
+                  onKeyLoaded={handleKeyFileLoaded}
+                  onError={(err) => setErrorMsg(err)}
+                  selectedFileName={selectedKeyFileName}
+                  formatLabel={keyFormatLabel ?? undefined}
+                  isEncrypted={isKeyEncrypted}
+                  onClear={handleClearKeyFile}
                 />
               </div>
 
+              {selectedKeyFileName ? (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowRawKey(!showRawKey)}
+                    className="btn btn-ghost btn-xs text-base-content/60 gap-1 text-[11px] p-0 hover:bg-transparent hover:text-base-content"
+                  >
+                    {showRawKey ? (
+                      <>
+                        <ChevronUp className="w-3 h-3" />
+                        <span>Hide key text</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-3 h-3" />
+                        <span>View / edit raw key text</span>
+                      </>
+                    )}
+                  </button>
+
+                  {showRawKey && (
+                    <div className="form-control mt-2">
+                      <textarea
+                        value={privateKey}
+                        onChange={(e) => handleManualKeyChange(e.target.value)}
+                        rows={4}
+                        className="textarea textarea-bordered w-full bg-base-100 font-mono text-[11px]"
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="form-control">
+                  <div className="flex items-center gap-2 my-1">
+                    <div className="h-px bg-base-300 flex-1" />
+                    <span className="text-[10px] text-base-content/40 uppercase font-medium">
+                      Or paste key text directly
+                    </span>
+                    <div className="h-px bg-base-300 flex-1" />
+                  </div>
+                  <textarea
+                    value={privateKey}
+                    onChange={(e) => handleManualKeyChange(e.target.value)}
+                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
+                    rows={4}
+                    className="textarea textarea-bordered w-full bg-base-100 font-mono text-[11px]"
+                  />
+                </div>
+              )}
+
               <div className="form-control">
                 <label className="label py-1">
-                  <span className="label-text text-xs font-semibold">Key Passphrase (Optional)</span>
+                  <span className="label-text text-xs font-semibold flex items-center gap-1.5">
+                    Key Passphrase (Optional)
+                    {isKeyEncrypted && (
+                      <span className="badge badge-warning badge-xs py-0.5 text-[10px]">
+                        Passphrase Required
+                      </span>
+                    )}
+                  </span>
                 </label>
                 <input
                   type="password"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
-                  placeholder="Leave empty if key is not encrypted"
-                  className="input input-sm input-bordered w-full bg-base-100 font-mono text-xs"
+                  placeholder={
+                    isKeyEncrypted
+                      ? "Enter passphrase to decrypt this private key"
+                      : "Leave empty if key is not encrypted"
+                  }
+                  className={`input input-sm input-bordered w-full bg-base-100 font-mono text-xs ${
+                    isKeyEncrypted && !passphrase ? "input-warning" : ""
+                  }`}
                 />
               </div>
-            </>
+            </div>
           )}
 
           {tab === "generate" && (
