@@ -73,11 +73,10 @@ async fn connect_sftp(
                 None
             };
 
-            if let Ok(key_pair) = russh_keys::decode_secret_key(&secret, pass.as_deref()) {
-                if let Ok(success) = session.authenticate_publickey(&username, Arc::new(key_pair)).await {
+            if let Ok(key_pair) = russh_keys::decode_secret_key(&secret, pass.as_deref())
+                && let Ok(success) = session.authenticate_publickey(&username, Arc::new(key_pair)).await {
                     auth_success = success;
                 }
-            }
         } else {
             if let Ok(success) = session.authenticate_password(&username, &secret).await {
                 auth_success = success;

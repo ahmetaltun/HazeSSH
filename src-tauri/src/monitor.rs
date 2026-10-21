@@ -85,11 +85,10 @@ pub async fn fetch_server_metrics(
                 None
             };
 
-            if let Ok(key_pair) = russh_keys::decode_secret_key(&secret, pass.as_deref()) {
-                if let Ok(success) = session.authenticate_publickey(&username, Arc::new(key_pair)).await {
+            if let Ok(key_pair) = russh_keys::decode_secret_key(&secret, pass.as_deref())
+                && let Ok(success) = session.authenticate_publickey(&username, Arc::new(key_pair)).await {
                     auth_success = success;
                 }
-            }
         } else {
             if let Ok(success) = session.authenticate_password(&username, &secret).await {
                 auth_success = success;
@@ -224,13 +223,12 @@ fn parse_uptime_section(uptime_sec: Option<&String>) -> (Option<u64>, Option<Str
     // Try /proc/uptime first (e.g. "123456.78 987654.32")
     for line in content.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if let Some(first) = parts.first() {
-            if let Ok(secs_f) = first.parse::<f64>() {
+        if let Some(first) = parts.first()
+            && let Ok(secs_f) = first.parse::<f64>() {
                 let secs = secs_f as u64;
                 let formatted = format_uptime(secs);
                 return (Some(secs), Some(formatted));
             }
-        }
     }
 
     // Fallback: parse standard BSD/Unix `uptime` string (e.g. "up 14 days,  3:24" or "up 2:15")
@@ -360,7 +358,9 @@ fn parse_meminfo_section(mem_sec: Option<&String>) -> (Option<u64>, Option<u64>,
     (None, None, None, None)
 }
 
-fn parse_disk_section(disk_sec: Option<&String>) -> (Option<u64>, Option<u64>, Option<u64>, Option<f32>, Option<String>) {
+type DiskParseResult = (Option<u64>, Option<u64>, Option<u64>, Option<f32>, Option<String>);
+
+fn parse_disk_section(disk_sec: Option<&String>) -> DiskParseResult {
     let content = match disk_sec {
         Some(c) => c,
         None => return (None, None, None, None, None),

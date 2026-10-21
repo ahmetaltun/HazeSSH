@@ -295,19 +295,17 @@ impl TelnetSessionManager {
                                 let (clean_data, replies) = parser.process_incoming(&read_buf[..n]);
 
                                 // Send option negotiation replies if required
-                                if !replies.is_empty() {
-                                    if let Err(e) = writer.write_all(&replies).await {
+                                if !replies.is_empty()
+                                    && let Err(e) = writer.write_all(&replies).await {
                                         let _ = on_event.send(SshEvent::Error(format!("Telnet negotiation write error: {}", e)));
                                         break;
                                     }
-                                }
 
                                 // Forward clean terminal output to xterm.js
-                                if !clean_data.is_empty() {
-                                    if on_event.send(SshEvent::Data(clean_data)).is_err() {
+                                if !clean_data.is_empty()
+                                    && on_event.send(SshEvent::Data(clean_data)).is_err() {
                                         break;
                                     }
-                                }
                             }
                             Err(e) => {
                                 let _ = on_event.send(SshEvent::Error(format!("Telnet read error from {}: {}", addr, e)));
@@ -387,6 +385,12 @@ impl TelnetSessionManager {
         let mut guard = self.sessions.lock().unwrap();
         guard.remove(session_id);
         Ok(())
+    }
+}
+
+impl Default for TelnetSessionManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

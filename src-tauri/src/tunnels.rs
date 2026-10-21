@@ -104,6 +104,15 @@ impl TunnelManager {
             tunnels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
+}
+
+impl Default for TunnelManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TunnelManager {
 
     pub async fn get_statuses(&self) -> Vec<TunnelRuntimeStatus> {
         let guard = self.tunnels.lock().await;

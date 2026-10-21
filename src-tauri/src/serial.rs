@@ -241,3 +241,9 @@ impl SerialSessionManager {
         Ok(())
     }
 }
+
+impl Default for SerialSessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

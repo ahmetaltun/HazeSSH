@@ -162,8 +162,8 @@ impl SshManager {
                 }
             }
 
-            if !auth_success && password.is_some() {
-                if let Some(ref pwd) = password {
+            if !auth_success && password.is_some()
+                && let Some(ref pwd) = password {
                     match session.authenticate_password(&username, pwd).await {
                         Ok(success) if success => {
                             auth_success = true;
@@ -174,7 +174,6 @@ impl SshManager {
                         }
                     }
                 }
-            }
 
             if !auth_success {
                 let _ = on_event.send(SshEvent::Error(format!(
@@ -306,5 +305,11 @@ impl SshManager {
         } else {
             Ok(())
         }
+    }
+}
+
+impl Default for SshManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

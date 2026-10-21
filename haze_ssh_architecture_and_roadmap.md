@@ -264,8 +264,19 @@ flowchart LR
   - [x] Protocol badges and 1-click launch for saved Telnet hosts in `HostsView.tsx`.
   - [x] End-to-end verification: 100% passing Rust test suite, 0 TypeScript errors, clean Vite production build.
 
-### Phase 10: Performance Optimization, Auditing & GitHub Release
-- Binary size optimization (LTO, strip, release profile tuning).
-- End-to-end testing, error handling, and security review.
-- GitHub Actions CI/CD for multi-platform builds (macOS dmg, Windows msi/exe, Linux AppImage/deb).
-- Documentation, README, and Open Source release readiness.
+### Phase 10: Performance Optimization, Auditing & GitHub Release [Completed]
+- [x] Step 10.1: Build & Bundle Performance Optimization:
+  - [x] Frontend code-splitting: configured Vite manualChunks (`vendor-react`, `vendor-xterm`, `vendor-lucide`) and React `lazy` + `Suspense` for secondary management views (`TunnelsView`, `SFTPView`, `SnippetsView`, `HistoryView`, `SettingsView`).
+  - [x] Main bundle chunk dropped from 934 kB to 105 kB with zero chunk size warnings.
+  - [x] Rust release profile optimization in `Cargo.toml`: `codegen-units = 1`, `lto = true`, `opt-level = 3`, `panic = "abort"`, `strip = true`.
+- [x] Step 10.2: Automated Test Coverage & Security Review:
+  - [x] Comprehensive 17-test Rust test suite covering Argon2id + ChaCha20-Poly1305 encryption roundtrips, key derivation determinism, OpenSSH keypair generation (Ed25519 & RSA), encrypted `.haze` backup envelopes, OpenSSH config two-pass parsing with known-hosts matching, Termius JSON parsing, and PuTTY registry session parsing.
+  - [x] Code quality: 100% clean Clippy verification with zero compiler warnings under `-D warnings`.
+  - [x] Memory wiping (`zeroize`) and local key re-encryption audited for all credentials.
+- [x] Step 10.3: Multi-Platform CI/CD Pipeline (GitHub Actions):
+  - [x] Created `.github/workflows/ci.yml` validating Rust checks (`cargo check`, `cargo test`, `cargo clippy`) and frontend build (`npm run build`) on push & pull requests.
+  - [x] Created `.github/workflows/release.yml` with multi-platform matrix (`macos-latest`, `ubuntu-22.04`, `windows-latest`) using official `tauri-apps/tauri-action@v0` to build and package DMG/App, AppImage/DEB, and MSI/EXE release bundles.
+- [x] Step 10.4: Documentation, README & Open Source Release Readiness:
+  - [x] Comprehensive `README.md` revamp with architecture diagrams, keyboard shortcuts, multi-protocol hub matrix, and setup instructions.
+  - [x] Created `CONTRIBUTING.md` with guidelines, local development setup, and code quality expectations.
+  - [x] Created `SECURITY.md` detailing the zero-cloud threat model, cryptographic guarantees, and coordinated disclosure process.

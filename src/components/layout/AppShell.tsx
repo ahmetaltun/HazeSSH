@@ -1,20 +1,43 @@
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { MultiplexerArea } from "@/components/multiplexer/MultiplexerArea";
 import { HostsView } from "@/components/views/HostsView";
-import { TunnelsView } from "@/components/views/TunnelsView";
-import { SFTPView } from "@/components/views/SFTPView";
-import { SnippetsView } from "@/components/views/SnippetsView";
-import { HistoryView } from "@/components/views/HistoryView";
-import { SettingsView } from "@/components/views/SettingsView";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
-import { Terminal, Layers } from "lucide-react";
+import { Terminal, Layers, Loader2 } from "lucide-react";
+
+// Code-split secondary management views to optimize bundle size and cold-start latency
+const TunnelsView = lazy(() =>
+  import("@/components/views/TunnelsView").then((m) => ({ default: m.TunnelsView }))
+);
+const SFTPView = lazy(() =>
+  import("@/components/views/SFTPView").then((m) => ({ default: m.SFTPView }))
+);
+const SnippetsView = lazy(() =>
+  import("@/components/views/SnippetsView").then((m) => ({ default: m.SnippetsView }))
+);
+const HistoryView = lazy(() =>
+  import("@/components/views/HistoryView").then((m) => ({ default: m.HistoryView }))
+);
+const SettingsView = lazy(() =>
+  import("@/components/views/SettingsView").then((m) => ({ default: m.SettingsView }))
+);
+
+function ViewLoadingFallback() {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-12 text-base-content/50 select-none">
+      <Loader2 className="w-8 h-8 animate-spin text-primary opacity-80" />
+      <span className="text-xs font-mono mt-3 tracking-wider uppercase text-base-content/40">
+        Loading module...
+      </span>
+    </div>
+  );
+}
 
 export function AppShell() {
   const { currentView, activeSection, setActiveSection, setCommandPaletteOpen } =
@@ -60,15 +83,35 @@ export function AppShell() {
       case "hosts":
         return <HostsView />;
       case "tunnels":
-        return <TunnelsView />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <TunnelsView />
+          </Suspense>
+        );
       case "sftp":
-        return <SFTPView />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <SFTPView />
+          </Suspense>
+        );
       case "snippets":
-        return <SnippetsView />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <SnippetsView />
+          </Suspense>
+        );
       case "history":
-        return <HistoryView />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <HistoryView />
+          </Suspense>
+        );
       case "settings":
-        return <SettingsView />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <SettingsView />
+          </Suspense>
+        );
       default:
         return <HostsView />;
     }

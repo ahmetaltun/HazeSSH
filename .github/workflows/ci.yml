@@ -1,0 +1,71 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - '**.md'
+      - '.vscode/**'
+      - 'LICENSE'
+  pull_request:
+    branches: [master, main]
+    paths-ignore:
+      - '**.md'
+      - '.vscode/**'
+      - 'LICENSE'
+
+# Automatically cancel outdated in-progress runs on new commits to save queue time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-checks:
+    name: Rust Checks & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Cargo Check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Cargo Test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Cargo Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+  frontend-checks:
+    name: Frontend TypeScript & Vite Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: TypeScript & Vite Production Build
+        run: npm run build

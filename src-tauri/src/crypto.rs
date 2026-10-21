@@ -232,3 +232,83 @@ pub fn decrypt_backup_envelope(
     decrypted_bytes.zeroize();
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash_and_verify_password() {
+        let password = "MySuperSecretMasterPassphrase123!";
+        let hash = hash_password(password).expect("hashing should succeed");
+        assert!(verify_password(password, &hash).expect("verification should succeed"));
+        assert!(!verify_password("WrongPassword!", &hash).unwrap_or(false));
+    }
+
+    #[test]
+    fn test_derive_key_determinism() {
+        let password = "MasterVaultPassword";
+        let salt = [42u8; 16];
+        let key1 = derive_key(password, &salt).expect("key derivation 1");
+        let key2 = derive_key(password, &salt).expect("key derivation 2");
+        assert_eq!(key1, key2);
+
+        let diff_salt = [99u8; 16];
+        let key3 = derive_key(password, &diff_salt).expect("key derivation 3");
+        assert_ne!(key1, key3);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_secret_roundtrip() {
+        let password = "VaultEncryptionKeySecret";
+        let salt = [7u8; 16];
+        let key = derive_key(password, &salt).expect("derive key");
+
+        let secret = "super-secret-ssh-private-key-passphrase-or-token";
+        let encrypted = encrypt_secret(secret, &key).expect("encryption succeeds");
+        let decrypted = decrypt_secret(&encrypted, &key).expect("decryption succeeds");
+        assert_eq!(secret, decrypted);
+
+        // Test decryption with a wrong key fails
+        let wrong_key = derive_key("AnotherPassword", &salt).expect("wrong key");
+        let decrypt_res = decrypt_secret(&encrypted, &wrong_key);
+        assert!(decrypt_res.is_err());
+    }
+
+    #[test]
+    fn test_generate_ed25519_keypair() {
+        let keypair = generate_ssh_key("ed25519", None).expect("ed25519 keypair generation");
+        assert_eq!(keypair.algorithm, "ed25519");
+        assert!(keypair.public_key.starts_with("ssh-ed25519 "));
+        assert!(keypair.private_key.contains("BEGIN OPENSSH PRIVATE KEY"));
+        assert!(keypair.fingerprint.starts_with("SHA256:"));
+    }
+
+    #[test]
+    fn test_generate_rsa_keypair() {
+        let keypair = generate_ssh_key("rsa", Some("test@hazessh.local")).expect("rsa generation");
+        assert_eq!(keypair.algorithm, "rsa");
+        assert!(keypair.public_key.starts_with("ssh-rsa "));
+        assert!(keypair.public_key.ends_with("test@hazessh.local"));
+        assert!(keypair.private_key.contains("BEGIN OPENSSH PRIVATE KEY"));
+        assert!(keypair.fingerprint.starts_with("SHA256:"));
+    }
+
+    #[test]
+    fn test_backup_envelope_roundtrip_and_auth_failure() {
+        let payload = r#"{"hosts":[{"id":"1","name":"Prod Bastion"}],"version":"0.1.0"}"#;
+        let passphrase = "BackupArchiveSecret2026";
+
+        let envelope = export_backup_envelope(payload, passphrase).expect("envelope encryption");
+        assert_eq!(envelope.format, "HAZE_BACKUP");
+        assert_eq!(envelope.version, 1);
+
+        // Correct passphrase
+        let restored = decrypt_backup_envelope(&envelope, passphrase).expect("decryption succeeds");
+        assert_eq!(restored, payload);
+
+        // Wrong passphrase
+        let failed = decrypt_backup_envelope(&envelope, "WrongBackupPassphrase!");
+        assert!(failed.is_err());
+    }
+}

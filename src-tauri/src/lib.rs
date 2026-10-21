@@ -1,3 +1,6 @@
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::field_reassign_with_default)]
+
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 

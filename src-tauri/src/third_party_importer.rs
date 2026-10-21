@@ -11,12 +11,11 @@ pub fn decode_percent_encoded(input: &str) -> String {
     while let Some(ch) = chars.next() {
         if ch == '%' {
             let hex: String = chars.by_ref().take(2).collect();
-            if hex.len() == 2 {
-                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+            if hex.len() == 2
+                && let Ok(byte) = u8::from_str_radix(&hex, 16) {
                     result.push(byte as char);
                     continue;
                 }
-            }
             result.push('%');
             result.push_str(&hex);
         } else {
@@ -43,14 +42,13 @@ pub fn parse_termius_json(
     // Helper to extract string from multiple possible field keys
     let get_first_str = |obj: &serde_json::Map<String, Value>, keys: &[&str]| -> Option<String> {
         for &k in keys {
-            if let Some(v) = obj.get(k) {
-                if let Some(s) = v.as_str() {
+            if let Some(v) = obj.get(k)
+                && let Some(s) = v.as_str() {
                     let trimmed = s.trim();
                     if !trimmed.is_empty() {
                         return Some(trimmed.to_string());
                     }
                 }
-            }
         }
         None
     };
@@ -167,7 +165,7 @@ pub fn parse_termius_json(
                     match entry_type.as_str() {
                         "group" | "folder" => process_group(obj, &mut group_id_map),
                         "snippet" => process_snippet(obj, &mut snippets),
-                        "host" | _ => {
+                        _ => {
                             if obj.contains_key("address") || obj.contains_key("hostname") {
                                 process_host(obj, existing_hosts, &mut candidates, &group_id_map);
                             }
@@ -184,7 +182,7 @@ pub fn parse_termius_json(
                 match entry_type.as_str() {
                     "group" | "folder" => process_group(obj, &mut group_id_map),
                     "snippet" => process_snippet(obj, &mut snippets),
-                    "host" | _ => {
+                    _ => {
                         if obj.contains_key("address") || obj.contains_key("hostname") {
                             process_host(obj, existing_hosts, &mut candidates, &group_id_map);
                         }
@@ -233,11 +231,10 @@ pub fn parse_putty_reg(
         };
 
         // Filter out purely serial or telnet sessions if protocol is explicitly non-ssh
-        if let Some(ref proto) = session.protocol {
-            if proto.eq_ignore_ascii_case("serial") {
+        if let Some(ref proto) = session.protocol
+            && proto.eq_ignore_ascii_case("serial") {
                 return;
             }
-        }
 
         let port = session.port.unwrap_or(22);
         let label = raw_name.to_string();
@@ -299,8 +296,8 @@ pub fn parse_putty_reg(
         }
 
         // Inside a session section, parse key-value pairs
-        if let Some(ref mut session) = current_session {
-            if let Some((key_part, val_part)) = trimmed.split_once('=') {
+        if let Some(ref mut session) = current_session
+            && let Some((key_part, val_part)) = trimmed.split_once('=') {
                 let key = key_part.trim().trim_matches('"');
                 let raw_val = val_part.trim();
 
@@ -341,7 +338,6 @@ pub fn parse_putty_reg(
                     _ => {}
                 }
             }
-        }
     }
 
     if let Some(last) = current_session.take() {
@@ -349,4 +345,90 @@ pub fn parse_putty_reg(
     }
 
     Ok(candidates)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_percent_encoded() {
+        assert_eq!(decode_percent_encoded("My%20Linux%20Box"), "My Linux Box");
+        assert_eq!(
+            decode_percent_encoded("Bastion%2FInternal%20Gateway"),
+            "Bastion/Internal Gateway"
+        );
+        assert_eq!(decode_percent_encoded("StandardHost"), "StandardHost");
+    }
+
+    #[test]
+    fn test_parse_putty_reg() {
+        let putty_reg_content = r#"Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Production%20Web]
+"HostName"="web.prod.internal"
+"PortNumber"=dword:00000016
+"UserName"="deployer"
+"PublicKeyFile"="C:\\Users\\Admin\\.ssh\\id_rsa.ppk"
+"Protocol"="ssh"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Default%20Settings]
+"HostName"=""
+"#;
+
+        let candidates = parse_putty_reg(putty_reg_content, &[]).expect("putty parsing");
+        assert_eq!(candidates.len(), 1);
+
+        let c = &candidates[0];
+        assert_eq!(c.label, "Production Web");
+        assert_eq!(c.hostname, "web.prod.internal");
+        assert_eq!(c.port, 22);
+        assert_eq!(c.username.as_deref(), Some("deployer"));
+        assert_eq!(
+            c.identity_file.as_deref(),
+            Some("C:\\Users\\Admin\\.ssh\\id_rsa.ppk")
+        );
+    }
+
+    #[test]
+    fn test_parse_termius_json() {
+        let termius_json = r#"{
+            "groups": [
+                {
+                    "id": "grp-1",
+                    "label": "Staging Environment"
+                }
+            ],
+            "hosts": [
+                {
+                    "label": "Staging API",
+                    "address": "api.staging.internal",
+                    "port": 2222,
+                    "username": "tester",
+                    "group_id": "grp-1"
+                }
+            ],
+            "snippets": [
+                {
+                    "name": "Docker Cleanup",
+                    "script": "docker system prune -af"
+                }
+            ]
+        }"#;
+
+        let result = parse_termius_json(termius_json, &[]).expect("termius parsing");
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.snippets.len(), 1);
+
+        let h = &result.candidates[0];
+        assert_eq!(h.label, "Staging API");
+        assert_eq!(h.hostname, "api.staging.internal");
+        assert_eq!(h.port, 2222);
+        assert_eq!(h.username.as_deref(), Some("tester"));
+        assert_eq!(h.group_name.as_deref(), Some("Staging Environment"));
+
+        let s = &result.snippets[0];
+        assert_eq!(s.title, "Docker Cleanup");
+        assert_eq!(s.script, "docker system prune -af");
+    }
 }

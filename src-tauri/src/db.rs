@@ -1060,14 +1060,14 @@ impl Database {
         for candidate in &candidates {
             if let Some(ref group_name) = candidate.group_name {
                 let lower_name = group_name.to_lowercase();
-                if !group_map.contains_key(&lower_name) {
+                if let std::collections::hash_map::Entry::Vacant(e) = group_map.entry(lower_name) {
                     let group_id = Uuid::new_v4().to_string();
                     tx.execute(
                         "INSERT INTO groups (id, parent_id, name, color, created_at)
                          VALUES (?1, NULL, ?2, NULL, ?3)",
                         params![group_id, group_name, now],
                     )?;
-                    group_map.insert(lower_name, group_id);
+                    e.insert(group_id);
                     imported_groups_count += 1;
                 }
             }
@@ -1076,11 +1076,11 @@ impl Database {
         // 4. Create missing identities for discovered key paths
         if import_keys_as_identities {
             for candidate in &candidates {
-                if let Some(ref key_path) = candidate.identity_file {
-                    if !key_file_to_identity.contains_key(key_path) {
+                if let Some(ref key_path) = candidate.identity_file
+                    && !key_file_to_identity.contains_key(key_path) {
                         let path_obj = Path::new(key_path);
-                        if path_obj.exists() && path_obj.is_file() {
-                            if let Ok(key_content) = std::fs::read_to_string(path_obj) {
+                        if path_obj.exists() && path_obj.is_file()
+                            && let Ok(key_content) = std::fs::read_to_string(path_obj) {
                                 let file_name = path_obj
                                     .file_name()
                                     .and_then(|n| n.to_str())
@@ -1108,9 +1108,7 @@ impl Database {
 
                                 key_file_to_identity.insert(key_path.clone(), identity_id);
                             }
-                        }
                     }
-                }
             }
         }
 
