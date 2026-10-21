@@ -19,7 +19,12 @@ import {
 } from "lucide-react";
 import { api } from "@/services/api";
 import type { FileEntry } from "@/types/sftp";
-import { getFilePreviewType } from "./FileContextMenu";
+import {
+  getFileCategory,
+  getLanguageLabel,
+  getMimeType,
+  isEditableText,
+} from "@/utils/fileTypes";
 
 interface FilePreviewModalProps {
   readonly isOpen: boolean;
@@ -43,34 +48,6 @@ function formatBytes(bytes: number): string {
 function formatDate(epochSec: number): string {
   if (!epochSec) return "-";
   return new Date(epochSec * 1000).toLocaleString();
-}
-
-function getMimeType(fileName: string): string {
-  const ext = fileName.split(".").pop()?.toLowerCase() || "";
-  const map: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-    ico: "image/x-icon",
-    bmp: "image/bmp",
-    pdf: "application/pdf",
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-    ogg: "audio/ogg",
-    mp4: "video/mp4",
-    webm: "video/webm",
-    md: "text/markdown",
-    markdown: "text/markdown",
-    txt: "text/plain",
-    json: "application/json",
-    html: "text/html",
-    css: "text/css",
-    js: "application/javascript",
-  };
-  return map[ext] || "application/octet-stream";
 }
 
 function base64ToBlob(base64: string, mimeType: string): Blob {
@@ -183,6 +160,34 @@ function renderInlineFormatting(text: string): ReactNode {
   });
 }
 
+interface CodeViewerProps {
+  readonly content: string;
+}
+
+function CodeViewer({ content }: CodeViewerProps) {
+  const lines = useMemo(() => content.split("\n"), [content]);
+
+  return (
+    <div className="flex-1 min-h-0 font-mono text-xs overflow-auto bg-base-200/30 rounded-xl border border-base-300">
+      <div className="flex min-w-full w-max">
+        {/* Sticky line numbers column */}
+        <div className="sticky left-0 z-10 py-3 pl-3 pr-2.5 select-none text-right text-base-content/30 border-r border-base-300 bg-base-200 text-[11px] leading-5 shrink-0 tabular-nums">
+          {lines.map((_, i) => (
+            <div key={i}>{i + 1}</div>
+          ))}
+        </div>
+        {/* Code text */}
+        <pre
+          className="py-3 pl-4 pr-6 select-text whitespace-pre leading-5 flex-1 text-base-content/90 font-mono text-xs m-0 bg-transparent"
+          style={{ tabSize: 2 }}
+        >
+          {content}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 export function FilePreviewModal({
   isOpen,
   file,
@@ -206,8 +211,10 @@ export function FilePreviewModal({
   const [imgZoom, setImgZoom] = useState(1);
   const [imgDimensions, setImgDimensions] = useState<{ w: number; h: number } | null>(null);
 
-  const previewType = useMemo(() => (file ? getFilePreviewType(file.name) : "unsupported"), [file]);
+  const previewType = useMemo(() => (file ? getFileCategory(file.name) : "binary"), [file]);
   const mimeType = useMemo(() => (file ? getMimeType(file.name) : ""), [file]);
+  const languageLabel = useMemo(() => (file ? getLanguageLabel(file.name) : ""), [file]);
+  const isEditable = useMemo(() => (file ? isEditableText(file.name) : false), [file]);
 
   const activeUrlRef = useRef<string | null>(null);
 
@@ -235,7 +242,7 @@ export function FilePreviewModal({
       setBlobUrl(null);
     }
 
-    if (previewType === "unsupported") {
+    if (previewType === "binary") {
       setLoading(false);
       return;
     }
@@ -294,8 +301,6 @@ export function FilePreviewModal({
     }
   };
 
-  const isEditable = previewType === "code" || previewType === "markdown";
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
       <div className="bg-base-100 border border-base-300 w-full max-w-4xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
@@ -316,11 +321,19 @@ export function FilePreviewModal({
               )}
             </div>
             <div className="flex flex-col overflow-hidden">
-              <span className="font-bold text-sm truncate">{file.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm truncate">{file.name}</span>
+                {languageLabel && (
+                  <span className="badge badge-sm badge-outline font-mono text-[10px] text-primary border-primary/30 shrink-0">
+                    {languageLabel}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] text-base-content/50 truncate font-mono">
                 {mode === "remote" && hostLabel ? `[${hostLabel}] ` : ""}
                 {file.path} • {formatBytes(file.size)}
                 {imgDimensions ? ` • ${imgDimensions.w} × ${imgDimensions.h} px` : ""}
+                {(previewType === "code" || (previewType === "markdown" && mdViewMode === "raw")) && textContent ? ` • ${textContent.split("\n").length} lines` : ""}
               </span>
             </div>
           </div>
@@ -433,20 +446,20 @@ export function FilePreviewModal({
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-auto p-4 bg-base-100 flex flex-col relative">
+        <div className="flex-1 min-h-0 p-4 bg-base-100 flex flex-col relative overflow-hidden">
           {loading ? (
-            <div className="flex-1 flex flex-col items-center justify-center space-y-3">
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center space-y-3">
               <span className="loading loading-spinner loading-md text-primary" />
               <span className="text-xs text-base-content/60 font-mono">Loading preview...</span>
             </div>
           ) : errorMsg ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6 text-center">
               <AlertTriangle className="w-10 h-10 text-error mb-2 opacity-80" />
               <p className="text-sm font-semibold text-error mb-1">Cannot Preview File</p>
               <p className="text-xs text-base-content/60 max-w-md font-mono">{errorMsg}</p>
             </div>
           ) : previewType === "image" && blobUrl ? (
-            <div className="flex-1 flex items-center justify-center overflow-auto min-h-0">
+            <div className="flex-1 min-h-0 flex items-center justify-center overflow-auto">
               <img
                 src={blobUrl}
                 alt={file.name}
@@ -459,7 +472,7 @@ export function FilePreviewModal({
               />
             </div>
           ) : previewType === "pdf" && blobUrl ? (
-            <div className="flex-1 w-full h-full rounded-xl overflow-hidden border border-base-300">
+            <div className="flex-1 min-h-0 w-full h-full rounded-xl overflow-hidden border border-base-300">
               <object
                 data={blobUrl}
                 type="application/pdf"
@@ -474,7 +487,7 @@ export function FilePreviewModal({
               </object>
             </div>
           ) : previewType === "media" && blobUrl ? (
-            <div className="flex-1 flex items-center justify-center p-4">
+            <div className="flex-1 min-h-0 flex items-center justify-center p-4">
               {mimeType.startsWith("video") ? (
                 <video
                   controls
@@ -490,21 +503,19 @@ export function FilePreviewModal({
             </div>
           ) : previewType === "markdown" ? (
             mdViewMode === "rendered" ? (
-              <div className="max-w-3xl mx-auto w-full prose prose-sm dark:prose-invert py-2 px-4 font-sans">
-                {renderSimpleMarkdown(textContent)}
+              <div className="flex-1 min-h-0 overflow-y-auto w-full">
+                <div className="max-w-3xl mx-auto w-full prose prose-sm dark:prose-invert py-2 px-4 font-sans">
+                  {renderSimpleMarkdown(textContent)}
+                </div>
               </div>
             ) : (
-              <div className="flex-1 font-mono text-xs overflow-auto bg-base-200/30 p-4 rounded-xl border border-base-300 whitespace-pre">
-                {textContent}
-              </div>
+              <CodeViewer content={textContent} />
             )
           ) : previewType === "code" ? (
-            <div className="flex-1 font-mono text-xs overflow-auto bg-base-200/30 p-4 rounded-xl border border-base-300 whitespace-pre leading-5">
-              {textContent}
-            </div>
+            <CodeViewer content={textContent} />
           ) : (
             /* Unsupported / Binary fallback */
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6 text-center space-y-4 overflow-y-auto">
               <div className="p-4 bg-base-200 rounded-full border border-base-300">
                 <FileQuestion className="w-12 h-12 text-base-content/40" />
               </div>

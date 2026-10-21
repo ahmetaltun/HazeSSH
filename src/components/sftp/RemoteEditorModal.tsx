@@ -1,6 +1,7 @@
 import { useState, useEffect, type KeyboardEvent } from "react";
 import { FileCode, Save, X, AlertTriangle, Check } from "lucide-react";
 import { api } from "@/services/api";
+import { getLanguageLabel } from "@/utils/fileTypes";
 
 interface RemoteEditorModalProps {
   readonly isOpen: boolean;
@@ -115,6 +116,9 @@ export function RemoteEditorModal({
           <div className="flex items-center gap-2 overflow-hidden">
             <FileCode className="w-4 h-4 text-primary shrink-0" />
             <span className="font-bold text-xs truncate max-w-xs">{fileName}</span>
+            <span className="badge badge-sm badge-outline font-mono text-[10px] text-primary border-primary/30 shrink-0">
+              {getLanguageLabel(fileName)}
+            </span>
             {hasUnsavedChanges && (
               <span className="badge badge-warning badge-xs text-[10px]">Unsaved *</span>
             )}

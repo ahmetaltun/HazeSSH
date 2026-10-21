@@ -17,10 +17,14 @@ import {
   FilePenLine,
   AlertTriangle,
   Eye,
+  Database,
+  Package,
+  Film,
 } from "lucide-react";
 import { api } from "@/services/api";
 import type { FileEntry } from "@/types/sftp";
-import { FileContextMenu, getFilePreviewType } from "./FileContextMenu";
+import { FileContextMenu } from "./FileContextMenu";
+import { getFileCategory, getFileIconCategory, isEditableText } from "@/utils/fileTypes";
 
 interface FileExplorerPaneProps {
   readonly title: string;
@@ -60,20 +64,29 @@ function getFileIcon(entry: FileEntry) {
   if (entry.is_dir) {
     return <Folder className="w-4 h-4 text-warning fill-warning/20 shrink-0" />;
   }
-  const previewType = getFilePreviewType(entry.name);
-  if (previewType === "image") {
-    return <ImageIcon className="w-4 h-4 text-success shrink-0" />;
+  const iconCat = getFileIconCategory(entry.name);
+  switch (iconCat) {
+    case "image":
+      return <ImageIcon className="w-4 h-4 text-success shrink-0" />;
+    case "pdf":
+      return <File className="w-4 h-4 text-error shrink-0" />;
+    case "markdown":
+      return <FileText className="w-4 h-4 text-secondary shrink-0" />;
+    case "code":
+      return <FileCode className="w-4 h-4 text-info shrink-0" />;
+    case "config":
+      return <FileCode className="w-4 h-4 text-amber-400 shrink-0" />;
+    case "database":
+      return <Database className="w-4 h-4 text-accent shrink-0" />;
+    case "archive":
+      return <Package className="w-4 h-4 text-warning shrink-0" />;
+    case "media":
+      return <Film className="w-4 h-4 text-purple-400 shrink-0" />;
+    case "text":
+      return <FileText className="w-4 h-4 text-base-content/70 shrink-0" />;
+    default:
+      return <File className="w-4 h-4 text-base-content/50 shrink-0" />;
   }
-  if (previewType === "pdf") {
-    return <File className="w-4 h-4 text-error shrink-0" />;
-  }
-  if (previewType === "markdown") {
-    return <FileText className="w-4 h-4 text-secondary shrink-0" />;
-  }
-  if (previewType === "code") {
-    return <FileCode className="w-4 h-4 text-info shrink-0" />;
-  }
-  return <File className="w-4 h-4 text-base-content/60 shrink-0" />;
 }
 
 export function FileExplorerPane({
@@ -209,10 +222,10 @@ export function FileExplorerPane({
       onNavigate(entry.path);
       return;
     }
-    const previewType = getFilePreviewType(entry.name);
-    if (previewType === "image" || previewType === "pdf" || previewType === "media") {
+    const category = getFileCategory(entry.name);
+    if (category === "image" || category === "pdf" || category === "media") {
       onPreviewFile?.(entry);
-    } else if (previewType === "code" || previewType === "markdown") {
+    } else if (isEditableText(entry.name)) {
       onOpenFile?.(entry);
     } else {
       onPreviewFile?.(entry);
@@ -563,7 +576,7 @@ export function FileExplorerPane({
               </button>
             )}
 
-            {singleSelectedFile && !singleSelectedFile.is_dir && onOpenFile && (
+            {singleSelectedFile && !singleSelectedFile.is_dir && isEditableText(singleSelectedFile.name) && onOpenFile && (
               <button
                 type="button"
                 onClick={() => onOpenFile(singleSelectedFile)}

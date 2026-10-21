@@ -12,26 +12,9 @@ import {
   Check,
 } from "lucide-react";
 import type { FileEntry } from "@/types/sftp";
+import { isEditableText } from "@/utils/fileTypes";
 
-export function getFilePreviewType(fileName: string): "image" | "pdf" | "markdown" | "code" | "media" | "unsupported" {
-  const ext = fileName.split(".").pop()?.toLowerCase() || "";
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"].includes(ext)) return "image";
-  if (ext === "pdf") return "pdf";
-  if (["md", "markdown"].includes(ext)) return "markdown";
-  if (["mp3", "wav", "ogg", "mp4", "webm"].includes(ext)) return "media";
-  if (
-    [
-      "txt", "json", "yml", "yaml", "xml", "html", "css", "scss", "js", "ts", "jsx", "tsx",
-      "py", "rs", "go", "c", "cpp", "h", "hpp", "java", "sh", "bash", "zsh", "env", "conf",
-      "config", "toml", "ini", "sql", "log", "lock", "dockerfile", "gitignore",
-    ].includes(ext) ||
-    fileName.toLowerCase() === "dockerfile" ||
-    fileName.toLowerCase().startsWith(".env")
-  ) {
-    return "code";
-  }
-  return "unsupported";
-}
+export { getFileCategory as getFilePreviewType } from "@/utils/fileTypes";
 
 interface FileContextMenuProps {
   readonly x: number;
@@ -122,8 +105,7 @@ export function FileContextMenu({
   const isSingle = activeTargets.length === 1;
   const singleItem = isSingle ? activeTargets[0] : null;
   const isFolder = singleItem?.is_dir ?? false;
-  const previewType = singleItem ? getFilePreviewType(singleItem.name) : "unsupported";
-  const canEdit = !isFolder && (previewType === "code" || previewType === "markdown");
+  const canEdit = !isFolder && singleItem ? isEditableText(singleItem.name) : false;
 
   const handleCopyPath = async () => {
     if (activeTargets.length > 0) {
