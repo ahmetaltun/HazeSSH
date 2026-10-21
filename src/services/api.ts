@@ -210,6 +210,10 @@ export const api = {
     return await invoke<string>("sftp_canonicalize", { hostId, remotePath });
   },
 
+  sftpDisconnect: async (hostId: string): Promise<void> => {
+    return await invoke<void>("sftp_disconnect", { hostId });
+  },
+
   sftpListLocal: async (path: string): Promise<FileEntry[]> => {
     return await invoke<FileEntry[]>("sftp_list_local", { path });
   },

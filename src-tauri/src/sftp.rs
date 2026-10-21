@@ -1,11 +1,14 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use russh::client;
 use russh_keys::key;
+use russh_sftp::client::fs::ReadDir;
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 use crate::commands::AppState;
 use crate::crypto;
@@ -21,7 +24,58 @@ pub struct FileEntry {
     pub permissions: String,
 }
 
-struct SftpClientHandler;
+pub struct SftpSessionEntry {
+    pub sftp: SftpSession,
+    pub handle: client::Handle<SftpClientHandler>,
+}
+
+pub struct SftpManager {
+    sessions: Arc<Mutex<HashMap<String, Arc<SftpSessionEntry>>>>,
+}
+
+impl SftpManager {
+    pub fn new() -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Retrieve an existing active session, or connect and cache a new one.
+    pub async fn get_session(
+        &self,
+        host_id: &str,
+        state: &AppState,
+    ) -> Result<Arc<SftpSessionEntry>, String> {
+        let mut map = self.sessions.lock().await;
+        if let Some(entry) = map.get(host_id) {
+            return Ok(entry.clone());
+        }
+
+        let (sftp, handle) = connect_sftp(host_id, state).await?;
+        let entry = Arc::new(SftpSessionEntry { sftp, handle });
+        map.insert(host_id.to_string(), entry.clone());
+        Ok(entry)
+    }
+
+    /// Invalidate and cleanly terminate a cached session (e.g. on disconnect or network error).
+    pub async fn invalidate(&self, host_id: &str) {
+        let mut map = self.sessions.lock().await;
+        if let Some(entry) = map.remove(host_id) {
+            let _ = entry.sftp.close().await;
+            let _ = entry
+                .handle
+                .disconnect(russh::Disconnect::ByApplication, "SFTP session closed", "en")
+                .await;
+        }
+    }
+
+    /// Disconnect SFTP session for a specific host.
+    pub async fn disconnect(&self, host_id: &str) {
+        self.invalidate(host_id).await;
+    }
+}
+
+pub struct SftpClientHandler;
 
 #[async_trait::async_trait]
 impl client::Handler for SftpClientHandler {
@@ -39,7 +93,7 @@ impl client::Handler for SftpClientHandler {
 async fn connect_sftp(
     host_id: &str,
     state: &AppState,
-) -> Result<SftpSession, String> {
+) -> Result<(SftpSession, client::Handle<SftpClientHandler>), String> {
     let hosts = state.db.list_hosts().map_err(|e| e.to_string())?;
     let host = hosts
         .into_iter()
@@ -108,24 +162,10 @@ async fn connect_sftp(
         .await
         .map_err(|e| format!("Failed to initialize SFTP session: {}", e))?;
 
-    Ok(sftp)
+    Ok((sftp, session))
 }
 
-// --- Remote SFTP Handlers ---
-
-pub async fn sftp_list(
-    host_id: String,
-    remote_path: String,
-    state: &AppState,
-) -> Result<Vec<FileEntry>, String> {
-    let sftp = connect_sftp(&host_id, state).await?;
-    let path_str = if remote_path.trim().is_empty() { "." } else { &remote_path };
-
-    let entries = sftp
-        .read_dir(path_str)
-        .await
-        .map_err(|e| format!("Failed to read remote directory '{}': {}", path_str, e))?;
-
+fn parse_dir_entries(entries: ReadDir, path_str: &str) -> Vec<FileEntry> {
     let mut result = Vec::new();
     for entry in entries {
         let filename = entry.file_name();
@@ -169,7 +209,33 @@ pub async fn sftp_list(
         }
     });
 
-    Ok(result)
+    result
+}
+
+// --- Remote SFTP Handlers ---
+
+pub async fn sftp_list(
+    host_id: String,
+    remote_path: String,
+    state: &AppState,
+) -> Result<Vec<FileEntry>, String> {
+    let path_str = if remote_path.trim().is_empty() { "." } else { &remote_path };
+
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    match session.sftp.read_dir(path_str).await {
+        Ok(entries) => Ok(parse_dir_entries(entries, path_str)),
+        Err(_) => {
+            // Channel may have been dropped or closed by server; invalidate and retry once
+            state.sftp_manager.invalidate(&host_id).await;
+            let session = state.sftp_manager.get_session(&host_id, state).await?;
+            let entries = session
+                .sftp
+                .read_dir(path_str)
+                .await
+                .map_err(|e| format!("Failed to read remote directory '{}': {}", path_str, e))?;
+            Ok(parse_dir_entries(entries, path_str))
+        }
+    }
 }
 
 pub async fn sftp_read_text(
@@ -179,11 +245,19 @@ pub async fn sftp_read_text(
 ) -> Result<String, String> {
     use tokio::io::AsyncReadExt;
 
-    let sftp = connect_sftp(&host_id, state).await?;
-    let mut file = sftp
-        .open(&remote_path)
-        .await
-        .map_err(|e| format!("Failed to open remote file '{}': {}", remote_path, e))?;
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    let mut file = match session.sftp.open(&remote_path).await {
+        Ok(f) => f,
+        Err(_) => {
+            state.sftp_manager.invalidate(&host_id).await;
+            let session = state.sftp_manager.get_session(&host_id, state).await?;
+            session
+                .sftp
+                .open(&remote_path)
+                .await
+                .map_err(|e| format!("Failed to open remote file '{}': {}", remote_path, e))?
+        }
+    };
 
     let mut content = Vec::new();
     file.read_to_end(&mut content)
@@ -202,11 +276,19 @@ pub async fn sftp_write_text(
 ) -> Result<(), String> {
     use tokio::io::AsyncWriteExt;
 
-    let sftp = connect_sftp(&host_id, state).await?;
-    let mut file = sftp
-        .create(&remote_path)
-        .await
-        .map_err(|e| format!("Failed to create remote file '{}': {}", remote_path, e))?;
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    let mut file = match session.sftp.create(&remote_path).await {
+        Ok(f) => f,
+        Err(_) => {
+            state.sftp_manager.invalidate(&host_id).await;
+            let session = state.sftp_manager.get_session(&host_id, state).await?;
+            session
+                .sftp
+                .create(&remote_path)
+                .await
+                .map_err(|e| format!("Failed to create remote file '{}': {}", remote_path, e))?
+        }
+    };
 
     file.write_all(content.as_bytes())
         .await
@@ -225,15 +307,29 @@ pub async fn sftp_delete(
     is_dir: bool,
     state: &AppState,
 ) -> Result<(), String> {
-    let sftp = connect_sftp(&host_id, state).await?;
-    if is_dir {
-        sftp.remove_dir(&remote_path)
-            .await
-            .map_err(|e| format!("Failed to remove remote directory '{}': {}", remote_path, e))?;
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    let res = if is_dir {
+        session.sftp.remove_dir(&remote_path).await
     } else {
-        sftp.remove_file(&remote_path)
-            .await
-            .map_err(|e| format!("Failed to remove remote file '{}': {}", remote_path, e))?;
+        session.sftp.remove_file(&remote_path).await
+    };
+
+    if res.is_err() {
+        state.sftp_manager.invalidate(&host_id).await;
+        let session = state.sftp_manager.get_session(&host_id, state).await?;
+        if is_dir {
+            session
+                .sftp
+                .remove_dir(&remote_path)
+                .await
+                .map_err(|e| format!("Failed to remove remote directory '{}': {}", remote_path, e))?;
+        } else {
+            session
+                .sftp
+                .remove_file(&remote_path)
+                .await
+                .map_err(|e| format!("Failed to remove remote file '{}': {}", remote_path, e))?;
+        }
     }
     Ok(())
 }
@@ -243,10 +339,19 @@ pub async fn sftp_mkdir(
     remote_path: String,
     state: &AppState,
 ) -> Result<(), String> {
-    let sftp = connect_sftp(&host_id, state).await?;
-    sftp.create_dir(&remote_path)
-        .await
-        .map_err(|e| format!("Failed to create directory '{}': {}", remote_path, e))
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    match session.sftp.create_dir(&remote_path).await {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            state.sftp_manager.invalidate(&host_id).await;
+            let session = state.sftp_manager.get_session(&host_id, state).await?;
+            session
+                .sftp
+                .create_dir(&remote_path)
+                .await
+                .map_err(|e| format!("Failed to create directory '{}': {}", remote_path, e))
+        }
+    }
 }
 
 pub async fn sftp_rename(
@@ -255,10 +360,19 @@ pub async fn sftp_rename(
     new_path: String,
     state: &AppState,
 ) -> Result<(), String> {
-    let sftp = connect_sftp(&host_id, state).await?;
-    sftp.rename(&old_path, &new_path)
-        .await
-        .map_err(|e| format!("Failed to rename '{}' to '{}': {}", old_path, new_path, e))
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    match session.sftp.rename(&old_path, &new_path).await {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            state.sftp_manager.invalidate(&host_id).await;
+            let session = state.sftp_manager.get_session(&host_id, state).await?;
+            session
+                .sftp
+                .rename(&old_path, &new_path)
+                .await
+                .map_err(|e| format!("Failed to rename '{}' to '{}': {}", old_path, new_path, e))
+        }
+    }
 }
 
 async fn upload_single_file_stream(
@@ -345,12 +459,12 @@ pub async fn sftp_upload_file(
     state: &AppState,
 ) -> Result<u64, String> {
     let local_path_buf = std::path::PathBuf::from(&local_path);
-    let sftp = connect_sftp(&host_id, state).await?;
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
 
     if local_path_buf.is_dir() {
-        upload_dir_recursive(&sftp, &local_path_buf, &remote_path).await
+        upload_dir_recursive(&session.sftp, &local_path_buf, &remote_path).await
     } else {
-        upload_single_file_stream(&sftp, &local_path_buf, &remote_path).await
+        upload_single_file_stream(&session.sftp, &local_path_buf, &remote_path).await
     }
 }
 
@@ -445,17 +559,17 @@ pub async fn sftp_download_file(
     state: &AppState,
 ) -> Result<u64, String> {
     let local_path_buf = std::path::PathBuf::from(&local_path);
-    let sftp = connect_sftp(&host_id, state).await?;
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
 
-    let is_remote_dir = match sftp.metadata(&remote_path).await {
+    let is_remote_dir = match session.sftp.metadata(&remote_path).await {
         Ok(meta) => meta.file_type().is_dir(),
         Err(_) => false,
     };
 
     if is_remote_dir {
-        download_dir_recursive(&sftp, &remote_path, &local_path_buf).await
+        download_dir_recursive(&session.sftp, &remote_path, &local_path_buf).await
     } else {
-        download_single_file_stream(&sftp, &remote_path, &local_path_buf).await
+        download_single_file_stream(&session.sftp, &remote_path, &local_path_buf).await
     }
 }
 
@@ -464,11 +578,20 @@ pub async fn sftp_canonicalize(
     remote_path: String,
     state: &AppState,
 ) -> Result<String, String> {
-    let sftp = connect_sftp(&host_id, state).await?;
     let target = if remote_path.trim().is_empty() { "." } else { &remote_path };
-    sftp.canonicalize(target)
-        .await
-        .map_err(|e| format!("Failed to canonicalize remote path '{}': {}", target, e))
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    match session.sftp.canonicalize(target).await {
+        Ok(res) => Ok(res),
+        Err(_) => {
+            state.sftp_manager.invalidate(&host_id).await;
+            let session = state.sftp_manager.get_session(&host_id, state).await?;
+            session
+                .sftp
+                .canonicalize(target)
+                .await
+                .map_err(|e| format!("Failed to canonicalize remote path '{}': {}", target, e))
+        }
+    }
 }
 
 // --- Local Filesystem Handlers ---

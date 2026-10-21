@@ -81,7 +81,15 @@ export function FileExplorerPane({
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isRevalidating, setIsRevalidating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // In-memory directory cache for instant (0ms) folder navigation
+  const dirCacheRef = useRef<Map<string, FileEntry[]>>(new Map());
+  const activePathRef = useRef<string>(currentPath);
+  activePathRef.current = currentPath;
+
+  const getCacheKey = (p: string) => `${mode}:${mode === "remote" ? hostId || "" : "local"}:${p}`;
 
   // New folder dialog
   const [isMkdirOpen, setIsMkdirOpen] = useState(false);
@@ -107,35 +115,62 @@ export function FileExplorerPane({
     onSelectFiles?.(files);
   };
 
-  const loadDirectory = async (path: string) => {
-    setIsLoading(true);
+  const loadDirectory = async (path: string, forceFresh = false) => {
+    const cacheKey = getCacheKey(path);
+    const cached = dirCacheRef.current.get(cacheKey);
+
+    if (!forceFresh && cached) {
+      // Instant display from cache (0ms perceived latency)
+      setEntries(cached);
+      setIsLoading(false);
+      setIsRevalidating(true);
+    } else {
+      setIsLoading(true);
+    }
+
     setErrorMsg(null);
     handleSelectFiles([]);
     lastClickedEntryRef.current = null;
 
     try {
+      let data: FileEntry[] = [];
       if (mode === "remote") {
         if (!hostId) {
           setEntries([]);
           setIsLoading(false);
+          setIsRevalidating(false);
           return;
         }
-        const data = await api.sftpListRemote(hostId, path);
-        setEntries(data);
+        data = await api.sftpListRemote(hostId, path);
       } else {
-        const data = await api.sftpListLocal(path);
+        data = await api.sftpListLocal(path);
+      }
+
+      // Always update cache with latest fetched entries
+      dirCacheRef.current.set(cacheKey, data);
+
+      // Only update state if user is still on this path
+      if (activePathRef.current === path) {
         setEntries(data);
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-      setEntries([]);
+      if (activePathRef.current === path) {
+        setErrorMsg(err instanceof Error ? err.message : String(err));
+        if (!cached) {
+          setEntries([]);
+        }
+      }
     } finally {
-      setIsLoading(false);
+      if (activePathRef.current === path) {
+        setIsLoading(false);
+        setIsRevalidating(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadDirectory(currentPath);
+    // If refreshKey triggered this update, force fresh listing from backend
+    loadDirectory(currentPath, refreshKey > 0);
   }, [mode, hostId, currentPath, refreshKey]);
 
   // Navigate up one folder
@@ -235,7 +270,8 @@ export function FileExplorerPane({
       }
       setIsMkdirOpen(false);
       setNewFolderName("");
-      loadDirectory(currentPath);
+      dirCacheRef.current.delete(getCacheKey(currentPath));
+      loadDirectory(currentPath, true);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     }
@@ -263,7 +299,8 @@ export function FileExplorerPane({
       setIsDeleteOpen(false);
       setFilesToDelete([]);
       handleSelectFiles([]);
-      loadDirectory(currentPath);
+      dirCacheRef.current.delete(getCacheKey(currentPath));
+      loadDirectory(currentPath, true);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     } finally {
@@ -289,7 +326,8 @@ export function FileExplorerPane({
       setIsRenameOpen(false);
       setRenameTarget(null);
       setNewFileName("");
-      loadDirectory(currentPath);
+      dirCacheRef.current.delete(getCacheKey(currentPath));
+      loadDirectory(currentPath, true);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     }
@@ -320,12 +358,12 @@ export function FileExplorerPane({
           </button>
           <button
             type="button"
-            onClick={() => loadDirectory(currentPath)}
+            onClick={() => loadDirectory(currentPath, true)}
             disabled={isLoading}
             className="btn btn-ghost btn-xs btn-square"
             title="Refresh"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-primary" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading || isRevalidating ? "animate-spin text-primary" : ""}`} />
           </button>
           <button
             type="button"

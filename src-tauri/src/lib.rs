@@ -53,6 +53,7 @@ pub fn run() {
                 tunnel_manager: Arc::new(TunnelManager::new()),
                 serial_manager: Arc::new(serial::SerialSessionManager::new()),
                 telnet_manager: Arc::new(telnet::TelnetSessionManager::new()),
+                sftp_manager: Arc::new(sftp::SftpManager::new()),
             });
 
             Ok(())
@@ -97,6 +98,7 @@ pub fn run() {
             commands::sftp_upload_file,
             commands::sftp_download_file,
             commands::sftp_canonicalize,
+            commands::sftp_disconnect,
             commands::sftp_list_local,
             commands::sftp_get_local_home,
             commands::sftp_local_mkdir,

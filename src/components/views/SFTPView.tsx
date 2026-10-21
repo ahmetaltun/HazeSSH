@@ -106,6 +106,9 @@ export function SFTPView() {
   };
 
   const handleDisconnect = () => {
+    if (selectedHostId) {
+      api.sftpDisconnect(selectedHostId).catch(console.error);
+    }
     setIsConnected(false);
     setSelectedRemoteFiles([]);
     setRemotePath(".");

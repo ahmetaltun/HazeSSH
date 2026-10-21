@@ -30,6 +30,7 @@ pub struct AppState {
     pub tunnel_manager: Arc<TunnelManager>,
     pub serial_manager: Arc<SerialSessionManager>,
     pub telnet_manager: Arc<TelnetSessionManager>,
+    pub sftp_manager: Arc<sftp::SftpManager>,
 }
 
 impl AppState {
@@ -590,6 +591,15 @@ pub async fn sftp_canonicalize(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     sftp::sftp_canonicalize(host_id, remote_path, &state).await
+}
+
+#[tauri::command]
+pub async fn sftp_disconnect(
+    host_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.sftp_manager.disconnect(&host_id).await;
+    Ok(())
 }
 
 #[tauri::command]
