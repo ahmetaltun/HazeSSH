@@ -20,6 +20,7 @@ import type { FileEntry, TransferTask } from "@/types/sftp";
 import { FileExplorerPane } from "@/components/sftp/FileExplorerPane";
 import { RemoteEditorModal } from "@/components/sftp/RemoteEditorModal";
 import { FilePreviewModal } from "@/components/sftp/FilePreviewModal";
+import { HostSelectDropdown } from "@/components/hosts/HostSelectDropdown";
 
 export function SFTPView() {
   const { hosts } = useHostStore();
@@ -254,19 +255,11 @@ export function SFTPView() {
           <span className="text-xs text-base-content/60 font-semibold flex items-center gap-1">
             <Server className="w-3.5 h-3.5" /> Host:
           </span>
-          <select
-            value={selectedHostId}
-            onChange={(e) => handleHostChange(e.target.value)}
+          <HostSelectDropdown
+            selectedHostId={selectedHostId}
+            onSelect={handleHostChange}
             disabled={isConnecting}
-            className="select select-sm select-bordered bg-base-100 text-xs font-semibold max-w-xs"
-          >
-            {hosts.length === 0 && <option value="">(No Hosts Configured)</option>}
-            {hosts.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.label} ({h.hostname}:{h.port})
-              </option>
-            ))}
-          </select>
+          />
 
           {isConnected ? (
             <button

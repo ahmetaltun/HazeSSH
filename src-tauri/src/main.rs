@@ -6,7 +6,10 @@ fn main() {
     {
         // Guard against WebKitGTK DMABUF renderer buffer-sharing crashes on NVIDIA/Wayland
         if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            // SAFETY: Called synchronously at application entry point before any secondary threads are spawned.
+            unsafe {
+                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            }
         }
     }
 
