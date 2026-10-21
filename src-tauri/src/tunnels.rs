@@ -310,11 +310,12 @@ async fn run_local_tunnel(
     config.keepalive_interval = Some(Duration::from_secs(30));
     let config = Arc::new(config);
 
-    let connect_future = client::connect(
-        config,
-        (host.hostname.as_str(), host.port),
-        DirectClientHandler,
-    );
+    let connect_future = async {
+        let stream = TcpStream::connect((host.hostname.as_str(), host.port)).await
+            .map_err(russh::Error::from)?;
+        let _ = stream.set_nodelay(true);
+        client::connect_stream(config, stream, DirectClientHandler).await
+    };
 
     let mut session = tokio::time::timeout(Duration::from_secs(12), connect_future)
         .await
@@ -437,11 +438,12 @@ async fn run_remote_tunnel(
     config.keepalive_interval = Some(Duration::from_secs(30));
     let config = Arc::new(config);
 
-    let connect_future = client::connect(
-        config,
-        (host.hostname.as_str(), host.port),
-        handler,
-    );
+    let connect_future = async {
+        let stream = TcpStream::connect((host.hostname.as_str(), host.port)).await
+            .map_err(russh::Error::from)?;
+        let _ = stream.set_nodelay(true);
+        client::connect_stream(config, stream, handler).await
+    };
 
     let mut session = tokio::time::timeout(Duration::from_secs(12), connect_future)
         .await
@@ -520,11 +522,12 @@ async fn run_dynamic_tunnel(
     config.keepalive_interval = Some(Duration::from_secs(30));
     let config = Arc::new(config);
 
-    let connect_future = client::connect(
-        config,
-        (host.hostname.as_str(), host.port),
-        DirectClientHandler,
-    );
+    let connect_future = async {
+        let stream = TcpStream::connect((host.hostname.as_str(), host.port)).await
+            .map_err(russh::Error::from)?;
+        let _ = stream.set_nodelay(true);
+        client::connect_stream(config, stream, DirectClientHandler).await
+    };
 
     let mut session = tokio::time::timeout(Duration::from_secs(12), connect_future)
         .await

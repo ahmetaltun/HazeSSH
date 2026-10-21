@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { UploadCloud } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
@@ -19,6 +20,8 @@ import { getTerminalTheme } from "@/services/terminalThemes";
 import { FileDropModal, type DroppedFileInfo } from "@/components/terminal/FileDropModal";
 import type { TerminalPane, SplitNode } from "@/types/terminal";
 import type { SshEvent } from "@/types/ssh";
+
+const textEncoder = new TextEncoder();
 
 interface XTermTerminalProps {
   readonly pane: TerminalPane;
@@ -41,7 +44,7 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
     const toSend = path.includes(" ") ? `"${path}" ` : `${path} `;
     const sessionId = sessionIdRef.current;
     if (sessionId) {
-      const bytes = Array.from(new TextEncoder().encode(toSend));
+      const bytes = Array.from(textEncoder.encode(toSend));
       if (pane.connectionType === "serial") {
         void api.serialWrite(sessionId, bytes);
       } else if (pane.connectionType === "telnet") {
@@ -120,11 +123,24 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
     term.open(containerRef.current);
     fitAddon.fit();
 
-    // 4. Handle incoming user typing
+    // 4. Attach WebGL Addon for hardware-accelerated 60-120 FPS GPU rendering
+    let webglAddon: WebglAddon | null = null;
+    try {
+      webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon?.dispose();
+        webglAddon = null;
+      });
+      term.loadAddon(webglAddon);
+    } catch (e) {
+      console.warn("WebGL addon failed to initialize, falling back to canvas/DOM renderer:", e);
+    }
+
+    // 5. Handle incoming user typing
     const dataDisposable = term.onData((data) => {
       const sessionId = sessionIdRef.current;
       if (!sessionId) return;
-      const bytes = Array.from(new TextEncoder().encode(data));
+      const bytes = Array.from(textEncoder.encode(data));
 
       if (pane.connectionType === "serial") {
         api.serialWrite(sessionId, bytes).catch((err) => {
@@ -220,7 +236,7 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
                     const toSend = resolvedScript.endsWith("\n")
                       ? resolvedScript
                       : `${resolvedScript}\n`;
-                    const bytes = Array.from(new TextEncoder().encode(toSend));
+                    const bytes = Array.from(textEncoder.encode(toSend));
 
                     setTimeout(() => {
                       if (!isDisposed && sessionIdRef.current) {
@@ -389,6 +405,7 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
       useTerminalRegistryStore.getState().unregisterSession(pane.id);
       hasRunStartupSnippetRef.current = false;
 
+      webglAddon?.dispose();
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;

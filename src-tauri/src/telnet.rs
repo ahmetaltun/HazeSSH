@@ -251,6 +251,10 @@ impl TelnetSessionManager {
             .map_err(|_| format!("Telnet connection to {} timed out after 10 seconds", addr))?
             .map_err(|e| format!("Failed to connect to Telnet host {}: {}", addr, e))?;
 
+        if let Err(e) = stream.set_nodelay(true) {
+            eprintln!("Failed to set TCP_NODELAY on Telnet stream: {}", e);
+        }
+
         let (stdin_tx, mut stdin_rx) = mpsc::channel::<Vec<u8>>(128);
         let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
 

@@ -117,7 +117,12 @@ impl SshManager {
             config.keepalive_interval = Some(Duration::from_secs(30));
             let config = Arc::new(config);
 
-            let connect_future = client::connect(config, (hostname.as_str(), port), ClientHandler);
+            let connect_future = async {
+                let stream = tokio::net::TcpStream::connect((hostname.as_str(), port)).await
+                    .map_err(|e| russh::Error::from(e))?;
+                let _ = stream.set_nodelay(true);
+                client::connect_stream(config, stream, ClientHandler).await
+            };
             let mut session = match tokio::time::timeout(Duration::from_secs(15), connect_future).await {
                 Ok(Ok(s)) => s,
                 Ok(Err(e)) => {
