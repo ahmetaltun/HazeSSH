@@ -202,12 +202,32 @@ export const api = {
     return await invoke<number>("sftp_upload_file", { hostId, localPath, remotePath });
   },
 
+  sftpDownloadFile: async (hostId: string, remotePath: string, localPath: string): Promise<number> => {
+    return await invoke<number>("sftp_download_file", { hostId, remotePath, localPath });
+  },
+
+  sftpCanonicalize: async (hostId: string, remotePath: string): Promise<string> => {
+    return await invoke<string>("sftp_canonicalize", { hostId, remotePath });
+  },
+
   sftpListLocal: async (path: string): Promise<FileEntry[]> => {
     return await invoke<FileEntry[]>("sftp_list_local", { path });
   },
 
   sftpGetLocalHome: async (): Promise<string> => {
     return await invoke<string>("sftp_get_local_home");
+  },
+
+  sftpLocalMkdir: async (path: string): Promise<void> => {
+    return await invoke<void>("sftp_local_mkdir", { path });
+  },
+
+  sftpLocalDelete: async (path: string, isDir: boolean): Promise<void> => {
+    return await invoke<void>("sftp_local_delete", { path, isDir });
+  },
+
+  sftpLocalRename: async (oldPath: string, newPath: string): Promise<void> => {
+    return await invoke<void>("sftp_local_rename", { oldPath, newPath });
   },
 
   // --- Backup & Restore ---

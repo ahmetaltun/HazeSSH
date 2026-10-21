@@ -3,8 +3,9 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
-import { WebglAddon } from "@xterm/addon-webgl";
+import { attachTerminalRenderer, type TerminalRendererHandle } from "@/components/terminal/terminalRenderer";
 import { UploadCloud } from "lucide-react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
 import { api } from "@/services/api";
@@ -32,6 +33,7 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const rendererHandleRef = useRef<TerminalRendererHandle | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const hasRunStartupSnippetRef = useRef<boolean>(false);
 
@@ -74,22 +76,96 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      const filePath = (file as unknown as { path?: string }).path || file.name;
-      const fileInfo: DroppedFileInfo = {
-        name: file.name,
-        path: filePath,
-        size: file.size,
-      };
+      const filePath = (file as unknown as { path?: string }).path;
+      if (filePath) {
+        const fileInfo: DroppedFileInfo = {
+          name: file.name,
+          path: filePath,
+          size: file.size,
+        };
 
-      if (!pane.hostId) {
-        // Local terminal session: immediately paste escaped path
-        handlePastePath(filePath);
-      } else {
-        // Remote SSH session: trigger modal with SFTP upload option
-        setDroppedFile(fileInfo);
+        if (!pane.hostId) {
+          handlePastePath(filePath);
+        } else {
+          setDroppedFile(fileInfo);
+        }
       }
     }
   };
+
+  // Native Tauri drag-and-drop listener for OS-level file drops
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let isCancelled = false;
+
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (isCancelled || !containerRef.current) return;
+
+        if (event.payload.type === "leave") {
+          setIsDragOver(false);
+          return;
+        }
+
+        const container = containerRef.current;
+        const rect = container.getBoundingClientRect();
+        const pos = event.payload.position;
+        const dpr = window.devicePixelRatio || 1;
+
+        const elDirect = document.elementFromPoint(pos.x, pos.y);
+        const elScaled = document.elementFromPoint(pos.x / dpr, pos.y / dpr);
+        const inDirect =
+          pos.x >= rect.left && pos.x <= rect.right && pos.y >= rect.top && pos.y <= rect.bottom;
+        const inScaled =
+          pos.x / dpr >= rect.left &&
+          pos.x / dpr <= rect.right &&
+          pos.y / dpr >= rect.top &&
+          pos.y / dpr <= rect.bottom;
+
+        const isOverMe =
+          Boolean(elDirect && container.contains(elDirect)) ||
+          Boolean(elScaled && container.contains(elScaled)) ||
+          inDirect ||
+          inScaled;
+
+        if (event.payload.type === "over" || event.payload.type === "enter") {
+          setIsDragOver(isOverMe);
+        } else if (event.payload.type === "drop") {
+          if (isOverMe && event.payload.paths.length > 0) {
+            setIsDragOver(false);
+            const rawPath = event.payload.paths[0];
+            const fileName = rawPath.replace(/\\/g, "/").split("/").pop() || rawPath;
+            const fileInfo: DroppedFileInfo = {
+              name: fileName,
+              path: rawPath,
+            };
+
+            if (!pane.hostId) {
+              handlePastePath(rawPath);
+            } else {
+              setDroppedFile(fileInfo);
+            }
+          } else {
+            setIsDragOver(false);
+          }
+        }
+      })
+      .then((cleanup) => {
+        if (isCancelled) {
+          cleanup();
+        } else {
+          unlisten = cleanup;
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to attach Tauri drag drop listener in XTermTerminal:", err);
+      });
+
+    return () => {
+      isCancelled = true;
+      unlisten?.();
+    };
+  }, [pane.hostId]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -123,18 +199,9 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
     term.open(containerRef.current);
     fitAddon.fit();
 
-    // 4. Attach WebGL Addon for hardware-accelerated 60-120 FPS GPU rendering
-    let webglAddon: WebglAddon | null = null;
-    try {
-      webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon?.dispose();
-        webglAddon = null;
-      });
-      term.loadAddon(webglAddon);
-    } catch (e) {
-      console.warn("WebGL addon failed to initialize, falling back to canvas/DOM renderer:", e);
-    }
+    // 4. Attach adaptive GPU / Canvas / DOM hardware acceleration renderer
+    const rendererHandle = attachTerminalRenderer(term, initialSettings.gpuAcceleration);
+    rendererHandleRef.current = rendererHandle;
 
     // 5. Handle incoming user typing
     const dataDisposable = term.onData((data) => {
@@ -405,7 +472,8 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
       useTerminalRegistryStore.getState().unregisterSession(pane.id);
       hasRunStartupSnippetRef.current = false;
 
-      webglAddon?.dispose();
+      rendererHandleRef.current?.dispose();
+      rendererHandleRef.current = null;
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
@@ -436,9 +504,16 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
     }
   }, [currentTheme]);
 
-  // Sync typography & appearance settings live across all panes
-  const { fontSize, fontFamily, lineHeight, cursorStyle, cursorBlink, scrollback } =
-    useTerminalSettingsStore();
+  // Sync typography, appearance & GPU hardware acceleration settings live across all panes
+  const {
+    fontSize,
+    fontFamily,
+    lineHeight,
+    cursorStyle,
+    cursorBlink,
+    scrollback,
+    gpuAcceleration,
+  } = useTerminalSettingsStore();
 
   useEffect(() => {
     if (termRef.current) {
@@ -455,6 +530,19 @@ export function XTermTerminal({ pane, isFocused }: XTermTerminalProps) {
       }
     }
   }, [fontSize, fontFamily, lineHeight, cursorStyle, cursorBlink, scrollback]);
+
+  // Hot-swap hardware acceleration renderer when setting changes
+  useEffect(() => {
+    if (termRef.current) {
+      rendererHandleRef.current?.dispose();
+      rendererHandleRef.current = attachTerminalRenderer(termRef.current, gpuAcceleration);
+      try {
+        fitAddonRef.current?.fit();
+      } catch {
+        // Container might be transitionally hidden
+      }
+    }
+  }, [gpuAcceleration]);
 
   // Focus terminal when pane becomes active
   useEffect(() => {

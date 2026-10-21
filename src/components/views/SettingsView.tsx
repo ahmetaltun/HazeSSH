@@ -27,12 +27,14 @@ export function SettingsView() {
     cursorStyle,
     cursorBlink,
     scrollback,
+    gpuAcceleration,
     setFontFamily,
     setFontSize,
     setLineHeight,
     setCursorStyle,
     setCursorBlink,
     setScrollback,
+    setGpuAcceleration,
     resetToDefaults,
   } = useTerminalSettingsStore();
 
@@ -275,6 +277,73 @@ export function SettingsView() {
                 <option value={25000}>25,000 lines</option>
                 <option value={50000}>50,000 lines (Power user)</option>
               </select>
+            </div>
+
+            {/* GPU Hardware Acceleration */}
+            <div className="space-y-2 md:col-span-2 p-3.5 rounded-xl bg-base-100 border border-base-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold">GPU Hardware Acceleration</span>
+                    <span className="badge badge-xs badge-primary font-mono uppercase">
+                      {gpuAcceleration === "auto" ? "Adaptive" : gpuAcceleration}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-base-content/60 mt-0.5">
+                    Offloads terminal text rasterization to your GPU (WebGL2 / Metal / DirectX) for 60–120 FPS high throughput.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setGpuAcceleration("auto")}
+                  className={`btn btn-xs flex-col h-auto py-2 px-2.5 items-start text-left ${
+                    gpuAcceleration === "auto"
+                      ? "btn-primary shadow-xs"
+                      : "btn-ghost border border-base-300"
+                  }`}
+                >
+                  <span className="font-bold text-xs">Auto (Adaptive)</span>
+                  <span className="text-[10px] opacity-75 font-normal">WebGL2 with Canvas fallback</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGpuAcceleration("webgl")}
+                  className={`btn btn-xs flex-col h-auto py-2 px-2.5 items-start text-left ${
+                    gpuAcceleration === "webgl"
+                      ? "btn-primary shadow-xs"
+                      : "btn-ghost border border-base-300"
+                  }`}
+                >
+                  <span className="font-bold text-xs">WebGL2 Force</span>
+                  <span className="text-[10px] opacity-75 font-normal">Max FPS & throughput</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGpuAcceleration("canvas")}
+                  className={`btn btn-xs flex-col h-auto py-2 px-2.5 items-start text-left ${
+                    gpuAcceleration === "canvas"
+                      ? "btn-primary shadow-xs"
+                      : "btn-ghost border border-base-300"
+                  }`}
+                >
+                  <span className="font-bold text-xs">Canvas 2D</span>
+                  <span className="text-[10px] opacity-75 font-normal">Bypasses 16-context limit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGpuAcceleration("off")}
+                  className={`btn btn-xs flex-col h-auto py-2 px-2.5 items-start text-left ${
+                    gpuAcceleration === "off"
+                      ? "btn-primary shadow-xs"
+                      : "btn-ghost border border-base-300"
+                  }`}
+                >
+                  <span className="font-bold text-xs">Disabled (DOM)</span>
+                  <span className="text-[10px] opacity-75 font-normal">Pure software safe mode</span>
+                </button>
+              </div>
             </div>
           </div>
 

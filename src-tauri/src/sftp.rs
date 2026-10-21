@@ -50,7 +50,13 @@ async fn connect_sftp(
     config.keepalive_interval = Some(Duration::from_secs(30));
     let config = Arc::new(config);
 
-    let connect_future = client::connect(config, (host.hostname.as_str(), host.port), SftpClientHandler);
+    let connect_future = async {
+        let stream = tokio::net::TcpStream::connect((host.hostname.as_str(), host.port))
+            .await
+            .map_err(russh::Error::from)?;
+        let _ = stream.set_nodelay(true);
+        client::connect_stream(config, stream, SftpClientHandler).await
+    };
     let mut session = tokio::time::timeout(Duration::from_secs(12), connect_future)
         .await
         .map_err(|_| "Connection timed out after 12 seconds".to_string())?
@@ -255,21 +261,19 @@ pub async fn sftp_rename(
         .map_err(|e| format!("Failed to rename '{}' to '{}': {}", old_path, new_path, e))
 }
 
-pub async fn sftp_upload_file(
-    host_id: String,
-    local_path: String,
-    remote_path: String,
-    state: &AppState,
+async fn upload_single_file_stream(
+    sftp: &SftpSession,
+    local_path: &Path,
+    remote_path: &str,
 ) -> Result<u64, String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let mut local_file = tokio::fs::File::open(&local_path)
+    let mut local_file = tokio::fs::File::open(local_path)
         .await
-        .map_err(|e| format!("Failed to open local file '{}': {}", local_path, e))?;
+        .map_err(|e| format!("Failed to open local file '{}': {}", local_path.display(), e))?;
 
-    let sftp = connect_sftp(&host_id, state).await?;
     let mut remote_file = sftp
-        .create(&remote_path)
+        .create(remote_path)
         .await
         .map_err(|e| format!("Failed to create remote file '{}': {}", remote_path, e))?;
 
@@ -300,6 +304,171 @@ pub async fn sftp_upload_file(
         .map_err(|e| format!("Failed to flush remote file: {}", e))?;
 
     Ok(total_bytes)
+}
+
+fn upload_dir_recursive<'a>(
+    sftp: &'a SftpSession,
+    local_dir: &'a Path,
+    remote_dir: &'a str,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64, String>> + Send + 'a>> {
+    Box::pin(async move {
+        let _ = sftp.create_dir(remote_dir).await;
+        let mut total = 0u64;
+        let mut entries = tokio::fs::read_dir(local_dir)
+            .await
+            .map_err(|e| format!("Failed to read local directory '{}': {}", local_dir.display(), e))?;
+
+        while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let remote_entry_path = if remote_dir.ends_with('/') {
+                format!("{}{}", remote_dir, name)
+            } else {
+                format!("{}/{}", remote_dir, name)
+            };
+
+            if path.is_dir() {
+                total += upload_dir_recursive(sftp, &path, &remote_entry_path).await?;
+            } else {
+                total += upload_single_file_stream(sftp, &path, &remote_entry_path).await?;
+            }
+        }
+
+        Ok(total)
+    })
+}
+
+pub async fn sftp_upload_file(
+    host_id: String,
+    local_path: String,
+    remote_path: String,
+    state: &AppState,
+) -> Result<u64, String> {
+    let local_path_buf = std::path::PathBuf::from(&local_path);
+    let sftp = connect_sftp(&host_id, state).await?;
+
+    if local_path_buf.is_dir() {
+        upload_dir_recursive(&sftp, &local_path_buf, &remote_path).await
+    } else {
+        upload_single_file_stream(&sftp, &local_path_buf, &remote_path).await
+    }
+}
+
+async fn download_single_file_stream(
+    sftp: &SftpSession,
+    remote_path: &str,
+    local_path: &Path,
+) -> Result<u64, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut remote_file = sftp
+        .open(remote_path)
+        .await
+        .map_err(|e| format!("Failed to open remote file '{}': {}", remote_path, e))?;
+
+    let mut local_file = tokio::fs::File::create(local_path)
+        .await
+        .map_err(|e| format!("Failed to create local file '{}': {}", local_path.display(), e))?;
+
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total_bytes = 0u64;
+
+    loop {
+        let bytes_read = remote_file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| format!("Failed to read data from remote file: {}", e))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        local_file
+            .write_all(&buffer[..bytes_read])
+            .await
+            .map_err(|e| format!("Failed to write data to local file: {}", e))?;
+
+        total_bytes += bytes_read as u64;
+    }
+
+    local_file
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush local file: {}", e))?;
+
+    Ok(total_bytes)
+}
+
+fn download_dir_recursive<'a>(
+    sftp: &'a SftpSession,
+    remote_dir: &'a str,
+    local_dir: &'a Path,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64, String>> + Send + 'a>> {
+    Box::pin(async move {
+        tokio::fs::create_dir_all(local_dir)
+            .await
+            .map_err(|e| format!("Failed to create local directory '{}': {}", local_dir.display(), e))?;
+
+        let mut total = 0u64;
+        let entries = sftp
+            .read_dir(remote_dir)
+            .await
+            .map_err(|e| format!("Failed to read remote directory '{}': {}", remote_dir, e))?;
+
+        for entry in entries {
+            let filename = entry.file_name();
+            if filename == "." || filename == ".." {
+                continue;
+            }
+            let remote_entry_path = if remote_dir.ends_with('/') {
+                format!("{}{}", remote_dir, filename)
+            } else {
+                format!("{}/{}", remote_dir, filename)
+            };
+            let local_entry_path = local_dir.join(&filename);
+
+            if entry.file_type().is_dir() {
+                total += download_dir_recursive(sftp, &remote_entry_path, &local_entry_path).await?;
+            } else {
+                total += download_single_file_stream(sftp, &remote_entry_path, &local_entry_path).await?;
+            }
+        }
+
+        Ok(total)
+    })
+}
+
+pub async fn sftp_download_file(
+    host_id: String,
+    remote_path: String,
+    local_path: String,
+    state: &AppState,
+) -> Result<u64, String> {
+    let local_path_buf = std::path::PathBuf::from(&local_path);
+    let sftp = connect_sftp(&host_id, state).await?;
+
+    let is_remote_dir = match sftp.metadata(&remote_path).await {
+        Ok(meta) => meta.file_type().is_dir(),
+        Err(_) => false,
+    };
+
+    if is_remote_dir {
+        download_dir_recursive(&sftp, &remote_path, &local_path_buf).await
+    } else {
+        download_single_file_stream(&sftp, &remote_path, &local_path_buf).await
+    }
+}
+
+pub async fn sftp_canonicalize(
+    host_id: String,
+    remote_path: String,
+    state: &AppState,
+) -> Result<String, String> {
+    let sftp = connect_sftp(&host_id, state).await?;
+    let target = if remote_path.trim().is_empty() { "." } else { &remote_path };
+    sftp.canonicalize(target)
+        .await
+        .map_err(|e| format!("Failed to canonicalize remote path '{}': {}", target, e))
 }
 
 // --- Local Filesystem Handlers ---
@@ -361,3 +530,25 @@ pub fn local_list(local_path: String) -> Result<Vec<FileEntry>, String> {
 pub fn get_local_home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/".into())
 }
+
+pub fn local_mkdir(path: String) -> Result<(), String> {
+    fs::create_dir_all(&path)
+        .map_err(|e| format!("Failed to create local directory '{}': {}", path, e))
+}
+
+pub fn local_delete(path: String, is_dir: bool) -> Result<(), String> {
+    let p = Path::new(&path);
+    if is_dir {
+        fs::remove_dir_all(p)
+            .map_err(|e| format!("Failed to remove local directory '{}': {}", path, e))
+    } else {
+        fs::remove_file(p)
+            .map_err(|e| format!("Failed to remove local file '{}': {}", path, e))
+    }
+}
+
+pub fn local_rename(old_path: String, new_path: String) -> Result<(), String> {
+    fs::rename(&old_path, &new_path)
+        .map_err(|e| format!("Failed to rename local path '{}' to '{}': {}", old_path, new_path, e))
+}
+

@@ -2,6 +2,8 @@ import { create } from "zustand";
 
 export type CursorStyle = "block" | "underline" | "bar";
 
+export type GpuAccelerationMode = "auto" | "webgl" | "canvas" | "off";
+
 export interface TerminalFontOption {
   readonly id: string;
   readonly label: string;
@@ -49,6 +51,7 @@ interface TerminalSettingsState {
   readonly cursorBlink: boolean;
   readonly scrollback: number;
   readonly copyOnSelect: boolean;
+  readonly gpuAcceleration: GpuAccelerationMode;
 
   readonly setFontFamily: (fontFamily: string) => void;
   readonly setFontSize: (fontSize: number) => void;
@@ -57,6 +60,7 @@ interface TerminalSettingsState {
   readonly setCursorBlink: (cursorBlink: boolean) => void;
   readonly setScrollback: (scrollback: number) => void;
   readonly setCopyOnSelect: (copyOnSelect: boolean) => void;
+  readonly setGpuAcceleration: (gpuAcceleration: GpuAccelerationMode) => void;
   readonly resetToDefaults: () => void;
 }
 
@@ -70,6 +74,7 @@ const DEFAULT_SETTINGS = {
   cursorBlink: true,
   scrollback: 10000,
   copyOnSelect: false,
+  gpuAcceleration: "auto" as GpuAccelerationMode,
 };
 
 function loadSavedSettings() {
@@ -96,6 +101,7 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
         cursorBlink: get().cursorBlink,
         scrollback: get().scrollback,
         copyOnSelect: get().copyOnSelect,
+        gpuAcceleration: get().gpuAcceleration,
         ...partial,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -140,6 +146,11 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
     setCopyOnSelect: (copyOnSelect) => {
       persist({ copyOnSelect });
       set({ copyOnSelect });
+    },
+
+    setGpuAcceleration: (gpuAcceleration) => {
+      persist({ gpuAcceleration });
+      set({ gpuAcceleration });
     },
 
     resetToDefaults: () => {

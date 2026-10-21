@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type FormEvent } from "react";
+import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
 import {
   Folder,
   File,
@@ -12,6 +12,9 @@ import {
   HardDrive,
   Globe,
   CornerDownRight,
+  FilePenLine,
+  UploadCloud,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/services/api";
 import type { FileEntry } from "@/types/sftp";
@@ -21,10 +24,15 @@ interface FileExplorerPaneProps {
   readonly mode: "local" | "remote";
   readonly hostId?: string;
   readonly currentPath: string;
+  readonly selectedFile?: FileEntry | null;
+  readonly onSelectFile?: (file: FileEntry | null) => void;
   readonly onNavigate: (path: string) => void;
   readonly onOpenFile?: (file: FileEntry) => void;
   readonly onTransfer?: (file: FileEntry) => void;
   readonly transferLabel?: string;
+  readonly refreshKey?: number;
+  readonly onDropFromOpposite?: (entry: FileEntry) => void;
+  readonly isDropTarget?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -62,25 +70,51 @@ export function FileExplorerPane({
   mode,
   hostId,
   currentPath,
+  selectedFile: externalSelectedFile,
+  onSelectFile,
   onNavigate,
   onOpenFile,
   onTransfer,
   transferLabel = "Transfer",
+  refreshKey = 0,
+  onDropFromOpposite,
+  isDropTarget = false,
 }: FileExplorerPaneProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null);
+  const [internalSelectedFile, setInternalSelectedFile] = useState<FileEntry | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isInternalDragOver, setIsInternalDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
 
   // New folder dialog
   const [isMkdirOpen, setIsMkdirOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
+  // Rename dialog
+  const [isRenameOpen, setIsRenameOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null);
+  const [newFileName, setNewFileName] = useState("");
+
+  // Delete confirmation dialog (replaces browser confirm)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<FileEntry | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const activeSelectedFile = externalSelectedFile !== undefined ? externalSelectedFile : internalSelectedFile;
+
+  const handleSelect = (file: FileEntry | null) => {
+    if (externalSelectedFile === undefined) {
+      setInternalSelectedFile(file);
+    }
+    onSelectFile?.(file);
+  };
+
   const loadDirectory = async (path: string) => {
     setIsLoading(true);
     setErrorMsg(null);
-    setSelectedFile(null);
+    handleSelect(null);
 
     try {
       if (mode === "remote") {
@@ -105,11 +139,11 @@ export function FileExplorerPane({
 
   useEffect(() => {
     loadDirectory(currentPath);
-  }, [mode, hostId, currentPath]);
+  }, [mode, hostId, currentPath, refreshKey]);
 
   // Navigate up one folder
   const handleGoUp = () => {
-    if (currentPath === "/" || currentPath === "") return;
+    if (currentPath === "/" || currentPath === "" || currentPath === ".") return;
     const parts = currentPath.replace(/\/+$/, "").split("/");
     parts.pop();
     const parent = parts.join("/") || "/";
@@ -135,25 +169,108 @@ export function FileExplorerPane({
     try {
       if (mode === "remote" && hostId) {
         await api.sftpMkdir(hostId, targetPath);
+      } else {
+        await api.sftpLocalMkdir(targetPath);
       }
       setIsMkdirOpen(false);
       setNewFolderName("");
       loadDirectory(currentPath);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      setErrorMsg(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const handleDelete = async (entry: FileEntry) => {
-    if (!confirm(`Are you sure you want to delete "${entry.name}"?`)) return;
+  const handleOpenDelete = (entry: FileEntry) => {
+    setFileToDelete(entry);
+    setIsDeleteOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!fileToDelete) return;
+    setIsDeleting(true);
+    setErrorMsg(null);
 
     try {
       if (mode === "remote" && hostId) {
-        await api.sftpDeleteFile(hostId, entry.path, entry.is_dir);
-        loadDirectory(currentPath);
+        await api.sftpDeleteFile(hostId, fileToDelete.path, fileToDelete.is_dir);
+      } else {
+        await api.sftpLocalDelete(fileToDelete.path, fileToDelete.is_dir);
+      }
+      setIsDeleteOpen(false);
+      setFileToDelete(null);
+      loadDirectory(currentPath);
+      if (activeSelectedFile?.path === fileToDelete.path) {
+        handleSelect(null);
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleRename = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!renameTarget || !newFileName.trim()) return;
+
+    const parent = currentPath.endsWith("/")
+      ? currentPath
+      : `${currentPath}/`;
+    const newPath = `${parent}${newFileName.trim()}`;
+
+    try {
+      if (mode === "remote" && hostId) {
+        await api.sftpRenameFile(hostId, renameTarget.path, newPath);
+      } else {
+        await api.sftpLocalRename(renameTarget.path, newPath);
+      }
+      setIsRenameOpen(false);
+      setRenameTarget(null);
+      setNewFileName("");
+      loadDirectory(currentPath);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handlePaneDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    setIsInternalDragOver(true);
+  };
+
+  const handlePaneDragOver = (e: React.DragEvent) => {
+    // ALWAYS call preventDefault() on dragOver to indicate drop is allowed
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (!isInternalDragOver) {
+      setIsInternalDragOver(true);
+    }
+  };
+
+  const handlePaneDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) {
+      setIsInternalDragOver(false);
+    }
+  };
+
+  const handlePaneDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsInternalDragOver(false);
+
+    const sourceMode = e.dataTransfer.getData("application/haze-sftp-source-mode");
+    const rawEntry = e.dataTransfer.getData("application/haze-sftp-entry");
+
+    if (rawEntry && sourceMode && sourceMode !== mode) {
+      try {
+        const entry: FileEntry = JSON.parse(rawEntry);
+        onDropFromOpposite?.(entry);
+      } catch (err) {
+        console.error("Failed to parse dropped entry:", err);
+      }
     }
   };
 
@@ -163,8 +280,33 @@ export function FileExplorerPane({
     return entries.filter((e) => e.name.toLowerCase().includes(q));
   }, [entries, searchTerm]);
 
+  const showDropHighlight = isInternalDragOver || isDropTarget;
+
   return (
-    <div className="flex-1 flex flex-col h-full bg-base-100 border border-base-300 rounded-xl overflow-hidden select-none">
+    <div
+      onDragEnter={handlePaneDragEnter}
+      onDragOver={handlePaneDragOver}
+      onDragLeave={handlePaneDragLeave}
+      onDrop={handlePaneDrop}
+      className={`flex-1 flex flex-col h-full bg-base-100 border rounded-xl overflow-hidden select-none relative transition-all ${
+        showDropHighlight ? "border-primary ring-2 ring-primary/40" : "border-base-300"
+      }`}
+    >
+      {/* Drag & Drop Visual Overlay */}
+      {showDropHighlight && (
+        <div className="absolute inset-0 z-30 bg-base-300/85 backdrop-blur-xs flex flex-col items-center justify-center p-6 border-2 border-dashed border-primary animate-in fade-in duration-100 pointer-events-none">
+          <div className="w-12 h-12 rounded-xl bg-primary/20 text-primary flex items-center justify-center mb-2 shadow-md animate-bounce">
+            <UploadCloud className="w-6 h-6" />
+          </div>
+          <span className="font-bold text-xs text-base-content">
+            Drop here to {mode === "remote" ? "Upload to Remote Directory" : "Download to Local Directory"}
+          </span>
+          <span className="text-[10px] text-base-content/60 font-mono mt-0.5 truncate max-w-xs">
+            Target: {currentPath}
+          </span>
+        </div>
+      )}
+
       {/* Pane Top Header */}
       <div className="h-11 bg-base-200/70 border-b border-base-300 px-3 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
@@ -180,7 +322,7 @@ export function FileExplorerPane({
           <button
             type="button"
             onClick={handleGoUp}
-            disabled={currentPath === "/" || currentPath === ""}
+            disabled={currentPath === "/" || currentPath === "" || currentPath === "."}
             className="btn btn-ghost btn-xs btn-square"
             title="Go to Parent Directory"
           >
@@ -226,8 +368,18 @@ export function FileExplorerPane({
 
       {/* Error Message */}
       {errorMsg && (
-        <div className="p-2 bg-error/10 text-error text-xs border-b border-error/20 truncate">
-          {errorMsg}
+        <div className="p-2 bg-error/10 text-error text-xs border-b border-error/20 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 truncate">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{errorMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setErrorMsg(null)}
+            className="btn btn-ghost btn-xs btn-circle text-error"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -254,12 +406,19 @@ export function FileExplorerPane({
             </thead>
             <tbody>
               {filteredEntries.map((entry) => {
-                const isSelected = selectedFile?.path === entry.path;
+                const isSelected = activeSelectedFile?.path === entry.path;
 
                 return (
                   <tr
                     key={entry.path}
-                    onClick={() => setSelectedFile(entry)}
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/haze-sftp-entry", JSON.stringify(entry));
+                      e.dataTransfer.setData("application/haze-sftp-source-mode", mode);
+                      e.dataTransfer.setData("text/plain", entry.path);
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    onClick={() => handleSelect(entry)}
                     onDoubleClick={() => handleRowDoubleClick(entry)}
                     className={`cursor-pointer transition-colors text-xs ${
                       isSelected
@@ -291,15 +450,15 @@ export function FileExplorerPane({
       {/* Pane Footer / Selected File Actions */}
       <div className="h-9 bg-base-200/50 border-t border-base-300 px-3 flex items-center justify-between text-xs shrink-0">
         <span className="text-[11px] text-base-content/50 truncate max-w-[150px]">
-          {selectedFile ? selectedFile.name : `${filteredEntries.length} items`}
+          {activeSelectedFile ? activeSelectedFile.name : `${filteredEntries.length} items`}
         </span>
 
-        {selectedFile && (
+        {activeSelectedFile && (
           <div className="flex items-center gap-1">
-            {!selectedFile.is_dir && onOpenFile && (
+            {!activeSelectedFile.is_dir && onOpenFile && (
               <button
                 type="button"
-                onClick={() => onOpenFile(selectedFile)}
+                onClick={() => onOpenFile(activeSelectedFile)}
                 className="btn btn-ghost btn-xs text-info gap-1"
                 title="Edit in In-App Editor"
               >
@@ -311,7 +470,7 @@ export function FileExplorerPane({
             {onTransfer && (
               <button
                 type="button"
-                onClick={() => onTransfer(selectedFile)}
+                onClick={() => onTransfer(activeSelectedFile)}
                 className="btn btn-primary btn-xs gap-1"
               >
                 <CornerDownRight className="w-3 h-3" />
@@ -321,8 +480,21 @@ export function FileExplorerPane({
 
             <button
               type="button"
-              onClick={() => handleDelete(selectedFile)}
-              className="btn btn-ghost btn-xs btn-square text-error"
+              onClick={() => {
+                setRenameTarget(activeSelectedFile);
+                setNewFileName(activeSelectedFile.name);
+                setIsRenameOpen(true);
+              }}
+              className="btn btn-ghost btn-xs btn-square text-base-content/70 hover:text-base-content"
+              title="Rename"
+            >
+              <FilePenLine className="w-3 h-3" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleOpenDelete(activeSelectedFile)}
+              className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/20"
               title="Delete"
             >
               <Trash2 className="w-3 h-3" />
@@ -330,6 +502,59 @@ export function FileExplorerPane({
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal (Native In-App) */}
+      {isDeleteOpen && fileToDelete && (
+        <div className="modal modal-open z-50">
+          <div className="modal-box bg-base-200 border border-base-300 max-w-sm shadow-2xl">
+            <h4 className="font-bold text-sm mb-2 text-error flex items-center gap-2">
+              <Trash2 className="w-4 h-4" /> Delete {fileToDelete.is_dir ? "Folder" : "File"}
+            </h4>
+            <p className="text-xs text-base-content/80 mt-1 leading-relaxed">
+              Are you sure you want to permanently delete{" "}
+              <span className="font-mono font-bold text-base-content">
+                &ldquo;{fileToDelete.name}&rdquo;
+              </span>
+              ?
+            </p>
+            {fileToDelete.is_dir && (
+              <p className="text-[11px] text-warning mt-1.5">
+                Warning: This folder and all its contents will be permanently removed.
+              </p>
+            )}
+            <div className="modal-action mt-4 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDeleteOpen(false);
+                  setFileToDelete(null);
+                }}
+                disabled={isDeleting}
+                className="btn btn-xs btn-ghost border border-base-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="btn btn-xs btn-error"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+          <div
+            className="modal-backdrop bg-black/60"
+            onClick={() => {
+              if (!isDeleting) {
+                setIsDeleteOpen(false);
+                setFileToDelete(null);
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* New Folder Modal */}
       {isMkdirOpen && (
@@ -360,6 +585,47 @@ export function FileExplorerPane({
             </form>
           </div>
           <div className="modal-backdrop bg-black/50" onClick={() => setIsMkdirOpen(false)} />
+        </div>
+      )}
+
+      {/* Rename Modal */}
+      {isRenameOpen && renameTarget && (
+        <div className="modal modal-open z-40">
+          <div className="modal-box bg-base-200 border border-base-300 max-w-xs shadow-2xl">
+            <h4 className="font-bold text-sm mb-3">Rename Item</h4>
+            <form onSubmit={handleRename} className="space-y-3">
+              <input
+                type="text"
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
+                placeholder="New name..."
+                className="input input-sm input-bordered w-full bg-base-100 text-xs font-mono"
+                autoFocus
+              />
+              <div className="modal-action mt-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRenameOpen(false);
+                    setRenameTarget(null);
+                  }}
+                  className="btn btn-xs btn-ghost border border-base-300"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-xs btn-primary">
+                  Rename
+                </button>
+              </div>
+            </form>
+          </div>
+          <div
+            className="modal-backdrop bg-black/50"
+            onClick={() => {
+              setIsRenameOpen(false);
+              setRenameTarget(null);
+            }}
+          />
         </div>
       )}
     </div>

@@ -574,6 +574,25 @@ pub async fn sftp_upload_file(
 }
 
 #[tauri::command]
+pub async fn sftp_download_file(
+    host_id: String,
+    remote_path: String,
+    local_path: String,
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    sftp::sftp_download_file(host_id, remote_path, local_path, &state).await
+}
+
+#[tauri::command]
+pub async fn sftp_canonicalize(
+    host_id: String,
+    remote_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    sftp::sftp_canonicalize(host_id, remote_path, &state).await
+}
+
+#[tauri::command]
 pub fn sftp_list_local(path: String) -> Result<Vec<FileEntry>, String> {
     sftp::local_list(path)
 }
@@ -581,6 +600,21 @@ pub fn sftp_list_local(path: String) -> Result<Vec<FileEntry>, String> {
 #[tauri::command]
 pub fn sftp_get_local_home() -> Result<String, String> {
     Ok(sftp::get_local_home())
+}
+
+#[tauri::command]
+pub fn sftp_local_mkdir(path: String) -> Result<(), String> {
+    sftp::local_mkdir(path)
+}
+
+#[tauri::command]
+pub fn sftp_local_delete(path: String, is_dir: bool) -> Result<(), String> {
+    sftp::local_delete(path, is_dir)
+}
+
+#[tauri::command]
+pub fn sftp_local_rename(old_path: String, new_path: String) -> Result<(), String> {
+    sftp::local_rename(old_path, new_path)
 }
 
 // --- Backup & Restore Commands ---
