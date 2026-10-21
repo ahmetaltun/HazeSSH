@@ -9,7 +9,6 @@ import {
   Clock,
   Layers,
 } from "lucide-react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useHostStore } from "@/stores/useHostStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { api } from "@/services/api";
@@ -33,12 +32,6 @@ export function SFTPView() {
   // Refresh keys to trigger pane reloads after transfers
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [remoteRefreshKey, setRemoteRefreshKey] = useState(0);
-
-  // Drag and drop container refs and states
-  const localPaneRef = useRef<HTMLDivElement>(null);
-  const remotePaneRef = useRef<HTMLDivElement>(null);
-  const [isLocalDropTarget, setIsLocalDropTarget] = useState(false);
-  const [isRemoteDropTarget, setIsRemoteDropTarget] = useState(false);
 
   // In-app Editor state
   const [editingFile, setEditingFile] = useState<FileEntry | null>(null);
@@ -92,10 +85,12 @@ export function SFTPView() {
   };
 
   const handleUploadFile = async (file: FileEntry) => {
-    if (!selectedHost) return;
-    const dest = remotePath.endsWith("/")
-      ? `${remotePath}${file.name}`
-      : `${remotePath}/${file.name}`;
+    const host = selectedHostRef.current || selectedHost;
+    if (!host) return;
+    const currentRemote = remotePathRef.current || remotePath;
+    const dest = currentRemote.endsWith("/")
+      ? `${currentRemote}${file.name}`
+      : `${currentRemote}/${file.name}`;
 
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const task: TransferTask = {
@@ -113,49 +108,7 @@ export function SFTPView() {
     setIsQueueExpanded(true);
 
     try {
-      await api.sftpUploadFile(selectedHost.id, file.path, dest);
-      setQueue((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "completed", progress: 100 } : t
-        )
-      );
-      setRemoteRefreshKey((k) => k + 1);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setQueue((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: "error", errorMessage: msg } : t
-        )
-      );
-    }
-  };
-
-  const handleUploadLocalPath = async (localFilePath: string) => {
-    const host = selectedHostRef.current;
-    if (!host) return;
-    const currentRemote = remotePathRef.current;
-    const fileName = localFilePath.replace(/\\/g, "/").split("/").pop() || "file";
-    const dest = currentRemote.endsWith("/")
-      ? `${currentRemote}${fileName}`
-      : `${currentRemote}/${fileName}`;
-
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const task: TransferTask = {
-      id: taskId,
-      filename: fileName,
-      sourcePath: localFilePath,
-      destinationPath: dest,
-      direction: "upload",
-      size: 0,
-      status: "transferring",
-      progress: 25,
-    };
-
-    setQueue((prev) => [task, ...prev]);
-    setIsQueueExpanded(true);
-
-    try {
-      await api.sftpUploadFile(host.id, localFilePath, dest);
+      await api.sftpUploadFile(host.id, file.path, dest);
       setQueue((prev) =>
         prev.map((t) =>
           t.id === taskId ? { ...t, status: "completed", progress: 100 } : t
@@ -173,9 +126,9 @@ export function SFTPView() {
   };
 
   const handleDownloadFile = async (file: FileEntry) => {
-    const host = selectedHostRef.current;
+    const host = selectedHostRef.current || selectedHost;
     if (!host) return;
-    const currentLocal = localPathRef.current;
+    const currentLocal = localPathRef.current || localPath;
     const dest = currentLocal.endsWith("/")
       ? `${currentLocal}${file.name}`
       : `${currentLocal}/${file.name}`;
@@ -212,81 +165,6 @@ export function SFTPView() {
       );
     }
   };
-
-  // Tauri native drag-and-drop listener for OS-level file drops
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let isCancelled = false;
-
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (isCancelled) return;
-        if (event.payload.type === "leave") {
-          setIsLocalDropTarget(false);
-          setIsRemoteDropTarget(false);
-          return;
-        }
-
-        const dpr = window.devicePixelRatio || 1;
-        const pos = event.payload.position;
-
-        const isOverElement = (el: HTMLElement | null) => {
-          if (!el || !pos) return false;
-          // Try elementFromPoint with direct and scaled coordinates
-          const elDirect = document.elementFromPoint(pos.x, pos.y);
-          if (elDirect && el.contains(elDirect)) return true;
-
-          const elScaled = document.elementFromPoint(pos.x / dpr, pos.y / dpr);
-          if (elScaled && el.contains(elScaled)) return true;
-
-          // Bounding box fallback
-          const rect = el.getBoundingClientRect();
-          const inDirect =
-            pos.x >= rect.left && pos.x <= rect.right && pos.y >= rect.top && pos.y <= rect.bottom;
-          const inScaled =
-            pos.x / dpr >= rect.left &&
-            pos.x / dpr <= rect.right &&
-            pos.y / dpr >= rect.top &&
-            pos.y / dpr <= rect.bottom;
-
-          return inDirect || inScaled;
-        };
-
-        if (event.payload.type === "over" || event.payload.type === "enter") {
-          setIsLocalDropTarget(isOverElement(localPaneRef.current));
-          setIsRemoteDropTarget(isOverElement(remotePaneRef.current));
-        } else if (event.payload.type === "drop") {
-          const overRemote = isOverElement(remotePaneRef.current);
-          const overLocal = isOverElement(localPaneRef.current);
-          setIsLocalDropTarget(false);
-          setIsRemoteDropTarget(false);
-
-          if (overRemote && event.payload.paths.length > 0) {
-            for (const path of event.payload.paths) {
-              void handleUploadLocalPath(path);
-            }
-          } else if (overLocal && event.payload.paths.length > 0) {
-            const first = event.payload.paths[0];
-            setLocalPath(first);
-          }
-        }
-      })
-      .then((cleanup) => {
-        if (isCancelled) {
-          cleanup();
-        } else {
-          unlisten = cleanup;
-        }
-      })
-      .catch((err) => {
-        console.warn("Failed to register native drag drop in SFTPView:", err);
-      });
-
-    return () => {
-      isCancelled = true;
-      unlisten?.();
-    };
-  }, []);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-base-100 overflow-hidden">
@@ -329,7 +207,7 @@ export function SFTPView() {
       {/* Dual Pane Workspace */}
       <div className="flex-1 min-h-0 p-3 flex gap-3 overflow-hidden">
         {/* Left Pane: Local Filesystem */}
-        <div ref={localPaneRef} className="flex-1 min-w-0 h-full">
+        <div className="flex-1 min-w-0 h-full">
           <FileExplorerPane
             title="Local Computer"
             mode="local"
@@ -340,8 +218,6 @@ export function SFTPView() {
             onTransfer={handleUploadFile}
             transferLabel="Upload"
             refreshKey={localRefreshKey}
-            onDropFromOpposite={handleDownloadFile}
-            isDropTarget={isLocalDropTarget}
           />
         </div>
 
@@ -380,7 +256,7 @@ export function SFTPView() {
         </div>
 
         {/* Right Pane: Remote SFTP Filesystem */}
-        <div ref={remotePaneRef} className="flex-1 min-w-0 h-full">
+        <div className="flex-1 min-w-0 h-full">
           {selectedHost ? (
             <FileExplorerPane
               title={`Remote: ${selectedHost.label}`}
@@ -394,8 +270,6 @@ export function SFTPView() {
               onTransfer={handleDownloadFile}
               transferLabel="Download"
               refreshKey={remoteRefreshKey}
-              onDropFromOpposite={handleUploadFile}
-              isDropTarget={isRemoteDropTarget}
             />
           ) : (
             <div className="border border-base-300 rounded-xl h-full flex flex-col items-center justify-center p-6 text-center space-y-3 bg-base-200/20">

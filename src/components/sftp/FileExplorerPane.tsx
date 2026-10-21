@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
+import { useState, useEffect, useMemo, type FormEvent } from "react";
 import {
   Folder,
   File,
@@ -13,7 +13,6 @@ import {
   Globe,
   CornerDownRight,
   FilePenLine,
-  UploadCloud,
   AlertTriangle,
 } from "lucide-react";
 import { api } from "@/services/api";
@@ -31,8 +30,6 @@ interface FileExplorerPaneProps {
   readonly onTransfer?: (file: FileEntry) => void;
   readonly transferLabel?: string;
   readonly refreshKey?: number;
-  readonly onDropFromOpposite?: (entry: FileEntry) => void;
-  readonly isDropTarget?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -77,16 +74,12 @@ export function FileExplorerPane({
   onTransfer,
   transferLabel = "Transfer",
   refreshKey = 0,
-  onDropFromOpposite,
-  isDropTarget = false,
 }: FileExplorerPaneProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [internalSelectedFile, setInternalSelectedFile] = useState<FileEntry | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isInternalDragOver, setIsInternalDragOver] = useState(false);
-  const dragCounterRef = useRef(0);
 
   // New folder dialog
   const [isMkdirOpen, setIsMkdirOpen] = useState(false);
@@ -97,7 +90,7 @@ export function FileExplorerPane({
   const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null);
   const [newFileName, setNewFileName] = useState("");
 
-  // Delete confirmation dialog (replaces browser confirm)
+  // Delete confirmation dialog (native in-app)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<FileEntry | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -233,80 +226,14 @@ export function FileExplorerPane({
     }
   };
 
-  const handlePaneDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current += 1;
-    setIsInternalDragOver(true);
-  };
-
-  const handlePaneDragOver = (e: React.DragEvent) => {
-    // ALWAYS call preventDefault() on dragOver to indicate drop is allowed
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    if (!isInternalDragOver) {
-      setIsInternalDragOver(true);
-    }
-  };
-
-  const handlePaneDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-    if (dragCounterRef.current === 0) {
-      setIsInternalDragOver(false);
-    }
-  };
-
-  const handlePaneDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current = 0;
-    setIsInternalDragOver(false);
-
-    const sourceMode = e.dataTransfer.getData("application/haze-sftp-source-mode");
-    const rawEntry = e.dataTransfer.getData("application/haze-sftp-entry");
-
-    if (rawEntry && sourceMode && sourceMode !== mode) {
-      try {
-        const entry: FileEntry = JSON.parse(rawEntry);
-        onDropFromOpposite?.(entry);
-      } catch (err) {
-        console.error("Failed to parse dropped entry:", err);
-      }
-    }
-  };
-
   const filteredEntries = useMemo(() => {
     if (!searchTerm.trim()) return entries;
     const q = searchTerm.toLowerCase();
     return entries.filter((e) => e.name.toLowerCase().includes(q));
   }, [entries, searchTerm]);
 
-  const showDropHighlight = isInternalDragOver || isDropTarget;
-
   return (
-    <div
-      onDragEnter={handlePaneDragEnter}
-      onDragOver={handlePaneDragOver}
-      onDragLeave={handlePaneDragLeave}
-      onDrop={handlePaneDrop}
-      className={`flex-1 flex flex-col h-full bg-base-100 border rounded-xl overflow-hidden select-none relative transition-all ${
-        showDropHighlight ? "border-primary ring-2 ring-primary/40" : "border-base-300"
-      }`}
-    >
-      {/* Drag & Drop Visual Overlay */}
-      {showDropHighlight && (
-        <div className="absolute inset-0 z-30 bg-base-300/85 backdrop-blur-xs flex flex-col items-center justify-center p-6 border-2 border-dashed border-primary animate-in fade-in duration-100 pointer-events-none">
-          <div className="w-12 h-12 rounded-xl bg-primary/20 text-primary flex items-center justify-center mb-2 shadow-md animate-bounce">
-            <UploadCloud className="w-6 h-6" />
-          </div>
-          <span className="font-bold text-xs text-base-content">
-            Drop here to {mode === "remote" ? "Upload to Remote Directory" : "Download to Local Directory"}
-          </span>
-          <span className="text-[10px] text-base-content/60 font-mono mt-0.5 truncate max-w-xs">
-            Target: {currentPath}
-          </span>
-        </div>
-      )}
-
+    <div className="flex-1 flex flex-col h-full bg-base-100 border border-base-300 rounded-xl overflow-hidden select-none relative">
       {/* Pane Top Header */}
       <div className="h-11 bg-base-200/70 border-b border-base-300 px-3 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
@@ -411,13 +338,6 @@ export function FileExplorerPane({
                 return (
                   <tr
                     key={entry.path}
-                    draggable={true}
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("application/haze-sftp-entry", JSON.stringify(entry));
-                      e.dataTransfer.setData("application/haze-sftp-source-mode", mode);
-                      e.dataTransfer.setData("text/plain", entry.path);
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
                     onClick={() => handleSelect(entry)}
                     onDoubleClick={() => handleRowDoubleClick(entry)}
                     className={`cursor-pointer transition-colors text-xs ${
