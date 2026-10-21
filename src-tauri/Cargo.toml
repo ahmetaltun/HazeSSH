@@ -1,6 +1,6 @@
 [package]
 name = "haze-ssh"
-version = "0.1.0"
+version = "0.2.0"
 description = "Haze SSH - Fast, Privacy-First SSH Client"
 authors = ["Haze SSH Team"]
 edition = "2024"
