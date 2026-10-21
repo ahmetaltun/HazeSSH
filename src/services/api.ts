@@ -182,6 +182,10 @@ export const api = {
     return await invoke<string>("sftp_read_file", { hostId, remotePath });
   },
 
+  sftpReadBinary: async (hostId: string, remotePath: string): Promise<string> => {
+    return await invoke<string>("sftp_read_binary", { hostId, remotePath });
+  },
+
   sftpWriteFile: async (hostId: string, remotePath: string, content: string): Promise<void> => {
     return await invoke<void>("sftp_write_file", { hostId, remotePath, content });
   },
@@ -220,6 +224,10 @@ export const api = {
 
   sftpGetLocalHome: async (): Promise<string> => {
     return await invoke<string>("sftp_get_local_home");
+  },
+
+  sftpLocalReadBinary: async (path: string): Promise<string> => {
+    return await invoke<string>("sftp_local_read_binary", { path });
   },
 
   sftpLocalMkdir: async (path: string): Promise<void> => {

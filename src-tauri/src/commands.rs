@@ -526,6 +526,15 @@ pub async fn sftp_read_file(
 }
 
 #[tauri::command]
+pub async fn sftp_read_binary(
+    host_id: String,
+    remote_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    sftp::sftp_read_binary(host_id, remote_path, &state).await
+}
+
+#[tauri::command]
 pub async fn sftp_write_file(
     host_id: String,
     remote_path: String,
@@ -625,6 +634,11 @@ pub fn sftp_local_delete(path: String, is_dir: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn sftp_local_rename(old_path: String, new_path: String) -> Result<(), String> {
     sftp::local_rename(old_path, new_path)
+}
+
+#[tauri::command]
+pub fn sftp_local_read_binary(path: String) -> Result<String, String> {
+    sftp::local_read_binary(path)
 }
 
 // --- Backup & Restore Commands ---

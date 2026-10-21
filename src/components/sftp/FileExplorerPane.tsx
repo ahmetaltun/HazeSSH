@@ -3,6 +3,8 @@ import {
   Folder,
   File,
   FileCode,
+  FileText,
+  Image as ImageIcon,
   ArrowUp,
   RefreshCw,
   FolderPlus,
@@ -14,9 +16,11 @@ import {
   CornerDownRight,
   FilePenLine,
   AlertTriangle,
+  Eye,
 } from "lucide-react";
 import { api } from "@/services/api";
 import type { FileEntry } from "@/types/sftp";
+import { FileContextMenu, getFilePreviewType } from "./FileContextMenu";
 
 interface FileExplorerPaneProps {
   readonly title: string;
@@ -27,6 +31,7 @@ interface FileExplorerPaneProps {
   readonly onSelectFiles?: (files: FileEntry[]) => void;
   readonly onNavigate: (path: string) => void;
   readonly onOpenFile?: (file: FileEntry) => void;
+  readonly onPreviewFile?: (file: FileEntry) => void;
   readonly onTransfer?: (files: FileEntry[]) => void;
   readonly transferLabel?: string;
   readonly refreshKey?: number;
@@ -55,8 +60,17 @@ function getFileIcon(entry: FileEntry) {
   if (entry.is_dir) {
     return <Folder className="w-4 h-4 text-warning fill-warning/20 shrink-0" />;
   }
-  const ext = entry.name.split(".").pop()?.toLowerCase();
-  if (["conf", "sh", "yaml", "yml", "json", "toml", "txt", "env", "md", "rs", "ts", "js", "py"].includes(ext || "")) {
+  const previewType = getFilePreviewType(entry.name);
+  if (previewType === "image") {
+    return <ImageIcon className="w-4 h-4 text-success shrink-0" />;
+  }
+  if (previewType === "pdf") {
+    return <File className="w-4 h-4 text-error shrink-0" />;
+  }
+  if (previewType === "markdown") {
+    return <FileText className="w-4 h-4 text-secondary shrink-0" />;
+  }
+  if (previewType === "code") {
     return <FileCode className="w-4 h-4 text-info shrink-0" />;
   }
   return <File className="w-4 h-4 text-base-content/60 shrink-0" />;
@@ -71,6 +85,7 @@ export function FileExplorerPane({
   onSelectFiles,
   onNavigate,
   onOpenFile,
+  onPreviewFile,
   onTransfer,
   transferLabel = "Transfer",
   refreshKey = 0,
@@ -90,6 +105,13 @@ export function FileExplorerPane({
   activePathRef.current = currentPath;
 
   const getCacheKey = (p: string) => `${mode}:${mode === "remote" ? hostId || "" : "local"}:${p}`;
+
+  // Context Menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    entry: FileEntry | null;
+  } | null>(null);
 
   // New folder dialog
   const [isMkdirOpen, setIsMkdirOpen] = useState(false);
@@ -185,8 +207,15 @@ export function FileExplorerPane({
   const handleRowDoubleClick = (entry: FileEntry) => {
     if (entry.is_dir) {
       onNavigate(entry.path);
-    } else {
+      return;
+    }
+    const previewType = getFilePreviewType(entry.name);
+    if (previewType === "image" || previewType === "pdf" || previewType === "media") {
+      onPreviewFile?.(entry);
+    } else if (previewType === "code" || previewType === "markdown") {
       onOpenFile?.(entry);
+    } else {
+      onPreviewFile?.(entry);
     }
   };
 
@@ -412,7 +441,13 @@ export function FileExplorerPane({
       )}
 
       {/* File List Table */}
-      <div className="flex-1 overflow-y-auto min-h-0 bg-base-100">
+      <div
+        className="flex-1 overflow-y-auto min-h-0 bg-base-100"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenu({ x: e.clientX, y: e.clientY, entry: null });
+        }}
+      >
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-48 space-y-2">
             <span className="loading loading-spinner loading-sm text-primary" />
@@ -453,6 +488,15 @@ export function FileExplorerPane({
                     key={entry.path}
                     onClick={(e) => handleRowClick(entry, e)}
                     onDoubleClick={() => handleRowDoubleClick(entry)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!activeSelectedFiles.some((f) => f.path === entry.path)) {
+                        handleSelectFiles([entry]);
+                        lastClickedEntryRef.current = entry;
+                      }
+                      setContextMenu({ x: e.clientX, y: e.clientY, entry });
+                    }}
                     className={`cursor-pointer transition-colors text-xs ${
                       isSelected
                         ? "bg-primary/20 text-primary font-semibold"
@@ -507,6 +551,18 @@ export function FileExplorerPane({
 
         {activeSelectedFiles.length > 0 && (
           <div className="flex items-center gap-1">
+            {singleSelectedFile && !singleSelectedFile.is_dir && onPreviewFile && (
+              <button
+                type="button"
+                onClick={() => onPreviewFile(singleSelectedFile)}
+                className="btn btn-ghost btn-xs text-primary gap-1"
+                title="Preview file"
+              >
+                <Eye className="w-3 h-3" />
+                <span>Preview</span>
+              </button>
+            )}
+
             {singleSelectedFile && !singleSelectedFile.is_dir && onOpenFile && (
               <button
                 type="button"
@@ -700,6 +756,31 @@ export function FileExplorerPane({
             }}
           />
         </div>
+      )}
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <FileContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          targetEntry={contextMenu.entry}
+          selectedFiles={activeSelectedFiles}
+          mode={mode}
+          transferLabel={transferLabel}
+          onOpenFolder={(entry) => onNavigate(entry.path)}
+          onPreviewFile={(entry) => onPreviewFile?.(entry)}
+          onEditFile={(entry) => onOpenFile?.(entry)}
+          onTransfer={(entries) => onTransfer?.(entries)}
+          onRename={(entry) => {
+            setRenameTarget(entry);
+            setNewFileName(entry.name);
+            setIsRenameOpen(true);
+          }}
+          onDelete={(entries) => handleOpenDelete(entries)}
+          onNewFolder={() => setIsMkdirOpen(true)}
+          onRefresh={() => loadDirectory(currentPath, true)}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import { api } from "@/services/api";
 import type { FileEntry, TransferTask } from "@/types/sftp";
 import { FileExplorerPane } from "@/components/sftp/FileExplorerPane";
 import { RemoteEditorModal } from "@/components/sftp/RemoteEditorModal";
+import { FilePreviewModal } from "@/components/sftp/FilePreviewModal";
 
 export function SFTPView() {
   const { hosts } = useHostStore();
@@ -44,6 +45,12 @@ export function SFTPView() {
 
   // In-app Editor state
   const [editingFile, setEditingFile] = useState<FileEntry | null>(null);
+
+  // File Preview state
+  const [previewTarget, setPreviewTarget] = useState<{
+    file: FileEntry;
+    mode: "local" | "remote";
+  } | null>(null);
 
   // Transfer Queue state
   const [queue, setQueue] = useState<TransferTask[]>([]);
@@ -323,6 +330,8 @@ export function SFTPView() {
             selectedFiles={selectedLocalFiles}
             onSelectFiles={setSelectedLocalFiles}
             onNavigate={setLocalPath}
+            onOpenFile={(f) => setPreviewTarget({ file: f, mode: "local" })}
+            onPreviewFile={(f) => setPreviewTarget({ file: f, mode: "local" })}
             onTransfer={handleUploadFiles}
             transferLabel="Upload"
             refreshKey={localRefreshKey}
@@ -395,6 +404,7 @@ export function SFTPView() {
               onSelectFiles={setSelectedRemoteFiles}
               onNavigate={setRemotePath}
               onOpenFile={handleOpenRemoteFile}
+              onPreviewFile={(f) => setPreviewTarget({ file: f, mode: "remote" })}
               onTransfer={handleDownloadFiles}
               transferLabel="Download"
               refreshKey={remoteRefreshKey}
@@ -531,6 +541,31 @@ export function SFTPView() {
           fileName={editingFile.name}
           onClose={() => setEditingFile(null)}
           onSaved={() => setRemoteRefreshKey((k) => k + 1)}
+        />
+      )}
+
+      {/* File Preview Modal */}
+      {previewTarget && (
+        <FilePreviewModal
+          isOpen={true}
+          file={previewTarget.file}
+          mode={previewTarget.mode}
+          hostId={selectedHost?.id}
+          hostLabel={selectedHost?.label}
+          onClose={() => setPreviewTarget(null)}
+          onOpenInEditor={(f) => {
+            setPreviewTarget(null);
+            if (previewTarget.mode === "remote") {
+              handleOpenRemoteFile(f);
+            }
+          }}
+          onTransfer={(f) => {
+            if (previewTarget.mode === "remote") {
+              handleDownloadFiles([f]);
+            } else {
+              handleUploadFiles([f]);
+            }
+          }}
         />
       )}
     </div>

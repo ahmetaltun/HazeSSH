@@ -3,6 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use russh::client;
 use russh_keys::key;
 use russh_sftp::client::fs::ReadDir;
@@ -266,6 +268,46 @@ pub async fn sftp_read_text(
 
     String::from_utf8(content)
         .map_err(|e| format!("Remote file is not valid UTF-8 text: {}", e))
+}
+
+pub async fn sftp_read_binary(
+    host_id: String,
+    remote_path: String,
+    state: &AppState,
+) -> Result<String, String> {
+    use tokio::io::AsyncReadExt;
+
+    let session = state.sftp_manager.get_session(&host_id, state).await?;
+    let mut file = match session.sftp.open(&remote_path).await {
+        Ok(f) => f,
+        Err(_) => {
+            state.sftp_manager.invalidate(&host_id).await;
+            let session = state.sftp_manager.get_session(&host_id, state).await?;
+            session
+                .sftp
+                .open(&remote_path)
+                .await
+                .map_err(|e| format!("Failed to open remote file '{}': {}", remote_path, e))?
+        }
+    };
+
+    if let Ok(meta) = session.sftp.metadata(&remote_path).await {
+        if let Some(size) = meta.size {
+            if size > 30 * 1024 * 1024 {
+                return Err(format!(
+                    "File size ({} MB) exceeds preview limit of 30 MB. Please download the file to view.",
+                    size / (1024 * 1024)
+                ));
+            }
+        }
+    }
+
+    let mut content = Vec::new();
+    file.read_to_end(&mut content)
+        .await
+        .map_err(|e| format!("Failed to read remote file binary content: {}", e))?;
+
+    Ok(BASE64.encode(&content))
 }
 
 pub async fn sftp_write_text(
@@ -673,5 +715,26 @@ pub fn local_delete(path: String, is_dir: bool) -> Result<(), String> {
 pub fn local_rename(old_path: String, new_path: String) -> Result<(), String> {
     fs::rename(&old_path, &new_path)
         .map_err(|e| format!("Failed to rename local path '{}' to '{}': {}", old_path, new_path, e))
+}
+
+pub fn local_read_binary(local_path: String) -> Result<String, String> {
+    use std::io::Read;
+
+    let p = Path::new(&local_path);
+    if let Ok(meta) = p.metadata() {
+        if meta.len() > 30 * 1024 * 1024 {
+            return Err(format!(
+                "File size ({} MB) exceeds preview limit of 30 MB. Please open externally to view.",
+                meta.len() / (1024 * 1024)
+            ));
+        }
+    }
+
+    let mut f = fs::File::open(p)
+        .map_err(|e| format!("Failed to open local file '{}': {}", local_path, e))?;
+    let mut content = Vec::new();
+    f.read_to_end(&mut content)
+        .map_err(|e| format!("Failed to read local file: {}", e))?;
+    Ok(BASE64.encode(&content))
 }
 
