@@ -77,6 +77,12 @@ impl SftpManager {
     }
 }
 
+impl Default for SftpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct SftpClientHandler;
 
 #[async_trait::async_trait]
@@ -291,15 +297,14 @@ pub async fn sftp_read_binary(
         }
     };
 
-    if let Ok(meta) = session.sftp.metadata(&remote_path).await {
-        if let Some(size) = meta.size {
-            if size > 30 * 1024 * 1024 {
-                return Err(format!(
-                    "File size ({} MB) exceeds preview limit of 30 MB. Please download the file to view.",
-                    size / (1024 * 1024)
-                ));
-            }
-        }
+    if let Ok(meta) = session.sftp.metadata(&remote_path).await
+        && let Some(size) = meta.size
+        && size > 30 * 1024 * 1024
+    {
+        return Err(format!(
+            "File size ({} MB) exceeds preview limit of 30 MB. Please download the file to view.",
+            size / (1024 * 1024)
+        ));
     }
 
     let mut content = Vec::new();
@@ -721,13 +726,13 @@ pub fn local_read_binary(local_path: String) -> Result<String, String> {
     use std::io::Read;
 
     let p = Path::new(&local_path);
-    if let Ok(meta) = p.metadata() {
-        if meta.len() > 30 * 1024 * 1024 {
-            return Err(format!(
-                "File size ({} MB) exceeds preview limit of 30 MB. Please open externally to view.",
-                meta.len() / (1024 * 1024)
-            ));
-        }
+    if let Ok(meta) = p.metadata()
+        && meta.len() > 30 * 1024 * 1024
+    {
+        return Err(format!(
+            "File size ({} MB) exceeds preview limit of 30 MB. Please open externally to view.",
+            meta.len() / (1024 * 1024)
+        ));
     }
 
     let mut f = fs::File::open(p)

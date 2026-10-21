@@ -119,7 +119,7 @@ impl SshManager {
 
             let connect_future = async {
                 let stream = tokio::net::TcpStream::connect((hostname.as_str(), port)).await
-                    .map_err(|e| russh::Error::from(e))?;
+                    .map_err(russh::Error::from)?;
                 let _ = stream.set_nodelay(true);
                 client::connect_stream(config, stream, ClientHandler).await
             };
