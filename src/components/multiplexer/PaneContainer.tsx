@@ -3,9 +3,12 @@ import {
   Rows2,
   X,
   Terminal,
+  Radio,
+  VolumeX,
 } from "lucide-react";
 import type { TerminalPane } from "@/types/terminal";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
+import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { XTermTerminal } from "@/components/terminal/XTermTerminal";
 
 interface PaneContainerProps {
@@ -16,6 +19,9 @@ interface PaneContainerProps {
 
 export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
   const { splitActivePane, closePane, setActivePane } = useMultiplexerStore();
+  const { isBroadcastEnabled, isPaneExcluded, togglePaneExclusion } = useBroadcastStore();
+
+  const isExcludedFromBroadcast = isPaneExcluded(pane.id);
 
   const getStatusBadge = () => {
     switch (pane.status) {
@@ -24,7 +30,16 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
       case "connected":
         return <span className="badge badge-success badge-xs">connected</span>;
       case "error":
-        return <span className="badge badge-error badge-xs">error</span>;
+        return (
+          <span
+            className="badge badge-error badge-xs cursor-help"
+            title={pane.errorMessage || "Connection error"}
+          >
+            error
+          </span>
+        );
+      case "disconnected":
+        return <span className="badge badge-neutral badge-xs">disconnected</span>;
       default:
         return <span className="badge badge-neutral badge-xs">local</span>;
     }
@@ -34,13 +49,23 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
     <div
       onClick={() => setActivePane(tabId, pane.id)}
       className={`flex flex-col h-full w-full bg-base-100 overflow-hidden border transition-colors duration-150 ${
-        isFocused ? "border-primary/60 shadow-xs" : "border-base-300"
+        isBroadcastEnabled && !isExcludedFromBroadcast
+          ? isFocused
+            ? "border-warning ring-1 ring-warning/50 shadow-xs"
+            : "border-warning/50"
+          : isFocused
+          ? "border-primary/60 shadow-xs"
+          : "border-base-300"
       }`}
     >
       {/* Pane Top Bar */}
       <div
         className={`h-7 px-2.5 flex items-center justify-between text-xs select-none border-b transition-colors ${
-          isFocused
+          isBroadcastEnabled && !isExcludedFromBroadcast
+            ? isFocused
+              ? "bg-warning/20 text-warning border-warning/40"
+              : "bg-warning/10 text-base-content/80 border-warning/20"
+            : isFocused
             ? "bg-base-200 text-base-content border-primary/30"
             : "bg-base-200/50 text-base-content/60 border-base-300"
         }`}
@@ -51,6 +76,39 @@ export function PaneContainer({ pane, tabId, isFocused }: PaneContainerProps) {
             {pane.title}
           </span>
           {getStatusBadge()}
+
+          {/* Broadcast Exclusion Status Toggle */}
+          {isBroadcastEnabled && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePaneExclusion(pane.id);
+              }}
+              className={`badge badge-xs gap-1 cursor-pointer font-mono transition-all ${
+                isExcludedFromBroadcast
+                  ? "badge-neutral opacity-50 hover:opacity-100"
+                  : "badge-warning font-semibold animate-pulse"
+              }`}
+              title={
+                isExcludedFromBroadcast
+                  ? "Click to include this pane in broadcast"
+                  : "Click to exclude this pane from broadcast"
+              }
+            >
+              {isExcludedFromBroadcast ? (
+                <>
+                  <VolumeX className="w-2.5 h-2.5" />
+                  <span>Muted</span>
+                </>
+              ) : (
+                <>
+                  <Radio className="w-2.5 h-2.5" />
+                  <span>Mirroring</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Pane Controls */}

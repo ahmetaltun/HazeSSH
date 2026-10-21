@@ -8,9 +8,14 @@ import {
   Zap,
   Cpu,
   Network,
+  Moon,
+  Sun,
+  Check,
+  Radio,
 } from "lucide-react";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
-import { useThemeStore, AVAILABLE_THEMES } from "@/stores/useThemeStore";
+import { useBroadcastStore } from "@/stores/useBroadcastStore";
+import { useThemeStore, DARK_THEMES, LIGHT_THEMES } from "@/stores/useThemeStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { SerialConnectModal } from "@/components/terminal/SerialConnectModal";
 import { TelnetConnectModal } from "@/components/terminal/TelnetConnectModal";
@@ -22,6 +27,7 @@ export function Topbar() {
   const { openTab, splitActivePane, activeTabId } = useMultiplexerStore();
   const { currentTheme, setTheme } = useThemeStore();
   const { setCommandPaletteOpen } = useLayoutStore();
+  const { isBroadcastEnabled, toggleBroadcast } = useBroadcastStore();
 
   const handleQuickConnect = (e: FormEvent) => {
     e.preventDefault();
@@ -178,6 +184,23 @@ export function Topbar() {
           </div>
         )}
 
+        {/* Broadcast Keystrokes Toggle */}
+        {activeTabId && (
+          <button
+            type="button"
+            onClick={toggleBroadcast}
+            className={`btn btn-sm gap-1.5 border transition-all ${
+              isBroadcastEnabled
+                ? "btn-warning font-bold shadow-xs animate-pulse"
+                : "btn-ghost border-base-300 text-base-content/80 hover:bg-base-100"
+            }`}
+            title="Toggle Broadcast Keystrokes (⌘⌥B)"
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span className="text-xs font-medium">Broadcast</span>
+          </button>
+        )}
+
         {/* Serial Console Trigger */}
         <button
           type="button"
@@ -221,30 +244,104 @@ export function Topbar() {
           >
             <Palette className="w-4 h-4" />
           </div>
-          <ul
+          <div
             tabIndex={0}
-            className="dropdown-content z-30 menu p-2 shadow-2xl bg-base-200 border border-base-300 rounded-box w-52 max-h-80 overflow-y-auto mt-2"
+            className="dropdown-content z-30 p-2 shadow-2xl bg-base-200 border border-base-300 rounded-box w-64 max-h-96 overflow-y-auto mt-2"
           >
-            <li className="menu-title text-xs uppercase tracking-wider text-base-content/50">
-              DaisyUI Themes
-            </li>
-            {AVAILABLE_THEMES.map((theme) => (
-              <li key={theme.id}>
-                <button
-                  type="button"
-                  onClick={() => setTheme(theme.id)}
-                  className={`text-xs py-2 flex items-center justify-between ${
-                    currentTheme === theme.id ? "active font-bold" : ""
-                  }`}
-                >
-                  <span>{theme.label}</span>
-                  {currentTheme === theme.id && (
-                    <span className="w-2 h-2 rounded-full bg-primary" />
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+            {/* Header */}
+            <div className="px-3 py-1.5 border-b border-base-300/60 mb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold text-base-content/80">Theme Selector</span>
+              <span className="text-[10px] font-mono text-base-content/50 uppercase">{currentTheme}</span>
+            </div>
+
+            {/* Dark Themes Group */}
+            <div className="pt-1">
+              <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-base-content/60">
+                <Moon className="w-3.5 h-3.5 text-primary" />
+                <span>Dark Themes</span>
+              </div>
+              <ul className="menu menu-xs p-0 gap-0.5">
+                {DARK_THEMES.map((theme) => {
+                  const isActive = currentTheme === theme.id;
+                  return (
+                    <li key={theme.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTheme(theme.id);
+                          (document.activeElement as HTMLElement)?.blur();
+                        }}
+                        className={`py-1.5 px-2.5 flex items-center justify-between rounded-md transition-colors ${
+                          isActive
+                            ? "bg-primary text-primary-content font-bold shadow-xs"
+                            : "hover:bg-base-300/80 text-base-content/80"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-base-content/20 shrink-0 flex items-center justify-center shadow-xs"
+                            style={{ backgroundColor: theme.baseColor }}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: theme.primaryColor }}
+                            />
+                          </span>
+                          <span className="text-xs">{theme.label}</span>
+                        </div>
+                        {isActive && <Check className="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div className="divider my-1.5 opacity-60"></div>
+
+            {/* Light Themes Group */}
+            <div>
+              <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-base-content/60">
+                <Sun className="w-3.5 h-3.5 text-warning" />
+                <span>Light Themes</span>
+              </div>
+              <ul className="menu menu-xs p-0 gap-0.5">
+                {LIGHT_THEMES.map((theme) => {
+                  const isActive = currentTheme === theme.id;
+                  return (
+                    <li key={theme.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTheme(theme.id);
+                          (document.activeElement as HTMLElement)?.blur();
+                        }}
+                        className={`py-1.5 px-2.5 flex items-center justify-between rounded-md transition-colors ${
+                          isActive
+                            ? "bg-primary text-primary-content font-bold shadow-xs"
+                            : "hover:bg-base-300/80 text-base-content/80"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-base-content/20 shrink-0 flex items-center justify-center shadow-xs"
+                            style={{ backgroundColor: theme.baseColor }}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: theme.primaryColor }}
+                            />
+                          </span>
+                          <span className="text-xs">{theme.label}</span>
+                        </div>
+                        {isActive && <Check className="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
 

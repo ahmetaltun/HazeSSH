@@ -198,6 +198,10 @@ export const api = {
     return await invoke<void>("sftp_rename_file", { hostId, oldPath, newPath });
   },
 
+  sftpUploadFile: async (hostId: string, localPath: string, remotePath: string): Promise<number> => {
+    return await invoke<number>("sftp_upload_file", { hostId, localPath, remotePath });
+  },
+
   sftpListLocal: async (path: string): Promise<FileEntry[]> => {
     return await invoke<FileEntry[]>("sftp_list_local", { path });
   },

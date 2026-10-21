@@ -10,8 +10,8 @@ import {
   ChevronRight,
   Lock,
   Unlock,
-  Terminal,
 } from "lucide-react";
+import { BrandLogo } from "@/components/common/BrandLogo";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import type { NavigationView } from "@/types/navigation";
 
@@ -64,6 +64,7 @@ export function Sidebar() {
     isVaultLocked,
     hasMasterPassword,
     setVaultLocked,
+    setAboutModalOpen,
   } = useLayoutStore();
 
   const navItems = [
@@ -109,17 +110,15 @@ export function Sidebar() {
     >
       {/* Brand Header */}
       <div className="h-14 flex items-center justify-between px-3 border-b border-base-200">
-        <div className="flex items-center gap-2.5 overflow-hidden">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-primary-content shadow-md shrink-0">
-            <Terminal className="w-5 h-5" />
-          </div>
-          {!isSidebarCollapsed && (
-            <div className="flex flex-col">
-              <span className="font-bold tracking-tight text-base leading-none">Haze SSH</span>
-              <span className="text-[10px] text-base-content/50 uppercase tracking-widest font-semibold mt-0.5">
-                Privacy-First
-              </span>
-            </div>
+        <div
+          onClick={() => setAboutModalOpen(true)}
+          className="flex items-center overflow-hidden cursor-pointer hover:opacity-85 transition-opacity"
+          title="About Haze SSH"
+        >
+          {isSidebarCollapsed ? (
+            <BrandLogo variant="mark" size={30} />
+          ) : (
+            <BrandLogo variant="horizontal" size={30} />
           )}
         </div>
 

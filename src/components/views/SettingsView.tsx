@@ -6,8 +6,11 @@ import {
   Upload,
   HardDrive,
   KeyRound,
+  Terminal,
+  RotateCcw,
 } from "lucide-react";
 import { useVaultStore } from "@/stores/useVaultStore";
+import { useTerminalSettingsStore, POPULAR_TERMINAL_FONTS } from "@/stores/useTerminalSettingsStore";
 import { VaultModal } from "@/components/vault/VaultModal";
 import { ExportBackupModal } from "@/components/settings/ExportBackupModal";
 import { RestoreBackupModal } from "@/components/settings/RestoreBackupModal";
@@ -17,6 +20,22 @@ import { PuttyImportModal } from "@/components/settings/PuttyImportModal";
 
 export function SettingsView() {
   const { hasMasterPassword, isLocked, lock } = useVaultStore();
+  const {
+    fontFamily,
+    fontSize,
+    lineHeight,
+    cursorStyle,
+    cursorBlink,
+    scrollback,
+    setFontFamily,
+    setFontSize,
+    setLineHeight,
+    setCursorStyle,
+    setCursorBlink,
+    setScrollback,
+    resetToDefaults,
+  } = useTerminalSettingsStore();
+
   const [modalMode, setModalMode] = useState<"unlock" | "setup" | "disable" | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
@@ -107,6 +126,189 @@ export function SettingsView() {
               )}
             </div>
           )}
+        </section>
+
+        {/* Terminal Appearance & Typography Section */}
+        <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center">
+                <Terminal className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">Terminal Appearance & Typography</h3>
+                <p className="text-xs text-base-content/60">
+                  Fonts, line height, cursor behavior, and buffer size applied across all sessions.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={resetToDefaults}
+              className="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
+              title="Reset terminal appearance to defaults"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Defaults</span>
+            </button>
+          </div>
+
+          <div className="divider my-1"></div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Font Family Selection */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-base-content/80 flex items-center justify-between">
+                <span>Font Family</span>
+                <span className="text-[10px] text-base-content/50 font-mono">Nerd Fonts / Ligatures</span>
+              </label>
+              <select
+                value={fontFamily}
+                onChange={(e) => setFontFamily(e.target.value)}
+                className="select select-sm select-bordered w-full font-mono text-xs"
+              >
+                {POPULAR_TERMINAL_FONTS.map((font) => (
+                  <option key={font.id} value={font.value}>
+                    {font.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Font Size */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-base-content/80">Font Size</label>
+                <span className="badge badge-sm badge-neutral font-mono font-bold text-xs">{fontSize}px</span>
+              </div>
+              <input
+                type="range"
+                min="11"
+                max="24"
+                step="1"
+                value={fontSize}
+                onChange={(e) => setFontSize(parseInt(e.target.value, 10))}
+                className="range range-xs range-primary w-full"
+              />
+              <div className="flex justify-between text-[10px] text-base-content/40 font-mono px-0.5">
+                <span>11px</span>
+                <span>14px</span>
+                <span>18px</span>
+                <span>24px</span>
+              </div>
+            </div>
+
+            {/* Line Height */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-base-content/80">Line Height</label>
+                <span className="badge badge-sm badge-neutral font-mono font-bold text-xs">{lineHeight.toFixed(1)}</span>
+              </div>
+              <input
+                type="range"
+                min="1.0"
+                max="1.8"
+                step="0.1"
+                value={lineHeight}
+                onChange={(e) => setLineHeight(parseFloat(e.target.value))}
+                className="range range-xs range-secondary w-full"
+              />
+              <div className="flex justify-between text-[10px] text-base-content/40 font-mono px-0.5">
+                <span>1.0 (Compact)</span>
+                <span>1.2 (Standard)</span>
+                <span>1.8 (Relaxed)</span>
+              </div>
+            </div>
+
+            {/* Cursor Style */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-base-content/80">Cursor Style</label>
+              <div className="join w-full">
+                {(["block", "bar", "underline"] as const).map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => setCursorStyle(style)}
+                    className={`btn btn-sm join-item flex-1 capitalize text-xs ${
+                      cursorStyle === style ? "btn-primary font-bold shadow-xs" : "btn-ghost border border-base-300"
+                    }`}
+                  >
+                    {style === "block" && "█ Block"}
+                    {style === "bar" && "| Bar"}
+                    {style === "underline" && "_ Underline"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cursor Blinking */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-base-100 border border-base-300">
+              <div>
+                <span className="text-xs font-semibold block">Cursor Blinking</span>
+                <span className="text-[11px] text-base-content/60">Animate the cursor while terminal is idle</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={cursorBlink}
+                onChange={(e) => setCursorBlink(e.target.checked)}
+                className="toggle toggle-sm toggle-primary"
+              />
+            </div>
+
+            {/* Scrollback Buffer */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-base-content/80">Scrollback Buffer</label>
+                <span className="badge badge-sm badge-neutral font-mono font-bold text-xs">
+                  {scrollback.toLocaleString()} lines
+                </span>
+              </div>
+              <select
+                value={scrollback}
+                onChange={(e) => setScrollback(parseInt(e.target.value, 10))}
+                className="select select-sm select-bordered w-full font-mono text-xs"
+              >
+                <option value={2000}>2,000 lines (Light memory)</option>
+                <option value={5000}>5,000 lines</option>
+                <option value={10000}>10,000 lines (Standard)</option>
+                <option value={25000}>25,000 lines</option>
+                <option value={50000}>50,000 lines (Power user)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Live Preview Box */}
+          <div className="rounded-xl bg-base-300/80 p-3.5 border border-base-300 space-y-1.5">
+            <span className="text-[10px] uppercase font-mono font-semibold tracking-wider text-base-content/50">
+              Live Terminal Preview
+            </span>
+            <div
+              style={{
+                fontFamily,
+                fontSize: `${fontSize}px`,
+                lineHeight,
+              }}
+              className="p-3 rounded-lg bg-base-100 font-mono text-xs text-base-content overflow-x-auto shadow-inner select-none border border-base-300/60"
+            >
+              <div className="text-success">$ haze-ssh connect server-01</div>
+              <div className="text-base-content/70">Connected to 192.168.1.100 (Linux 6.8.0-generic x86_64)</div>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="text-primary font-bold">ahmet@server-01:~$</span>
+                <span>uptime</span>
+                <span
+                  className={`inline-block ml-0.5 bg-primary text-primary-content ${
+                    cursorBlink ? "animate-pulse" : ""
+                  }`}
+                  style={{
+                    width: cursorStyle === "bar" ? "2px" : cursorStyle === "underline" ? "8px" : "8px",
+                    height: cursorStyle === "underline" ? "2px" : "1em",
+                    alignSelf: cursorStyle === "underline" ? "flex-end" : "center",
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Data Importers Section */}

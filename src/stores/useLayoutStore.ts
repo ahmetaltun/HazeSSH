@@ -5,6 +5,7 @@ interface LayoutState {
   readonly currentView: NavigationView;
   readonly isSidebarCollapsed: boolean;
   readonly isCommandPaletteOpen: boolean;
+  readonly isAboutModalOpen: boolean;
   readonly isQuickConnectOpen: boolean;
   readonly isVaultLocked: boolean;
   readonly hasMasterPassword: boolean;
@@ -12,10 +13,13 @@ interface LayoutState {
   readonly activeTunnelCount: number;
 
   readonly activeSection: "management" | "terminal";
+  readonly sftpTargetHostId: string | null;
+  readonly setSftpTargetHostId: (hostId: string | null) => void;
   readonly setActiveSection: (section: "management" | "terminal") => void;
   readonly setView: (view: NavigationView) => void;
   readonly toggleSidebar: () => void;
   readonly setCommandPaletteOpen: (open: boolean) => void;
+  readonly setAboutModalOpen: (open: boolean) => void;
   readonly setQuickConnectOpen: (open: boolean) => void;
   readonly setVaultLocked: (locked: boolean) => void;
   readonly setHasMasterPassword: (hasPassword: boolean) => void;
@@ -34,13 +38,16 @@ export const useLayoutStore = create<LayoutState>((set) => ({
     }
   })(),
   isCommandPaletteOpen: false,
+  isAboutModalOpen: false,
   isQuickConnectOpen: false,
   isVaultLocked: false,
   hasMasterPassword: false,
   activeHostCount: 0,
   activeTunnelCount: 0,
   activeSection: "management",
+  sftpTargetHostId: null,
 
+  setSftpTargetHostId: (hostId) => set({ sftpTargetHostId: hostId }),
   setActiveSection: (section) => set({ activeSection: section }),
   setView: (view: NavigationView) => set({ currentView: view, activeSection: "management" }),
 
@@ -56,6 +63,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
     }),
 
   setCommandPaletteOpen: (open: boolean) => set({ isCommandPaletteOpen: open }),
+  setAboutModalOpen: (open: boolean) => set({ isAboutModalOpen: open }),
   setQuickConnectOpen: (open: boolean) => set({ isQuickConnectOpen: open }),
   setVaultLocked: (locked: boolean) => set({ isVaultLocked: locked }),
   setHasMasterPassword: (hasPassword: boolean) => set({ hasMasterPassword: hasPassword }),

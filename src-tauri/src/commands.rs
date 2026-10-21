@@ -564,6 +564,16 @@ pub async fn sftp_rename_file(
 }
 
 #[tauri::command]
+pub async fn sftp_upload_file(
+    host_id: String,
+    local_path: String,
+    remote_path: String,
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    sftp::sftp_upload_file(host_id, local_path, remote_path, &state).await
+}
+
+#[tauri::command]
 pub fn sftp_list_local(path: String) -> Result<Vec<FileEntry>, String> {
     sftp::local_list(path)
 }

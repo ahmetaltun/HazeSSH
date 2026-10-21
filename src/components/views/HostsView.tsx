@@ -16,6 +16,8 @@ import {
   MoreVertical,
   Activity,
   RefreshCw,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
@@ -32,6 +34,7 @@ export function HostsView() {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [copiedHostId, setCopiedHostId] = useState<string | null>(null);
 
   // Modals state
   const [isHostModalOpen, setIsHostModalOpen] = useState(false);
@@ -41,7 +44,7 @@ export function HostsView() {
 
   const { hosts, groups, identities, deleteHost, deleteGroup } = useHostStore();
   const { openTab } = useMultiplexerStore();
-  const { setView } = useLayoutStore();
+  const { setView, setSftpTargetHostId } = useLayoutStore();
   const { fetchAllMetrics, isAutoPolling, toggleAutoPolling } = useServerMonitorStore();
 
   // All unique tags across all hosts
@@ -132,6 +135,14 @@ export function HostsView() {
         setSelectedGroupId(null);
       }
     }
+  };
+
+  const handleCopyAddress = (e: React.MouseEvent, host: Host) => {
+    e.stopPropagation();
+    const address = `${host.username ? `${host.username}@` : ""}${host.hostname}:${host.port}`;
+    navigator.clipboard.writeText(address);
+    setCopiedHostId(host.id);
+    setTimeout(() => setCopiedHostId(null), 1800);
   };
 
   return (
@@ -383,122 +394,176 @@ export function HostsView() {
               </button>
             </div>
           ) : viewMode === "grid" ? (
-            /* Grid View */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            /* Grid View - Spacious, modern responsive auto-fill */
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-5 pb-6">
               {filteredHosts.map((host) => {
                 const group = groups.find((g) => g.id === host.group_id);
                 const jumpHost = hosts.find((h) => h.id === host.jump_host_id);
+                const isCopied = copiedHostId === host.id;
+                const fullAddress = `${host.username ? `${host.username}@` : ""}${host.hostname}:${host.port}`;
 
                 return (
                   <div
                     key={host.id}
-                    className="card bg-base-200/50 border border-base-300 hover:border-primary/50 transition-all duration-200 shadow-xs hover:shadow-md group flex flex-col justify-between"
+                    className="card bg-base-200/50 hover:bg-base-200/80 border border-base-300/80 hover:border-primary/40 rounded-2xl transition-all duration-200 shadow-xs hover:shadow-md group flex flex-col justify-between overflow-hidden"
                   >
-                    <div className="card-body p-4 space-y-2">
-                      {/* Card Header */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0 shadow-xs"
-                            style={{ backgroundColor: host.color || "#3b82f6" }}
-                          />
-                          <h4 className="font-bold text-sm truncate" title={host.label}>
-                            {host.label}
-                          </h4>
-                        </div>
-
-                        {/* Actions menu */}
-                        <div className="dropdown dropdown-end">
-                          <div
-                            tabIndex={0}
-                            role="button"
-                            className="btn btn-ghost btn-xs btn-square opacity-60 group-hover:opacity-100"
-                          >
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </div>
-                          <ul
-                            tabIndex={0}
-                            className="dropdown-content z-20 menu p-1.5 shadow-xl bg-base-200 border border-base-300 rounded-box w-36 text-xs"
-                          >
-                            <li>
-                              <button type="button" onClick={() => handleEdit(host)}>
-                                <Edit2 className="w-3 h-3" /> Edit
-                              </button>
-                            </li>
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => setView("sftp")}
-                              >
-                                <FolderGit2 className="w-3 h-3" /> SFTP
-                              </button>
-                            </li>
-                            <li className="text-error">
-                              <button type="button" onClick={() => handleDelete(host)}>
-                                <Trash2 className="w-3 h-3" /> Delete
-                              </button>
-                            </li>
-                          </ul>
-                        </div>
-                      </div>
-
-                      {/* Connection Address */}
-                      <div className="font-mono text-xs text-base-content/70 truncate bg-base-100/60 p-1.5 rounded-md border border-base-300/40">
-                        {host.username ? `${host.username}@` : ""}
-                        {host.hostname}
-                        <span className="text-base-content/40">:{host.port}</span>
-                      </div>
-
-                      {/* Badges / Meta */}
-                      <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                        {group && (
-                          <span className="badge badge-xs badge-neutral truncate max-w-[100px]">
-                            {group.name}
-                          </span>
-                        )}
-                        {jumpHost && (
-                          <span
-                            className="badge badge-xs badge-secondary gap-1"
-                            title={`Jump Host: ${jumpHost.label}`}
-                          >
-                            <Network className="w-2.5 h-2.5" />
-                            via {jumpHost.label}
-                          </span>
-                        )}
-                        <span className="badge badge-xs badge-outline uppercase font-mono">
-                          {host.auth_type}
-                        </span>
-                      </div>
-
-                      {/* Tags */}
-                      {host.tags && host.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {host.tags.map((t) => (
-                            <span
-                              key={t}
-                              className="text-[10px] text-base-content/50 font-mono"
+                    <div className="p-5 space-y-3.5 flex-1 flex flex-col justify-between">
+                      <div className="space-y-3">
+                        {/* Card Header */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
+                              style={{
+                                backgroundColor: `${host.color || "#3b82f6"}20`,
+                                color: host.color || "#3b82f6",
+                              }}
                             >
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                              <Server className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <h4
+                                className="font-bold text-sm text-base-content truncate group-hover:text-primary transition-colors"
+                                title={host.label}
+                              >
+                                {host.label}
+                              </h4>
+                              {group ? (
+                                <span className="text-[11px] font-medium text-base-content/60 flex items-center gap-1.5 mt-0.5">
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: group.color || "#3b82f6" }}
+                                  />
+                                  <span className="truncate">{group.name}</span>
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-base-content/40 mt-0.5 block">
+                                  Ungrouped
+                                </span>
+                              )}
+                            </div>
+                          </div>
 
-                      {/* Server Health Gauges */}
-                      <div className="pt-1">
+                          {/* Actions menu */}
+                          <div className="dropdown dropdown-end">
+                            <div
+                              tabIndex={0}
+                              role="button"
+                              className="btn btn-ghost btn-xs btn-square opacity-60 group-hover:opacity-100 hover:bg-base-300"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </div>
+                            <ul
+                              tabIndex={0}
+                              className="dropdown-content z-20 menu p-1.5 shadow-xl bg-base-200 border border-base-300 rounded-box w-36 text-xs"
+                            >
+                              <li>
+                                <button type="button" onClick={() => handleEdit(host)}>
+                                  <Edit2 className="w-3 h-3" /> Edit Host
+                                </button>
+                              </li>
+                              <li>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSftpTargetHostId(host.id);
+                                    setView("sftp");
+                                  }}
+                                >
+                                  <FolderGit2 className="w-3 h-3" /> Open SFTP
+                                </button>
+                              </li>
+                              <li className="text-error">
+                                <button type="button" onClick={() => handleDelete(host)}>
+                                  <Trash2 className="w-3 h-3" /> Delete
+                                </button>
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+
+                        {/* Connection Address with Copy Button */}
+                        <div className="flex items-center justify-between gap-2 font-mono text-xs bg-base-100/70 border border-base-300/60 px-3 py-2 rounded-lg">
+                          <span className="truncate text-base-content/80 select-all" title={fullAddress}>
+                            {host.username && <span className="text-base-content/50">{host.username}@</span>}
+                            <span className="font-medium text-base-content">{host.hostname}</span>
+                            <span className="text-base-content/50">:{host.port}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyAddress(e, host)}
+                            className="btn btn-ghost btn-xs btn-square p-0 shrink-0 text-base-content/40 hover:text-base-content"
+                            title="Copy host address"
+                          >
+                            {isCopied ? (
+                              <Check className="w-3.5 h-3.5 text-success" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Badges / Meta */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className="badge badge-sm badge-neutral border border-base-300/50 uppercase font-mono text-[10px] tracking-wide">
+                            {host.auth_type === "password" ? "Password" : host.auth_type}
+                          </span>
+                          {jumpHost && (
+                            <span
+                              className="badge badge-sm badge-secondary/15 text-secondary border border-secondary/30 gap-1 font-medium"
+                              title={`Jump Host: ${jumpHost.label}`}
+                            >
+                              <Network className="w-2.5 h-2.5" />
+                              via {jumpHost.label}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Tags */}
+                        {host.tags && host.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {host.tags.map((t) => (
+                              <span
+                                key={t}
+                                className="text-[10px] text-base-content/60 font-mono bg-base-300/40 px-2 py-0.5 rounded border border-base-300/50"
+                              >
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Server Health Telemetry Section */}
+                      <div className="pt-2">
                         <ServerHealthGauges hostId={host.id} variant="card" />
                       </div>
                     </div>
 
                     {/* Card Footer */}
-                    <div className="px-4 py-2.5 border-t border-base-300/40 bg-base-200/80 flex items-center justify-between rounded-b-2xl">
-                      <span className="text-[10px] text-base-content/40 font-mono uppercase">
-                        {host.auth_type === "telnet" ? "Telnet" : "SSH2"}
-                      </span>
+                    <div className="px-5 py-3 border-t border-base-300/60 bg-base-200/90 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="badge badge-xs badge-ghost font-mono uppercase text-[9px] opacity-60">
+                          {host.auth_type === "telnet" ? "Telnet" : "SSH2"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSftpTargetHostId(host.id);
+                            setView("sftp");
+                          }}
+                          className="btn btn-xs btn-ghost gap-1 text-[11px] text-base-content/70 hover:text-base-content border border-base-300/50"
+                          title="Open SFTP browser for this host"
+                        >
+                          <FolderGit2 className="w-3 h-3 text-secondary" />
+                          <span>SFTP</span>
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => handleConnect(host)}
-                        className="btn btn-xs btn-primary gap-1 font-semibold"
+                        className="btn btn-xs btn-primary gap-1.5 font-semibold px-3 shadow-xs"
                       >
                         <Terminal className="w-3 h-3" />
                         <span>Connect</span>

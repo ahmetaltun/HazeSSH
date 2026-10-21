@@ -1,4 +1,6 @@
-# Haze SSH
+<p align="center">
+  <img src="./assets/branding/logo-horizontal.svg" alt="Haze SSH Logo" width="420" />
+</p>
 
 <p align="center">
   <strong>Fast, Privacy-First, Open-Source SSH Client, Terminal Multiplexer & Hardware Hub</strong>

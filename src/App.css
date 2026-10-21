@@ -1,2 +1,89 @@
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+  themes: all;
+}
+
+/* Universal Outline Removal across the entire application */
+*,
+*::before,
+*::after {
+  outline: none !important;
+  outline-width: 0 !important;
+  outline-style: none !important;
+  outline-color: transparent !important;
+}
+
+*:focus,
+*:focus-visible,
+*:focus-within,
+*:active {
+  outline: none !important;
+  outline-width: 0 !important;
+  outline-style: none !important;
+  outline-color: transparent !important;
+}
+
+/* Specific resets for form inputs, dropdowns, and interactive buttons */
+input,
+select,
+textarea,
+button,
+[tabindex],
+.input,
+.select,
+.textarea,
+.btn,
+.join-item {
+  outline: none !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  outline-offset: 0 !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input:focus,
+input:focus-within,
+input:focus-visible,
+input:active,
+select:focus,
+select:focus-within,
+select:focus-visible,
+select:active,
+textarea:focus,
+textarea:focus-within,
+textarea:focus-visible,
+textarea:active,
+button:focus,
+button:focus-visible,
+button:active,
+.input:focus,
+.input:focus-within,
+.input:focus-visible,
+.input:active,
+.select:focus,
+.select:focus-within,
+.select:focus-visible,
+.select:active,
+.textarea:focus,
+.textarea:focus-within,
+.textarea:focus-visible,
+.textarea:active,
+.btn:focus,
+.btn:focus-visible,
+.btn:active {
+  outline: none !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Subtle, clean focus border for inputs instead of jarring outlines */
+.input:focus,
+.input:focus-within,
+.select:focus,
+.select:focus-within,
+.textarea:focus,
+.textarea:focus-within {
+  border-color: var(--color-primary) !important;
+}

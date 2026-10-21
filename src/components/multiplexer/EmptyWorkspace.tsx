@@ -1,11 +1,11 @@
 import {
-  Terminal,
   Server,
   Network,
   ShieldCheck,
   Plus,
   ArrowRight,
 } from "lucide-react";
+import { BrandLogo } from "@/components/common/BrandLogo";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 
@@ -16,9 +16,9 @@ export function EmptyWorkspace() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 bg-base-100 select-none overflow-y-auto">
       <div className="max-w-2xl w-full flex flex-col items-center text-center space-y-6">
-        {/* Hero Icon */}
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-primary-content shadow-xl">
-          <Terminal className="w-8 h-8" />
+        {/* Brand Hero Mark */}
+        <div className="hover:scale-105 transition-transform duration-300 drop-shadow-xl cursor-default">
+          <BrandLogo variant="mark" size={76} />
         </div>
 
         {/* Title & Tagline */}

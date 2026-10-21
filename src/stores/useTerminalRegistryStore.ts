@@ -9,6 +9,7 @@ export interface TerminalSessionHandle {
   readonly port?: number;
   readonly title: string;
   readonly sendCommand: (command: string) => Promise<void>;
+  readonly writeBytes: (bytes: number[]) => Promise<void>;
 }
 
 interface TerminalRegistryState {
@@ -20,6 +21,7 @@ interface TerminalRegistryState {
   readonly setActivePaneId: (paneId: string | null) => void;
   readonly getActiveSession: () => TerminalSessionHandle | null;
   readonly getAllSessions: () => readonly TerminalSessionHandle[];
+  readonly broadcastBytes: (sourcePaneId: string, bytes: number[], targetPaneIds?: readonly string[]) => Promise<void>;
 }
 
 export const useTerminalRegistryStore = create<TerminalRegistryState>((set, get) => ({
@@ -67,5 +69,24 @@ export const useTerminalRegistryStore = create<TerminalRegistryState>((set, get)
 
   getAllSessions: () => {
     return Array.from(get().sessions.values());
+  },
+
+  broadcastBytes: async (sourcePaneId: string, bytes: number[], targetPaneIds?: readonly string[]) => {
+    const { sessions } = get();
+    const targets = targetPaneIds
+      ? targetPaneIds.filter((id) => id !== sourcePaneId)
+      : Array.from(sessions.keys()).filter((id) => id !== sourcePaneId);
+
+    const promises = targets.map((id) => {
+      const handle = sessions.get(id);
+      if (handle) {
+        return handle.writeBytes(bytes).catch((err) => {
+          console.warn(`[Broadcast] Failed to send bytes to pane ${id}:`, err);
+        });
+      }
+      return Promise.resolve();
+    });
+
+    await Promise.allSettled(promises);
   },
 }));

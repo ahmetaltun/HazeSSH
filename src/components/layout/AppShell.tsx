@@ -1,7 +1,9 @@
-import { useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { StatusBar } from "@/components/layout/StatusBar";
+import { CommandPaletteModal } from "@/components/layout/CommandPaletteModal";
+import { AboutModal } from "@/components/layout/AboutModal";
 import { MultiplexerArea } from "@/components/multiplexer/MultiplexerArea";
 import { HostsView } from "@/components/views/HostsView";
 import { useLayoutStore } from "@/stores/useLayoutStore";
@@ -9,6 +11,7 @@ import { useThemeStore } from "@/stores/useThemeStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
+import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { Terminal, Layers, Loader2 } from "lucide-react";
 
 // Code-split secondary management views to optimize bundle size and cold-start latency
@@ -48,6 +51,18 @@ export function AppShell() {
   const { tabs, openTab, closePane, getActiveTab } =
     useMultiplexerStore();
 
+  // Track visited management views to retain their DOM state across view navigation while preserving lazy-loading
+  const [visitedViews, setVisitedViews] = useState<Set<string>>(() => new Set([currentView]));
+
+  useEffect(() => {
+    setVisitedViews((prev) => {
+      if (prev.has(currentView)) return prev;
+      const next = new Set(prev);
+      next.add(currentView);
+      return next;
+    });
+  }, [currentView]);
+
   useEffect(() => {
     initTheme();
     fetchStatus();
@@ -62,6 +77,9 @@ export function AppShell() {
       if (isMetaOrCtrl && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCommandPaletteOpen(true);
+      } else if (isMetaOrCtrl && e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        useBroadcastStore.getState().toggleBroadcast();
       } else if (isMetaOrCtrl && e.key.toLowerCase() === "t") {
         e.preventDefault();
         openTab({ title: "Local Terminal", status: "idle" });
@@ -78,44 +96,53 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [setCommandPaletteOpen, openTab, closePane, getActiveTab]);
 
-  const renderActiveManagementView = () => {
-    switch (currentView) {
-      case "hosts":
-        return <HostsView />;
-      case "tunnels":
-        return (
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <TunnelsView />
-          </Suspense>
-        );
-      case "sftp":
-        return (
+  const renderActiveManagementViews = () => (
+    <>
+      <div className={`w-full h-full flex flex-col ${currentView === "hosts" ? "" : "hidden"}`}>
+        <HostsView />
+      </div>
+
+      {visitedViews.has("sftp") && (
+        <div className={`w-full h-full flex flex-col ${currentView === "sftp" ? "" : "hidden"}`}>
           <Suspense fallback={<ViewLoadingFallback />}>
             <SFTPView />
           </Suspense>
-        );
-      case "snippets":
-        return (
+        </div>
+      )}
+
+      {visitedViews.has("tunnels") && (
+        <div className={`w-full h-full flex flex-col ${currentView === "tunnels" ? "" : "hidden"}`}>
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <TunnelsView />
+          </Suspense>
+        </div>
+      )}
+
+      {visitedViews.has("snippets") && (
+        <div className={`w-full h-full flex flex-col ${currentView === "snippets" ? "" : "hidden"}`}>
           <Suspense fallback={<ViewLoadingFallback />}>
             <SnippetsView />
           </Suspense>
-        );
-      case "history":
-        return (
+        </div>
+      )}
+
+      {visitedViews.has("history") && (
+        <div className={`w-full h-full flex flex-col ${currentView === "history" ? "" : "hidden"}`}>
           <Suspense fallback={<ViewLoadingFallback />}>
             <HistoryView />
           </Suspense>
-        );
-      case "settings":
-        return (
+        </div>
+      )}
+
+      {visitedViews.has("settings") && (
+        <div className={`w-full h-full flex flex-col ${currentView === "settings" ? "" : "hidden"}`}>
           <Suspense fallback={<ViewLoadingFallback />}>
             <SettingsView />
           </Suspense>
-        );
-      default:
-        return <HostsView />;
-    }
-  };
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-base-100 text-base-content antialiased">
@@ -166,16 +193,29 @@ export function AppShell() {
 
         {/* Workspace Body */}
         <main className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-          {activeSection === "terminal" ? (
+          <div
+            className={`flex-1 min-h-0 flex flex-col overflow-hidden relative ${
+              activeSection === "terminal" ? "" : "hidden"
+            }`}
+          >
             <MultiplexerArea />
-          ) : (
-            renderActiveManagementView()
-          )}
+          </div>
+          <div
+            className={`flex-1 min-h-0 flex flex-col overflow-hidden relative ${
+              activeSection === "management" ? "" : "hidden"
+            }`}
+          >
+            {renderActiveManagementViews()}
+          </div>
         </main>
 
         {/* Status Bar */}
         <StatusBar />
       </div>
+
+      {/* Global Command Palette & About Modals */}
+      <CommandPaletteModal />
+      <AboutModal />
     </div>
   );
 }

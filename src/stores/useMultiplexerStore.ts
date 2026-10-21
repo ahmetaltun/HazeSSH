@@ -103,6 +103,28 @@ function updateRatioInTree(node: SplitNode, branchId: string, newRatio: number):
   };
 }
 
+function updatePaneInTree(
+  node: SplitNode,
+  paneId: string,
+  updater: (pane: TerminalPane) => TerminalPane
+): SplitNode {
+  if (node.type === "leaf") {
+    if (node.pane.id === paneId) {
+      return {
+        ...node,
+        pane: updater(node.pane),
+      };
+    }
+    return node;
+  }
+
+  return {
+    ...node,
+    first: updatePaneInTree(node.first, paneId, updater),
+    second: updatePaneInTree(node.second, paneId, updater),
+  };
+}
+
 interface MultiplexerState {
   readonly tabs: readonly WorkspaceTab[];
   readonly activeTabId: string | null;
@@ -113,6 +135,7 @@ interface MultiplexerState {
   readonly splitActivePane: (direction: SplitDirection, newPaneData?: Partial<TerminalPane>) => string | null;
   readonly closePane: (tabId: string, paneId: string) => void;
   readonly setActivePane: (tabId: string, paneId: string) => void;
+  readonly updatePaneStatus: (paneId: string, status: TerminalPane["status"], errorMessage?: string) => void;
   readonly updateBranchRatio: (tabId: string, branchId: string, ratio: number) => void;
   readonly getActiveTab: () => WorkspaceTab | null;
   readonly getActivePane: () => TerminalPane | null;
@@ -256,6 +279,19 @@ export const useMultiplexerStore = create<MultiplexerState>((set, get) => ({
       tabs: state.tabs.map((t) =>
         t.id === tabId ? { ...t, activePaneId: paneId } : t
       ),
+    }));
+  },
+
+  updatePaneStatus: (paneId, status, errorMessage) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) => ({
+        ...tab,
+        rootNode: updatePaneInTree(tab.rootNode, paneId, (pane) => ({
+          ...pane,
+          status,
+          ...(errorMessage !== undefined ? { errorMessage } : {}),
+        })),
+      })),
     }));
   },
 

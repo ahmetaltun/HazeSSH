@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <defs>
+    <linearGradient id="favBrandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#BD93F9" />
+      <stop offset="50%" stop-color="#FF79C6" />
+      <stop offset="100%" stop-color="#00F0FF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded squircle for dark/light browser tab contrast -->
+  <rect width="64" height="64" rx="16" fill="#0E111A" />
+
+  <!-- Left Pillar -->
+  <rect x="14" y="14" width="6" height="36" rx="3" fill="url(#favBrandGrad)" />
+
+  <!-- Right Pillar -->
+  <rect x="44" y="14" width="6" height="36" rx="3" fill="url(#favBrandGrad)" />
+
+  <!-- Terminal Prompt Chevron -->
+  <path
+    d="M 20 25 L 30 32 L 20 39"
+    stroke="url(#favBrandGrad)"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Encrypted Bridge -->
+  <path
+    d="M 30 32 L 44 32"
+    stroke="#FF79C6"
+    stroke-width="5"
+    stroke-linecap="round"
+  />
+
+  <!-- Terminal Cursor Underline -->
+  <path
+    d="M 33 39 L 41 39"
+    stroke="#00F0FF"
+    stroke-width="4.5"
+    stroke-linecap="round"
+  />
+
+  <!-- Center Pulse Dot -->
+  <circle cx="30" cy="32" r="2" fill="#FFFFFF" />
+</svg>

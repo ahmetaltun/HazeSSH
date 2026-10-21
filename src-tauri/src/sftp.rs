@@ -255,6 +255,53 @@ pub async fn sftp_rename(
         .map_err(|e| format!("Failed to rename '{}' to '{}': {}", old_path, new_path, e))
 }
 
+pub async fn sftp_upload_file(
+    host_id: String,
+    local_path: String,
+    remote_path: String,
+    state: &AppState,
+) -> Result<u64, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut local_file = tokio::fs::File::open(&local_path)
+        .await
+        .map_err(|e| format!("Failed to open local file '{}': {}", local_path, e))?;
+
+    let sftp = connect_sftp(&host_id, state).await?;
+    let mut remote_file = sftp
+        .create(&remote_path)
+        .await
+        .map_err(|e| format!("Failed to create remote file '{}': {}", remote_path, e))?;
+
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total_bytes = 0u64;
+
+    loop {
+        let bytes_read = local_file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| format!("Failed to read from local file: {}", e))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        remote_file
+            .write_all(&buffer[..bytes_read])
+            .await
+            .map_err(|e| format!("Failed to write data to remote file: {}", e))?;
+
+        total_bytes += bytes_read as u64;
+    }
+
+    remote_file
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush remote file: {}", e))?;
+
+    Ok(total_bytes)
+}
+
 // --- Local Filesystem Handlers ---
 
 pub fn local_list(local_path: String) -> Result<Vec<FileEntry>, String> {

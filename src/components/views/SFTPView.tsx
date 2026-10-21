@@ -10,6 +10,7 @@ import {
   Layers,
 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
+import { useLayoutStore } from "@/stores/useLayoutStore";
 import { api } from "@/services/api";
 import type { FileEntry, TransferTask } from "@/types/sftp";
 import { FileExplorerPane } from "@/components/sftp/FileExplorerPane";
@@ -17,6 +18,7 @@ import { RemoteEditorModal } from "@/components/sftp/RemoteEditorModal";
 
 export function SFTPView() {
   const { hosts } = useHostStore();
+  const { sftpTargetHostId, setSftpTargetHostId } = useLayoutStore();
   const [selectedHostId, setSelectedHostId] = useState<string>("");
 
   // Navigation states
@@ -31,6 +33,14 @@ export function SFTPView() {
   const [isQueueExpanded, setIsQueueExpanded] = useState(false);
 
   const selectedHost = hosts.find((h) => h.id === selectedHostId) || hosts[0];
+
+  useEffect(() => {
+    if (sftpTargetHostId) {
+      setSelectedHostId(sftpTargetHostId);
+      setRemotePath(".");
+      setSftpTargetHostId(null);
+    }
+  }, [sftpTargetHostId, setSftpTargetHostId]);
 
   useEffect(() => {
     // Select first host by default if none selected

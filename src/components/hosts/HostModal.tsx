@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent, type KeyboardEvent } from "react";
-import { Server, Plus, X, Network, Code2 } from "lucide-react";
+import { Server, Plus, X, Network, Code2, Lock, Eye, EyeOff } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import type { Host } from "@/types/host";
@@ -28,8 +28,10 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
   const [hostname, setHostname] = useState("");
   const [port, setPort] = useState(22);
   const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [groupId, setGroupId] = useState("");
-  const [authType, setAuthType] = useState<"identity" | "interactive" | "agent" | "telnet">("identity");
+  const [authType, setAuthType] = useState<"password" | "identity" | "interactive" | "agent" | "telnet">("password");
   const [identityId, setIdentityId] = useState("");
   const [jumpHostId, setJumpHostId] = useState("");
   const [startupSnippetId, setStartupSnippetId] = useState("");
@@ -58,9 +60,11 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
       setHostname(hostToEdit.hostname);
       setPort(hostToEdit.port);
       setUsername(hostToEdit.username || "");
+      setPassword("");
+      setShowPassword(false);
       setGroupId(hostToEdit.group_id || "");
       setAuthType(
-        (hostToEdit.auth_type as "identity" | "interactive" | "agent" | "telnet") || "identity"
+        (hostToEdit.auth_type as "password" | "identity" | "interactive" | "agent" | "telnet") || "password"
       );
       setIdentityId(hostToEdit.identity_id || "");
       setJumpHostId(hostToEdit.jump_host_id || "");
@@ -72,8 +76,10 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
       setHostname("");
       setPort(22);
       setUsername("");
+      setPassword("");
+      setShowPassword(false);
       setGroupId("");
-      setAuthType("identity");
+      setAuthType("password");
       setIdentityId(identities[0]?.id || "");
       setJumpHostId("");
       setStartupSnippetId("");
@@ -114,6 +120,30 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
 
     setIsSubmitting(true);
     try {
+      let effectiveIdentityId: string | undefined = undefined;
+
+      if (authType === "password") {
+        if (!hostToEdit && !password.trim()) {
+          setErrorMsg("Password is required for password authentication.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (password.trim()) {
+          const createdIdentity = await useHostStore.getState().createIdentity({
+            name: `${label.trim()} (${username.trim() || "ssh"})`,
+            identity_type: "password",
+            username: username.trim() || undefined,
+            secret: password.trim(),
+          });
+          effectiveIdentityId = createdIdentity.id;
+        } else if (hostToEdit) {
+          effectiveIdentityId = hostToEdit.identity_id || undefined;
+        }
+      } else if (authType === "identity") {
+        effectiveIdentityId = identityId.trim() || undefined;
+      }
+
       if (hostToEdit) {
         const updated = await updateHost({
           id: hostToEdit.id,
@@ -123,7 +153,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
           username: username.trim() || undefined,
           group_id: groupId.trim() || undefined,
           auth_type: authType,
-          identity_id: authType === "identity" && identityId.trim() ? identityId : undefined,
+          identity_id: effectiveIdentityId,
           jump_host_id: jumpHostId.trim() || undefined,
           tags,
           color,
@@ -141,7 +171,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
           username: username.trim() || undefined,
           group_id: groupId.trim() || undefined,
           auth_type: authType,
-          identity_id: authType === "identity" && identityId.trim() ? identityId : undefined,
+          identity_id: effectiveIdentityId,
           jump_host_id: jumpHostId.trim() || undefined,
           tags,
           color,
@@ -277,7 +307,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                 <select
                   value={authType}
                   onChange={(e) => {
-                    const newType = e.target.value as "identity" | "interactive" | "agent" | "telnet";
+                    const newType = e.target.value as "password" | "identity" | "interactive" | "agent" | "telnet";
                     setAuthType(newType);
                     if (newType === "telnet" && port === 22) {
                       setPort(23);
@@ -287,13 +317,50 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                   }}
                   className="select select-sm select-bordered w-full bg-base-100 text-xs"
                 >
-                  <option value="identity">SSH (Vault Identity)</option>
-                  <option value="agent">SSH (Local Agent)</option>
+                  <option value="password">SSH (Username & Password)</option>
+                  <option value="identity">SSH (Private Key / Identity)</option>
+                  <option value="agent">SSH (Local SSH Agent)</option>
                   <option value="interactive">SSH (Prompt on Connect)</option>
                   <option value="telnet">Telnet (Legacy RFC 854)</option>
                 </select>
               </div>
             </div>
+
+            {/* Direct Password Input (if auth_type === 'password') */}
+            {authType === "password" && (
+              <div className="form-control">
+                <label className="label py-1">
+                  <span className="label-text text-xs font-semibold flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-primary" />
+                    SSH Password {hostToEdit ? "(Leave blank to keep current)" : "*"}
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={
+                      hostToEdit
+                        ? "•••••••••••• (Leave blank to keep current)"
+                        : "Enter SSH password..."
+                    }
+                    className="input input-sm input-bordered w-full bg-base-100 font-mono text-xs pr-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="btn btn-ghost btn-xs btn-square absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/50 hover:text-base-content"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <span className="text-[10px] text-base-content/50 mt-1">
+                  Credentials are encrypted at rest with ChaCha20-Poly1305.
+                </span>
+              </div>
+            )}
 
             {/* Identity Selector (if auth_type === 'identity') */}
             {authType === "identity" && (
