@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Copy,
   Check,
+  AlertCircle,
 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
@@ -28,6 +29,7 @@ import { HostModal } from "@/components/hosts/HostModal";
 import { GroupModal } from "@/components/hosts/GroupModal";
 import { IdentityManagerModal } from "@/components/identities/IdentityManagerModal";
 import { ServerHealthGauges } from "@/components/hosts/ServerHealthGauges";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
 
 export function HostsView() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -41,6 +43,12 @@ export function HostsView() {
   const [hostToEdit, setHostToEdit] = useState<Host | null>(null);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isIdentityModalOpen, setIsIdentityModalOpen] = useState(false);
+
+  // Deletion confirmation state
+  const [hostToDelete, setHostToDelete] = useState<Host | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { hosts, groups, identities, deleteHost, deleteGroup } = useHostStore();
   const { openTab } = useMultiplexerStore();
@@ -118,22 +126,53 @@ export function HostsView() {
   };
 
   const handleEdit = (host: Host) => {
+    (document.activeElement as HTMLElement)?.blur();
     setHostToEdit(host);
     setIsHostModalOpen(true);
   };
 
-  const handleDelete = async (host: Host) => {
-    if (confirm(`Are you sure you want to delete "${host.label}"?`)) {
-      await deleteHost(host.id);
+  const handleDelete = (host: Host) => {
+    (document.activeElement as HTMLElement)?.blur();
+    setDeleteError(null);
+    setHostToDelete(host);
+  };
+
+  const handleConfirmDeleteHost = async () => {
+    if (!hostToDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteHost(hostToDelete.id);
+      setHostToDelete(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setDeleteError(`Failed to delete host "${hostToDelete.label}": ${msg}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleDeleteGroup = async (groupId: string, groupName: string) => {
-    if (confirm(`Delete group "${groupName}"? Hosts will become ungrouped.`)) {
-      await deleteGroup(groupId);
-      if (selectedGroupId === groupId) {
+  const handleDeleteGroup = (groupId: string, groupName: string) => {
+    (document.activeElement as HTMLElement)?.blur();
+    setDeleteError(null);
+    setGroupToDelete({ id: groupId, name: groupName });
+  };
+
+  const handleConfirmDeleteGroup = async () => {
+    if (!groupToDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteGroup(groupToDelete.id);
+      if (selectedGroupId === groupToDelete.id) {
         setSelectedGroupId(null);
       }
+      setGroupToDelete(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setDeleteError(`Failed to delete group "${groupToDelete.name}": ${msg}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -336,6 +375,23 @@ export function HostsView() {
           </div>
         </div>
 
+        {/* Action Error Banner */}
+        {deleteError && (
+          <div className="bg-error/15 border-b border-error/30 px-5 py-2 flex items-center justify-between text-xs text-error">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="font-medium">{deleteError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeleteError(null)}
+              className="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/20"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Tag Filter Chips */}
         {allTags.length > 0 && (
           <div className="px-5 py-2 border-b border-base-200 bg-base-200/10 flex items-center gap-1.5 overflow-x-auto select-none no-scrollbar">
@@ -466,6 +522,7 @@ export function HostsView() {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    (document.activeElement as HTMLElement)?.blur();
                                     setSftpTargetHostId(host.id);
                                     setView("sftp");
                                   }}
@@ -694,6 +751,62 @@ export function HostsView() {
         <IdentityManagerModal
           isOpen={true}
           onClose={() => setIsIdentityModalOpen(false)}
+        />
+      )}
+
+      {/* Host Deletion Confirmation */}
+      {hostToDelete && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Host"
+          variant="danger"
+          confirmLabel="Delete Host"
+          isLoading={isDeleting}
+          onConfirm={handleConfirmDeleteHost}
+          onCancel={() => {
+            if (!isDeleting) setHostToDelete(null);
+          }}
+          message={
+            <div className="space-y-1.5">
+              <p>
+                Are you sure you want to permanently delete{" "}
+                <span className="font-bold text-base-content">&ldquo;{hostToDelete.label}&rdquo;</span>?
+              </p>
+              <p className="text-[11px] text-base-content/60 font-mono">
+                {hostToDelete.username ? `${hostToDelete.username}@` : ""}
+                {hostToDelete.hostname}:{hostToDelete.port}
+              </p>
+              <p className="text-[11px] text-error font-medium pt-1">
+                This action cannot be undone. Any active sessions or configured tunnels referencing this host will be affected.
+              </p>
+            </div>
+          }
+        />
+      )}
+
+      {/* Group Deletion Confirmation */}
+      {groupToDelete && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Group"
+          variant="danger"
+          confirmLabel="Delete Group"
+          isLoading={isDeleting}
+          onConfirm={handleConfirmDeleteGroup}
+          onCancel={() => {
+            if (!isDeleting) setGroupToDelete(null);
+          }}
+          message={
+            <div className="space-y-1.5">
+              <p>
+                Are you sure you want to delete group{" "}
+                <span className="font-bold text-base-content">&ldquo;{groupToDelete.name}&rdquo;</span>?
+              </p>
+              <p className="text-[11px] text-warning font-medium pt-1">
+                Hosts currently in this group will become ungrouped.
+              </p>
+            </div>
+          }
         />
       )}
     </div>

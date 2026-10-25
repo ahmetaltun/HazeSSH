@@ -25,7 +25,9 @@ import { HostSelectDropdown } from "@/components/hosts/HostSelectDropdown";
 export function SFTPView() {
   const { hosts } = useHostStore();
   const { sftpTargetHostId, setSftpTargetHostId } = useLayoutStore();
-  const [selectedHostId, setSelectedHostId] = useState<string>("");
+  const [selectedHostId, setSelectedHostId] = useState<string>(() => {
+    return sftpTargetHostId || (hosts.length > 0 ? hosts[0].id : "");
+  });
 
   // Connection states
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -71,18 +73,19 @@ export function SFTPView() {
   // Auto-connect if navigated here with an explicit target host
   useEffect(() => {
     if (sftpTargetHostId) {
-      setSelectedHostId(sftpTargetHostId);
+      const targetId = sftpTargetHostId;
       setSftpTargetHostId(null);
-      void handleConnect(sftpTargetHostId);
+      setSelectedHostId(targetId);
+      void handleConnect(targetId);
     }
   }, [sftpTargetHostId, setSftpTargetHostId]);
 
   // Set default selected host dropdown value if none set, without connecting
   useEffect(() => {
-    if (!selectedHostId && hosts.length > 0) {
+    if (!selectedHostId && !sftpTargetHostId && hosts.length > 0) {
       setSelectedHostId(hosts[0].id);
     }
-  }, [hosts, selectedHostId]);
+  }, [hosts, selectedHostId, sftpTargetHostId]);
 
   // Fetch local user home directory on mount
   useEffect(() => {
@@ -90,10 +93,18 @@ export function SFTPView() {
   }, []);
 
   const handleConnect = async (hostIdOverride?: string) => {
-    const hostToConnect = hosts.find((h) => h.id === (hostIdOverride || selectedHostId)) || selectedHost;
+    const targetId = hostIdOverride || selectedHostId;
+    const hostToConnect = hosts.find((h) => h.id === targetId) || selectedHost;
     if (!hostToConnect) {
       setConnectionError("No remote host selected. Please choose a host to connect.");
       return;
+    }
+
+    if (isConnected && selectedHostId && selectedHostId !== hostToConnect.id) {
+      api.sftpDisconnect(selectedHostId).catch(console.error);
+      setIsConnected(false);
+      setSelectedRemoteFiles([]);
+      setRemotePath(".");
     }
 
     setIsConnecting(true);
@@ -297,15 +308,16 @@ export function SFTPView() {
 
       {/* Connection Error Banner */}
       {connectionError && (
-        <div className="bg-error/15 border-b border-error/30 px-5 py-2 flex items-center justify-between text-xs text-error">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span className="font-medium">{connectionError}</span>
+        <div className="bg-error/15 border-b border-error/30 px-5 py-2.5 flex items-center justify-between text-xs text-error">
+          <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-error" />
+            <span className="font-semibold text-error break-words leading-snug">{connectionError}</span>
           </div>
           <button
             type="button"
             onClick={() => setConnectionError(null)}
-            className="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/20"
+            className="btn btn-ghost btn-xs btn-circle text-error hover:bg-error/20 shrink-0"
+            title="Dismiss error"
           >
             ✕
           </button>
