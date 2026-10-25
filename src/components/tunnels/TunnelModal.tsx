@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { Network, ArrowRight, ShieldCheck, X, AlertCircle, Laptop, Globe, Server } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useTunnelStore } from "@/stores/useTunnelStore";
@@ -26,8 +26,10 @@ export function TunnelModal({ isOpen, onClose, onSaved }: TunnelModalProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const prevOpenRef = useRef(false);
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevOpenRef.current) {
       setName("");
       setHostId(hosts[0]?.id || "");
       setTunnelType("local");
@@ -38,7 +40,15 @@ export function TunnelModal({ isOpen, onClose, onSaved }: TunnelModalProps) {
       setAutoStart(false);
       setErrorMsg(null);
     }
-  }, [isOpen, hosts]);
+    prevOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  // If opened before hosts finished loading and hostId is not set, select first host once available
+  useEffect(() => {
+    if (isOpen && !hostId && hosts.length > 0) {
+      setHostId(hosts[0].id);
+    }
+  }, [isOpen, hostId, hosts]);
 
   if (!isOpen) return null;
 

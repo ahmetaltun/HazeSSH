@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Terminal,
   Play,
@@ -50,25 +50,41 @@ export function SnippetRunnerModal({
   const [isExecuting, setIsExecuting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Initialize target and variables when opened
+  const prevOpenRef = useRef(false);
+  const prevSnippetIdRef = useRef<string | undefined>(undefined);
+
+  // Initialize target and variables when opened or when snippet changes
   useEffect(() => {
-    if (!isOpen || !snippet) return;
+    const isOpening = isOpen && !prevOpenRef.current;
+    const isSnippetChanging = snippet?.id !== prevSnippetIdRef.current;
 
-    setErrorMessage(null);
-    setIsCopied(false);
-    setIsExecuting(false);
+    if (isOpen && snippet && (isOpening || isSnippetChanging)) {
+      setErrorMessage(null);
+      setIsCopied(false);
+      setIsExecuting(false);
 
-    if (sessions.length > 0) {
-      setTargetType("session");
-      const defaultPaneId = activeSession ? activeSession.paneId : sessions[0].paneId;
-      setSelectedPaneId(defaultPaneId);
-    } else {
-      setTargetType("new_host");
-      if (hosts.length > 0) {
-        setSelectedHostId(hosts[0].id);
+      if (sessions.length > 0) {
+        setTargetType("session");
+        const defaultPaneId = activeSession ? activeSession.paneId : sessions[0].paneId;
+        setSelectedPaneId(defaultPaneId);
+      } else {
+        setTargetType("new_host");
+        if (hosts.length > 0) {
+          setSelectedHostId(hosts[0].id);
+        }
       }
     }
-  }, [isOpen, snippet, sessions.length, activeSession, hosts]);
+
+    prevOpenRef.current = isOpen;
+    prevSnippetIdRef.current = snippet?.id;
+  }, [isOpen, snippet]);
+
+  // Fallback if target is new_host and hosts load after opening
+  useEffect(() => {
+    if (isOpen && targetType === "new_host" && !selectedHostId && hosts.length > 0) {
+      setSelectedHostId(hosts[0].id);
+    }
+  }, [isOpen, targetType, selectedHostId, hosts]);
 
   // Determine current host context based on selected destination
   const currentHostContext = useMemo(() => {

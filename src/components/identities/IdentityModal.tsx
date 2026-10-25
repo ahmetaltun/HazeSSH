@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { KeyRound, ShieldCheck, Copy, Check, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { api } from "@/services/api";
@@ -36,6 +36,30 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const { createIdentity } = useHostStore();
+
+  const prevOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen && !prevOpenRef.current) {
+      setTab("password");
+      setName("");
+      setUsername("");
+      setPassword("");
+      setPrivateKey("");
+      setPassphrase("");
+      setSelectedKeyFileName(null);
+      setKeyFormatLabel(null);
+      setIsKeyEncrypted(false);
+      setShowRawKey(false);
+      setKeyType("ed25519");
+      setKeyComment("");
+      setGeneratedKey(null);
+      setCopied(false);
+      setErrorMsg(null);
+      setIsSubmitting(false);
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

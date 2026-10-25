@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { FolderPlus } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 
@@ -26,6 +26,18 @@ export function GroupModal({ isOpen, onClose, onCreated }: GroupModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { groups, createGroup } = useHostStore();
+
+  const prevOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isOpen && !prevOpenRef.current) {
+      setName("");
+      setColor(PRESET_COLORS[0]);
+      setParentId("");
+      setErrorMsg(null);
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent, type KeyboardEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent, type KeyboardEvent } from "react";
 import { Server, Plus, X, Network, Code2, Lock, Eye, EyeOff } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
@@ -54,39 +54,51 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
     }
   }, [isOpen, fetchSnippets]);
 
+  const prevOpenRef = useRef(false);
+  const prevHostIdRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
-    if (hostToEdit) {
-      setLabel(hostToEdit.label);
-      setHostname(hostToEdit.hostname);
-      setPort(hostToEdit.port);
-      setUsername(hostToEdit.username || "");
-      setPassword("");
-      setShowPassword(false);
-      setGroupId(hostToEdit.group_id || "");
-      setAuthType(
-        (hostToEdit.auth_type as "password" | "identity" | "interactive" | "agent" | "telnet") || "password"
-      );
-      setIdentityId(hostToEdit.identity_id || "");
-      setJumpHostId(hostToEdit.jump_host_id || "");
-      setStartupSnippetId(hostToEdit.startup_snippet_id || "");
-      setTags(hostToEdit.tags || []);
-      setColor(hostToEdit.color || PRESET_COLORS[0]);
-    } else {
-      setLabel("");
-      setHostname("");
-      setPort(22);
-      setUsername("");
-      setPassword("");
-      setShowPassword(false);
-      setGroupId("");
-      setAuthType("password");
-      setIdentityId(identities[0]?.id || "");
-      setJumpHostId("");
-      setStartupSnippetId("");
-      setTags([]);
-      setColor(PRESET_COLORS[0]);
+    const isOpening = isOpen && !prevOpenRef.current;
+    const isHostChanging = hostToEdit?.id !== prevHostIdRef.current;
+
+    if (isOpen && (isOpening || isHostChanging)) {
+      if (hostToEdit) {
+        setLabel(hostToEdit.label);
+        setHostname(hostToEdit.hostname);
+        setPort(hostToEdit.port);
+        setUsername(hostToEdit.username || "");
+        setPassword("");
+        setShowPassword(false);
+        setGroupId(hostToEdit.group_id || "");
+        setAuthType(
+          (hostToEdit.auth_type as "password" | "identity" | "interactive" | "agent" | "telnet") || "password"
+        );
+        setIdentityId(hostToEdit.identity_id || "");
+        setJumpHostId(hostToEdit.jump_host_id || "");
+        setStartupSnippetId(hostToEdit.startup_snippet_id || "");
+        setTags(hostToEdit.tags || []);
+        setColor(hostToEdit.color || PRESET_COLORS[0]);
+      } else {
+        setLabel("");
+        setHostname("");
+        setPort(22);
+        setUsername("");
+        setPassword("");
+        setShowPassword(false);
+        setGroupId("");
+        setAuthType("password");
+        setIdentityId("");
+        setJumpHostId("");
+        setStartupSnippetId("");
+        setTags([]);
+        setColor(PRESET_COLORS[0]);
+      }
+      setErrorMsg(null);
     }
-  }, [hostToEdit, isOpen, identities]);
+
+    prevOpenRef.current = isOpen;
+    prevHostIdRef.current = hostToEdit?.id;
+  }, [hostToEdit, isOpen]);
 
   if (!isOpen) return null;
 
@@ -115,6 +127,14 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
     }
     if (!hostname.trim()) {
       setErrorMsg("Hostname or IP address is required.");
+      return;
+    }
+    if (isNaN(port) || port < 1 || port > 65535) {
+      setErrorMsg("Port must be a valid number between 1 and 65535.");
+      return;
+    }
+    if (authType === "identity" && !identityId.trim()) {
+      setErrorMsg("Please select or create a saved credential identity for private key authentication.");
       return;
     }
 
@@ -523,6 +543,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
           isOpen={true}
           onClose={() => setIsIdentityModalOpen(false)}
           onCreated={(newId) => {
+            setAuthType("identity");
             setIdentityId(newId);
             setIsIdentityModalOpen(false);
           }}

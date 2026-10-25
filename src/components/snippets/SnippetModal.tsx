@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Code2, X, AlertCircle, Plus, Tag, HelpCircle, Terminal } from "lucide-react";
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import { CreateSnippetInputSchema, UpdateSnippetInputSchema } from "@/types/snippet";
@@ -37,8 +37,14 @@ export function SnippetModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const prevOpenRef = useRef(false);
+  const prevSnippetIdRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
-    if (isOpen) {
+    const isOpening = isOpen && !prevOpenRef.current;
+    const isSnippetChanging = snippetToEdit?.id !== prevSnippetIdRef.current;
+
+    if (isOpen && (isOpening || isSnippetChanging)) {
       if (snippetToEdit) {
         setTitle(snippetToEdit.title);
         setDescription(snippetToEdit.description || "");
@@ -55,6 +61,9 @@ export function SnippetModal({
       setTagInput("");
       setErrorMsg(null);
     }
+
+    prevOpenRef.current = isOpen;
+    prevSnippetIdRef.current = snippetToEdit?.id;
   }, [isOpen, snippetToEdit]);
 
   if (!isOpen) return null;

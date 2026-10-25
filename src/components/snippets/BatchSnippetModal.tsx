@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Layers,
   X,
@@ -72,22 +72,38 @@ export function BatchSnippetModal({
   const [expandedHostLogs, setExpandedHostLogs] = useState<Set<string>>(new Set());
   const [copiedScript, setCopiedScript] = useState(false);
 
-  // Initialize selected snippet and target hosts
-  useEffect(() => {
-    if (!isOpen) return;
+  const prevOpenRef = useRef(false);
+  const prevInitialSnippetIdRef = useRef<string | undefined>(undefined);
 
-    if (initialSnippet) {
-      setSelectedSnippetId(initialSnippet.id);
-    } else if (snippets.length > 0) {
-      setSelectedSnippetId(snippets[0].id);
+  // Initialize selected snippet and target hosts on modal open or when initialSnippet changes
+  useEffect(() => {
+    const isOpening = isOpen && !prevOpenRef.current;
+    const isSnippetChanging = initialSnippet?.id !== prevInitialSnippetIdRef.current;
+
+    if (isOpen && (isOpening || isSnippetChanging)) {
+      if (initialSnippet) {
+        setSelectedSnippetId(initialSnippet.id);
+      } else if (!selectedSnippetId && snippets.length > 0) {
+        setSelectedSnippetId(snippets[0].id);
+      }
+
+      // Default select all hosts initially on open
+      setSelectedHostIds(new Set(hosts.map((h) => h.id)));
+      setExecutionStates({});
+      setExpandedHostLogs(new Set());
+      setIsExecuting(false);
     }
 
-    // Default select all hosts initially
-    setSelectedHostIds(new Set(hosts.map((h) => h.id)));
-    setExecutionStates({});
-    setExpandedHostLogs(new Set());
-    setIsExecuting(false);
-  }, [isOpen, initialSnippet, snippets, hosts]);
+    prevOpenRef.current = isOpen;
+    prevInitialSnippetIdRef.current = initialSnippet?.id;
+  }, [isOpen, initialSnippet]);
+
+  // Fallback if opened without initialSnippet and snippets finish loading later
+  useEffect(() => {
+    if (isOpen && !selectedSnippetId && snippets.length > 0) {
+      setSelectedSnippetId(snippets[0].id);
+    }
+  }, [isOpen, selectedSnippetId, snippets]);
 
   const activeSnippet = useMemo(() => {
     return snippets.find((s) => s.id === selectedSnippetId) || null;
@@ -106,15 +122,19 @@ export function BatchSnippetModal({
     return all.filter((v) => v.type === "prompt" || v.type === "custom");
   }, [activeSnippet]);
 
-  // Initialize default prompt variable values
+  // Initialize default prompt variable values without wiping user inputs
   useEffect(() => {
     if (!activeSnippet) return;
-    const initialVals: Record<string, string> = {};
-    for (const v of promptVariables) {
-      initialVals[v.token] = v.defaultValue || "";
-    }
-    setVariableValues(initialVals);
-  }, [activeSnippet, promptVariables]);
+    setVariableValues((prev) => {
+      const next: Record<string, string> = { ...prev };
+      for (const v of promptVariables) {
+        if (next[v.token] === undefined) {
+          next[v.token] = v.defaultValue || "";
+        }
+      }
+      return next;
+    });
+  }, [activeSnippet?.id, promptVariables]);
 
   if (!isOpen) return null;
 
