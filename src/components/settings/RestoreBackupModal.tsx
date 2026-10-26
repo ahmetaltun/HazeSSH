@@ -569,8 +569,8 @@ export function RestoreBackupModal({ isOpen, onClose }: RestoreBackupModalProps)
                   <div className="space-y-0.5">
                     <span className="text-xs font-semibold">Merge with Existing Data</span>
                     <p className="text-[11px] text-base-content/60 leading-normal">
-                      Preserves all current hosts and keys. Any colliding entity IDs will be assigned
-                      new unique identifiers and references resolved automatically.
+                      Preserves existing items not in the backup. Updates matching records and adds
+                      new items without creating duplicates.
                     </p>
                   </div>
                 </label>

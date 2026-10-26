@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -751,7 +751,6 @@ impl Database {
 
         // 1. Restore Groups (Pass 1: Insert without parent_id to avoid ordering issues)
         for group in &data.groups {
-            let mut final_id = group.id.clone();
             if !overwrite {
                 let exists: bool = tx.query_row(
                     "SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?1)",
@@ -759,16 +758,35 @@ impl Database {
                     |row| row.get(0),
                 )?;
                 if exists {
-                    final_id = Uuid::new_v4().to_string();
-                    id_map.insert(group.id.clone(), final_id.clone());
+                    tx.execute(
+                        "UPDATE groups SET name = ?1, color = ?2 WHERE id = ?3",
+                        params![group.name, group.color, group.id],
+                    )?;
+                    id_map.insert(group.id.clone(), group.id.clone());
+                    continue;
+                }
+
+                // Check if an existing group matches by name (case-insensitive) to prevent duplicates
+                let existing_by_name: Option<String> = tx
+                    .query_row(
+                        "SELECT id FROM groups WHERE LOWER(name) = LOWER(?1) LIMIT 1",
+                        params![group.name],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+
+                if let Some(existing_id) = existing_by_name {
+                    id_map.insert(group.id.clone(), existing_id);
+                    continue;
                 }
             }
 
             tx.execute(
                 "INSERT INTO groups (id, parent_id, name, color, created_at)
                  VALUES (?1, NULL, ?2, ?3, ?4)",
-                params![final_id, group.name, group.color, group.created_at],
+                params![group.id, group.name, group.color, group.created_at],
             )?;
+            id_map.insert(group.id.clone(), group.id.clone());
         }
 
         // Pass 2: Connect parent_ids for groups
@@ -776,35 +794,24 @@ impl Database {
             if let Some(ref pid) = group.parent_id {
                 let mapped_pid = id_map.get(pid).unwrap_or(pid);
                 let final_id = id_map.get(&group.id).unwrap_or(&group.id);
-                let parent_exists: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?1)",
-                    params![mapped_pid],
-                    |row| row.get(0),
-                )?;
-                if parent_exists {
-                    tx.execute(
-                        "UPDATE groups SET parent_id = ?1 WHERE id = ?2",
-                        params![mapped_pid, final_id],
+                if mapped_pid != final_id {
+                    let parent_exists: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?1)",
+                        params![mapped_pid],
+                        |row| row.get(0),
                     )?;
+                    if parent_exists {
+                        tx.execute(
+                            "UPDATE groups SET parent_id = ?1 WHERE id = ?2",
+                            params![mapped_pid, final_id],
+                        )?;
+                    }
                 }
             }
         }
 
         // 2. Restore Identities (encrypt secret with current active key)
         for ident in &data.identities {
-            let mut final_id = ident.id.clone();
-            if !overwrite {
-                let exists: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM identities WHERE id = ?1)",
-                    params![ident.id],
-                    |row| row.get(0),
-                )?;
-                if exists {
-                    final_id = Uuid::new_v4().to_string();
-                    id_map.insert(ident.id.clone(), final_id.clone());
-                }
-            }
-
             let enc_secret = crypto::encrypt_secret(&ident.secret, active_key).map_err(|e| {
                 DbError::Crypto(format!("Failed to encrypt secret for identity '{}': {}", ident.name, e))
             })?;
@@ -815,12 +822,67 @@ impl Database {
                 None => None,
             };
 
+            if !overwrite {
+                let exists: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM identities WHERE id = ?1)",
+                    params![ident.id],
+                    |row| row.get(0),
+                )?;
+                if exists {
+                    tx.execute(
+                        "UPDATE identities SET
+                            name = ?1,
+                            identity_type = ?2,
+                            username = ?3,
+                            encrypted_secret = ?4,
+                            encrypted_passphrase = ?5
+                         WHERE id = ?6",
+                        params![
+                            ident.name,
+                            ident.identity_type,
+                            ident.username,
+                            enc_secret,
+                            enc_pass,
+                            ident.id,
+                        ],
+                    )?;
+                    id_map.insert(ident.id.clone(), ident.id.clone());
+                    continue;
+                }
+
+                let existing_by_name: Option<String> = tx
+                    .query_row(
+                        "SELECT id FROM identities WHERE LOWER(name) = LOWER(?1) AND identity_type = ?2 LIMIT 1",
+                        params![ident.name, ident.identity_type],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+
+                if let Some(existing_id) = existing_by_name {
+                    tx.execute(
+                        "UPDATE identities SET
+                            username = COALESCE(?1, username),
+                            encrypted_secret = ?2,
+                            encrypted_passphrase = COALESCE(?3, encrypted_passphrase)
+                         WHERE id = ?4",
+                        params![
+                            ident.username,
+                            enc_secret,
+                            enc_pass,
+                            existing_id,
+                        ],
+                    )?;
+                    id_map.insert(ident.id.clone(), existing_id);
+                    continue;
+                }
+            }
+
             tx.execute(
                 "INSERT INTO identities (
                     id, name, identity_type, username, encrypted_secret, encrypted_passphrase, created_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
-                    final_id,
+                    ident.id,
                     ident.name,
                     ident.identity_type,
                     ident.username,
@@ -829,11 +891,13 @@ impl Database {
                     ident.created_at,
                 ],
             )?;
+            id_map.insert(ident.id.clone(), ident.id.clone());
         }
 
         // 3. Restore Snippets
         for snippet in &data.snippets {
-            let mut final_id = snippet.id.clone();
+            let tags_json = serde_json::to_string(&snippet.tags)?;
+
             if !overwrite {
                 let exists: bool = tx.query_row(
                     "SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)",
@@ -841,18 +905,62 @@ impl Database {
                     |row| row.get(0),
                 )?;
                 if exists {
-                    final_id = Uuid::new_v4().to_string();
-                    id_map.insert(snippet.id.clone(), final_id.clone());
+                    tx.execute(
+                        "UPDATE snippets SET
+                            title = ?1,
+                            script = ?2,
+                            description = ?3,
+                            tags_json = ?4,
+                            run_on_connect = ?5
+                         WHERE id = ?6",
+                        params![
+                            snippet.title,
+                            snippet.script,
+                            snippet.description,
+                            tags_json,
+                            snippet.run_on_connect as i32,
+                            snippet.id,
+                        ],
+                    )?;
+                    id_map.insert(snippet.id.clone(), snippet.id.clone());
+                    continue;
+                }
+
+                let existing_by_title: Option<String> = tx
+                    .query_row(
+                        "SELECT id FROM snippets WHERE LOWER(title) = LOWER(?1) LIMIT 1",
+                        params![snippet.title],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+
+                if let Some(existing_id) = existing_by_title {
+                    tx.execute(
+                        "UPDATE snippets SET
+                            script = ?1,
+                            description = ?2,
+                            tags_json = ?3,
+                            run_on_connect = ?4
+                         WHERE id = ?5",
+                        params![
+                            snippet.script,
+                            snippet.description,
+                            tags_json,
+                            snippet.run_on_connect as i32,
+                            existing_id,
+                        ],
+                    )?;
+                    id_map.insert(snippet.id.clone(), existing_id);
+                    continue;
                 }
             }
 
-            let tags_json = serde_json::to_string(&snippet.tags)?;
             tx.execute(
                 "INSERT INTO snippets (
                     id, title, script, description, tags_json, run_on_connect, created_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
-                    final_id,
+                    snippet.id,
                     snippet.title,
                     snippet.script,
                     snippet.description,
@@ -861,23 +969,11 @@ impl Database {
                     snippet.created_at,
                 ],
             )?;
+            id_map.insert(snippet.id.clone(), snippet.id.clone());
         }
 
         // 4. Restore Hosts (Pass 1: Insert without jump_host_id to avoid ordering issues)
         for host in &data.hosts {
-            let mut final_id = host.id.clone();
-            if !overwrite {
-                let exists: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ?1)",
-                    params![host.id],
-                    |row| row.get(0),
-                )?;
-                if exists {
-                    final_id = Uuid::new_v4().to_string();
-                    id_map.insert(host.id.clone(), final_id.clone());
-                }
-            }
-
             let mapped_group = host.group_id.as_ref().map(|gid| {
                 id_map.get(gid).cloned().unwrap_or_else(|| gid.clone())
             });
@@ -911,7 +1007,104 @@ impl Database {
                 None
             };
 
+            let valid_startup_snippet = if let Some(ref sid) = mapped_startup_snippet {
+                let exists: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM snippets WHERE id = ?1)",
+                    params![sid],
+                    |r| r.get(0),
+                )?;
+                if exists { Some(sid.clone()) } else { None }
+            } else {
+                None
+            };
+
             let tags_json = serde_json::to_string(&host.tags)?;
+
+            if !overwrite {
+                let exists: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ?1)",
+                    params![host.id],
+                    |row| row.get(0),
+                )?;
+                if exists {
+                    tx.execute(
+                        "UPDATE hosts SET
+                            group_id = ?1,
+                            label = ?2,
+                            hostname = ?3,
+                            port = ?4,
+                            username = ?5,
+                            auth_type = ?6,
+                            identity_id = ?7,
+                            tags_json = ?8,
+                            color = ?9,
+                            terminal_theme = ?10,
+                            startup_snippet_id = ?11,
+                            updated_at = ?12
+                         WHERE id = ?13",
+                        params![
+                            valid_group,
+                            host.label,
+                            host.hostname,
+                            host.port as u32,
+                            host.username,
+                            host.auth_type,
+                            valid_identity,
+                            tags_json,
+                            host.color,
+                            host.terminal_theme,
+                            valid_startup_snippet,
+                            host.updated_at,
+                            host.id,
+                        ],
+                    )?;
+                    id_map.insert(host.id.clone(), host.id.clone());
+                    continue;
+                }
+
+                // Check if an existing host matches by natural key: hostname + port + username + label
+                let existing_host_id: Option<String> = tx
+                    .query_row(
+                        "SELECT id FROM hosts
+                         WHERE LOWER(hostname) = LOWER(?1)
+                           AND port = ?2
+                           AND COALESCE(username, '') = COALESCE(?3, '')
+                           AND LOWER(label) = LOWER(?4)
+                         LIMIT 1",
+                        params![host.hostname, host.port as u32, host.username, host.label],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+
+                if let Some(existing_id) = existing_host_id {
+                    tx.execute(
+                        "UPDATE hosts SET
+                            group_id = COALESCE(?1, group_id),
+                            auth_type = ?2,
+                            identity_id = COALESCE(?3, identity_id),
+                            tags_json = ?4,
+                            color = COALESCE(?5, color),
+                            terminal_theme = COALESCE(?6, terminal_theme),
+                            startup_snippet_id = COALESCE(?7, startup_snippet_id),
+                            updated_at = ?8
+                         WHERE id = ?9",
+                        params![
+                            valid_group,
+                            host.auth_type,
+                            valid_identity,
+                            tags_json,
+                            host.color,
+                            host.terminal_theme,
+                            valid_startup_snippet,
+                            host.updated_at,
+                            existing_id,
+                        ],
+                    )?;
+                    id_map.insert(host.id.clone(), existing_id);
+                    continue;
+                }
+            }
+
             tx.execute(
                 "INSERT INTO hosts (
                     id, group_id, label, hostname, port, username, auth_type, identity_id,
@@ -919,7 +1112,7 @@ impl Database {
                     created_at, updated_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
-                    final_id,
+                    host.id,
                     valid_group,
                     host.label,
                     host.hostname,
@@ -930,11 +1123,12 @@ impl Database {
                     tags_json,
                     host.color,
                     host.terminal_theme,
-                    mapped_startup_snippet,
+                    valid_startup_snippet,
                     host.created_at,
                     host.updated_at,
                 ],
             )?;
+            id_map.insert(host.id.clone(), host.id.clone());
         }
 
         // Pass 2: Connect jump_host_id for hosts
@@ -942,16 +1136,18 @@ impl Database {
             if let Some(ref jid) = host.jump_host_id {
                 let mapped_jid = id_map.get(jid).unwrap_or(jid);
                 let final_host_id = id_map.get(&host.id).unwrap_or(&host.id);
-                let jump_exists: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ?1)",
-                    params![mapped_jid],
-                    |r| r.get(0),
-                )?;
-                if jump_exists {
-                    tx.execute(
-                        "UPDATE hosts SET jump_host_id = ?1 WHERE id = ?2",
-                        params![mapped_jid, final_host_id],
+                if mapped_jid != final_host_id {
+                    let jump_exists: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ?1)",
+                        params![mapped_jid],
+                        |r| r.get(0),
                     )?;
+                    if jump_exists {
+                        tx.execute(
+                            "UPDATE hosts SET jump_host_id = ?1 WHERE id = ?2",
+                            params![mapped_jid, final_host_id],
+                        )?;
+                    }
                 }
             }
         }
@@ -970,7 +1166,6 @@ impl Database {
             )?;
 
             if host_exists {
-                let mut final_tunnel_id = tunnel.id.clone();
                 if !overwrite {
                     let exists: bool = tx.query_row(
                         "SELECT EXISTS(SELECT 1 FROM tunnels WHERE id = ?1)",
@@ -978,7 +1173,64 @@ impl Database {
                         |r| r.get(0),
                     )?;
                     if exists {
-                        final_tunnel_id = Uuid::new_v4().to_string();
+                        tx.execute(
+                            "UPDATE tunnels SET
+                                host_id = ?1,
+                                name = ?2,
+                                tunnel_type = ?3,
+                                local_host = ?4,
+                                local_port = ?5,
+                                remote_host = ?6,
+                                remote_port = ?7,
+                                auto_start = ?8
+                             WHERE id = ?9",
+                            params![
+                                mapped_host_id,
+                                tunnel.name,
+                                tunnel.tunnel_type,
+                                tunnel.local_host,
+                                tunnel.local_port as u32,
+                                tunnel.remote_host,
+                                tunnel.remote_port.map(|p| p as u32),
+                                tunnel.auto_start as i32,
+                                tunnel.id,
+                            ],
+                        )?;
+                        continue;
+                    }
+
+                    // Check if an existing tunnel matches by natural key: host_id + name + local_port
+                    let existing_tunnel_id: Option<String> = tx
+                        .query_row(
+                            "SELECT id FROM tunnels
+                             WHERE host_id = ?1
+                               AND LOWER(name) = LOWER(?2)
+                               AND local_port = ?3
+                             LIMIT 1",
+                            params![mapped_host_id, tunnel.name, tunnel.local_port as u32],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+
+                    if let Some(existing_id) = existing_tunnel_id {
+                        tx.execute(
+                            "UPDATE tunnels SET
+                                tunnel_type = ?1,
+                                local_host = ?2,
+                                remote_host = ?3,
+                                remote_port = ?4,
+                                auto_start = ?5
+                             WHERE id = ?6",
+                            params![
+                                tunnel.tunnel_type,
+                                tunnel.local_host,
+                                tunnel.remote_host,
+                                tunnel.remote_port.map(|p| p as u32),
+                                tunnel.auto_start as i32,
+                                existing_id,
+                            ],
+                        )?;
+                        continue;
                     }
                 }
 
@@ -987,7 +1239,7 @@ impl Database {
                         id, host_id, name, tunnel_type, local_host, local_port, remote_host, remote_port, auto_start, created_at
                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                     params![
-                        final_tunnel_id,
+                        tunnel.id,
                         mapped_host_id,
                         tunnel.name,
                         tunnel.tunnel_type,
@@ -1220,5 +1472,212 @@ impl Database {
         }
 
         Ok(summary)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_test_db() -> Database {
+        Database::new(":memory:").expect("Failed to initialize in-memory SQLite DB")
+    }
+
+    #[test]
+    fn test_restore_backup_merge_does_not_duplicate() {
+        let db = setup_test_db();
+        let key = [0x5au8; 32];
+
+        // 1. Create initial dataset
+        let group = db
+            .create_group(CreateGroupInput {
+                parent_id: None,
+                name: "Production".into(),
+                color: Some("#ff0000".into()),
+            })
+            .expect("group created");
+
+        let secret = "my-secret-ssh-key";
+        let enc_secret = crypto::encrypt_secret(secret, &key).expect("encrypted secret");
+        let identity = db
+            .create_identity(
+                CreateIdentityInput {
+                    name: "Prod Key".into(),
+                    identity_type: "key".into(),
+                    username: Some("ubuntu".into()),
+                    secret: secret.into(),
+                    passphrase: None,
+                },
+                enc_secret,
+                None,
+            )
+            .expect("identity created");
+
+        let snippet = db
+            .create_snippet(CreateSnippetInput {
+                title: "Disk Usage".into(),
+                script: "df -h".into(),
+                description: Some("Check root volume disk usage".into()),
+                tags: Some(vec!["disk".into(), "health".into()]),
+                run_on_connect: Some(false),
+            })
+            .expect("snippet created");
+
+        let host = db
+            .create_host(CreateHostInput {
+                group_id: Some(group.id.clone()),
+                label: "App Server 1".into(),
+                hostname: "192.168.1.100".into(),
+                port: Some(22),
+                username: Some("ubuntu".into()),
+                auth_type: Some("identity".into()),
+                identity_id: Some(identity.id.clone()),
+                jump_host_id: None,
+                tags: Some(vec!["prod".into(), "app".into()]),
+                color: Some("#00ff00".into()),
+                terminal_theme: None,
+                startup_snippet_id: Some(snippet.id.clone()),
+            })
+            .expect("host created");
+
+        let _tunnel = db
+            .create_tunnel(CreateTunnelInput {
+                host_id: host.id.clone(),
+                name: "Database Tunnel".into(),
+                tunnel_type: "local".into(),
+                local_host: Some("127.0.0.1".into()),
+                local_port: 5432,
+                remote_host: Some("db.internal".into()),
+                remote_port: Some(5432),
+                auto_start: Some(false),
+            })
+            .expect("tunnel created");
+
+        // Verify counts before backup
+        assert_eq!(db.list_groups().unwrap().len(), 1);
+        assert_eq!(db.list_identities().unwrap().len(), 1);
+        assert_eq!(db.list_snippets().unwrap().len(), 1);
+        assert_eq!(db.list_hosts().unwrap().len(), 1);
+        assert_eq!(db.list_tunnels().unwrap().len(), 1);
+
+        // 2. Export backup
+        let backup = db.export_backup_data(&key).expect("backup exported");
+
+        // 3. Restore backup with Merge (overwrite = false)
+        let summary = db
+            .restore_backup_data(backup.clone(), &key, false)
+            .expect("restore backup succeeds");
+
+        assert_eq!(summary.groups_count, 1);
+        assert_eq!(summary.hosts_count, 1);
+
+        // 4. Assert NO DUPLICATES were created
+        let groups = db.list_groups().unwrap();
+        let identities = db.list_identities().unwrap();
+        let snippets = db.list_snippets().unwrap();
+        let hosts = db.list_hosts().unwrap();
+        let tunnels = db.list_tunnels().unwrap();
+
+        assert_eq!(groups.len(), 1, "Groups count should still be 1");
+        assert_eq!(identities.len(), 1, "Identities count should still be 1");
+        assert_eq!(snippets.len(), 1, "Snippets count should still be 1");
+        assert_eq!(hosts.len(), 1, "Hosts count should still be 1");
+        assert_eq!(tunnels.len(), 1, "Tunnels count should still be 1");
+
+        // Assert relationships remain valid
+        assert_eq!(hosts[0].group_id.as_deref(), Some(groups[0].id.as_str()));
+        assert_eq!(hosts[0].identity_id.as_deref(), Some(identities[0].id.as_str()));
+        assert_eq!(hosts[0].startup_snippet_id.as_deref(), Some(snippets[0].id.as_str()));
+        assert_eq!(tunnels[0].host_id, hosts[0].id);
+
+        // 5. Add a 2nd host and restore the original backup again with Merge
+        let _host2 = db
+            .create_host(CreateHostInput {
+                group_id: Some(group.id.clone()),
+                label: "App Server 2".into(),
+                hostname: "192.168.1.101".into(),
+                port: Some(22),
+                username: Some("ubuntu".into()),
+                auth_type: Some("identity".into()),
+                identity_id: Some(identity.id.clone()),
+                jump_host_id: None,
+                tags: Some(vec!["prod".into()]),
+                color: None,
+                terminal_theme: None,
+                startup_snippet_id: None,
+            })
+            .expect("host 2 created");
+
+        assert_eq!(db.list_hosts().unwrap().len(), 2);
+
+        // Merge original backup (which only had host 1)
+        db.restore_backup_data(backup, &key, false)
+            .expect("2nd merge succeeds");
+
+        // Both hosts should still be present, and no 3rd duplicate host created
+        let hosts_after = db.list_hosts().unwrap();
+        assert_eq!(hosts_after.len(), 2, "Should preserve host 2 and not duplicate host 1");
+        assert_eq!(db.list_groups().unwrap().len(), 1, "Groups count should still be 1");
+    }
+
+    #[test]
+    fn test_restore_backup_overwrite_clears_and_replaces() {
+        let db = setup_test_db();
+        let key = [0x5au8; 32];
+
+        // 1. Create initial host in backup
+        let group = db
+            .create_group(CreateGroupInput {
+                parent_id: None,
+                name: "Backup Group".into(),
+                color: None,
+            })
+            .unwrap();
+
+        let _ = db
+            .create_host(CreateHostInput {
+                group_id: Some(group.id.clone()),
+                label: "Backup Host".into(),
+                hostname: "10.0.0.1".into(),
+                port: Some(22),
+                username: None,
+                auth_type: Some("none".into()),
+                identity_id: None,
+                jump_host_id: None,
+                tags: None,
+                color: None,
+                terminal_theme: None,
+                startup_snippet_id: None,
+            })
+            .unwrap();
+
+        let backup = db.export_backup_data(&key).unwrap();
+
+        // 2. Add an unbacked-up host
+        let _ = db
+            .create_host(CreateHostInput {
+                group_id: None,
+                label: "Temporary Host".into(),
+                hostname: "10.0.0.2".into(),
+                port: Some(22),
+                username: None,
+                auth_type: Some("none".into()),
+                identity_id: None,
+                jump_host_id: None,
+                tags: None,
+                color: None,
+                terminal_theme: None,
+                startup_snippet_id: None,
+            })
+            .unwrap();
+
+        assert_eq!(db.list_hosts().unwrap().len(), 2);
+
+        // 3. Overwrite restore should clean out the Temporary Host
+        db.restore_backup_data(backup, &key, true).unwrap();
+
+        let hosts = db.list_hosts().unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].label, "Backup Host");
     }
 }
