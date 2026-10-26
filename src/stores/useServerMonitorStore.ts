@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
+import { useVaultStore } from "@/stores/useVaultStore";
 import type { ServerMetrics, HostHealthState } from "@/types/monitor";
 
 interface ServerMonitorState {
@@ -23,6 +24,12 @@ export const useServerMonitorStore = create<ServerMonitorState>((set, get) => ({
   pollIntervalSeconds: 30,
 
   fetchMetrics: async (hostId: string) => {
+    const { hasMasterPassword, isLocked } = useVaultStore.getState();
+    if (hasMasterPassword && isLocked) {
+      // Vault is locked: skip background polling until unlocked
+      return null;
+    }
+
     // Set loading state for this specific host
     set((state) => ({
       healthByHostId: {

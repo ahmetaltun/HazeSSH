@@ -17,6 +17,7 @@ import {
 import { api } from "@/services/api";
 import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import { readFileAsTextSmart } from "@/utils/fileEncoding";
 import type { SshConfigHostCandidate, ImportResultSummary } from "@/types/importer";
 import type { CreateSnippetInput } from "@/types/snippet";
@@ -207,6 +208,15 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
     setErrorMsg(null);
 
     try {
+      const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+      if (hasMasterPassword && isLocked) {
+        const unlocked = await requestUnlock("import Termius keys into vault");
+        if (!unlocked) {
+          setIsImporting(false);
+          return;
+        }
+      }
+
       const result = await api.termiusImport({
         candidates: selectedList,
         snippets: importSnippetsToggle ? snippets : [],

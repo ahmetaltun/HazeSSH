@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api } from "@/services/api";
 import { useHostStore } from "@/stores/useHostStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import type { SshConfigHostCandidate, ImportResultSummary } from "@/types/importer";
 
 interface OpenSshImportModalProps {
@@ -122,6 +123,15 @@ export function OpenSshImportModal({ isOpen, onClose }: OpenSshImportModalProps)
     setErrorMsg(null);
 
     try {
+      const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+      if (hasMasterPassword && isLocked) {
+        const unlocked = await requestUnlock("import SSH keys into vault");
+        if (!unlocked) {
+          setIsImporting(false);
+          return;
+        }
+      }
+
       const result = await api.sshConfigImport({
         candidates: selectedList,
         import_keys_as_identities: importKeysAsIdentities,

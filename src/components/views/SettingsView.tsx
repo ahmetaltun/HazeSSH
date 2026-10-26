@@ -156,7 +156,13 @@ export function SettingsView() {
 
             <button
               type="button"
-              onClick={() => setIsIdentityManagerOpen(true)}
+              onClick={async () => {
+                if (hasMasterPassword && isLocked) {
+                  const unlocked = await useVaultStore.getState().requestUnlock("manage stored vault credentials");
+                  if (!unlocked) return;
+                }
+                setIsIdentityManagerOpen(true);
+              }}
               className="btn btn-sm btn-outline gap-1.5 text-xs"
             >
               <KeyRound className="w-3.5 h-3.5 text-warning" />

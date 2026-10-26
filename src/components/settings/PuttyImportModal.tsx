@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from "@/services/api";
 import { useHostStore } from "@/stores/useHostStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import { readFileAsTextSmart } from "@/utils/fileEncoding";
 import type { SshConfigHostCandidate, ImportResultSummary, PuttyDetectResult } from "@/types/importer";
 
@@ -245,6 +246,15 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
     setErrorMsg(null);
 
     try {
+      const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+      if (hasMasterPassword && isLocked) {
+        const unlocked = await requestUnlock("import PuTTY keys into vault");
+        if (!unlocked) {
+          setIsImporting(false);
+          return;
+        }
+      }
+
       const result = await api.puttyImport({
         candidates: selectedList,
         import_keys_as_identities: true,

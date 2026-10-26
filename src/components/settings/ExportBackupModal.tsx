@@ -19,6 +19,7 @@ import { api } from "@/services/api";
 import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import { useTunnelStore } from "@/stores/useTunnelStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import type { BackupExportResult } from "@/types/backup";
 
 interface ExportBackupModalProps {
@@ -85,6 +86,12 @@ export function ExportBackupModal({ isOpen, onClose }: ExportBackupModalProps) {
     if (passphrase !== confirmPassphrase) {
       setErrorMsg("Passphrases do not match. Please verify and re-enter.");
       return;
+    }
+
+    const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+    if (hasMasterPassword && isLocked) {
+      const unlocked = await requestUnlock("export encrypted backup");
+      if (!unlocked) return;
     }
 
     let targetPath = destinationPath;

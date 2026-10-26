@@ -15,9 +15,16 @@ export function VaultModal({ isOpen, mode, onClose, onSuccess }: VaultModalProps
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { unlock, setMasterPassword } = useVaultStore();
+  const { unlock, setMasterPassword, unlockReason, resolveUnlockRequest } = useVaultStore();
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    if (mode === "unlock") {
+      resolveUnlockRequest(false);
+    }
+    onClose();
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -101,7 +108,9 @@ export function VaultModal({ isOpen, mode, onClose, onSuccess }: VaultModalProps
             </h3>
             <p className="text-xs text-base-content/60">
               {mode === "unlock"
-                ? "Enter your master passphrase to decrypt stored SSH credentials."
+                ? unlockReason
+                  ? `Required to ${unlockReason}.`
+                  : "Enter your master passphrase to decrypt stored SSH credentials."
                 : mode === "setup"
                 ? "Your credentials will be encrypted using an Argon2id-derived key."
                 : "Credentials will use local device-key encryption without a password."}
@@ -155,7 +164,7 @@ export function VaultModal({ isOpen, mode, onClose, onSuccess }: VaultModalProps
           <div className="modal-action mt-6 gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={isSubmitting}
               className="btn btn-sm btn-ghost border border-base-300"
             >

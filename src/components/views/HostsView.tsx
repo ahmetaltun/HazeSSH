@@ -24,6 +24,7 @@ import { useHostStore } from "@/stores/useHostStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { useServerMonitorStore } from "@/stores/useServerMonitorStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import type { Host } from "@/types/host";
 import { HostModal } from "@/components/hosts/HostModal";
 import { GroupModal } from "@/components/hosts/GroupModal";
@@ -290,7 +291,14 @@ export function HostsView() {
         <div className="p-2 border-t border-base-200 bg-base-200/50">
           <button
             type="button"
-            onClick={() => setIsIdentityModalOpen(true)}
+            onClick={async () => {
+              const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+              if (hasMasterPassword && isLocked) {
+                const unlocked = await requestUnlock("view stored identities");
+                if (!unlocked) return;
+              }
+              setIsIdentityModalOpen(true);
+            }}
             className="btn btn-sm btn-ghost w-full justify-start gap-2 text-xs"
           >
             <KeyRound className="w-4 h-4 text-warning" />

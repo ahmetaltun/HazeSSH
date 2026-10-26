@@ -12,6 +12,7 @@ import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import { resolveHostVariables } from "@/services/snippetInterpolation";
 import type { TerminalPane, SplitNode } from "@/types/terminal";
 import type { SshEvent } from "@/types/ssh";
@@ -168,6 +169,21 @@ class TerminalSessionManager {
     session.isConnecting = true;
 
     const { pane, term } = session;
+
+    // Intercept vault unlock if connection requires decrypting host credentials
+    if (pane.hostId) {
+      const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+      if (hasMasterPassword && isLocked) {
+        const hostName = pane.title || "host";
+        const unlocked = await requestUnlock(`connect to ${hostName}`);
+        if (!unlocked || session.isDisposed) {
+          session.isConnecting = false;
+          term.writeln(`\r\n\x1b[33m[Haze] Connection cancelled (Vault is locked).\x1b[0m\r\n`);
+          useMultiplexerStore.getState().updatePaneStatus(pane.id, "disconnected");
+          return;
+        }
+      }
+    }
 
     const handleTerminalEvent = (event: SshEvent) => {
       if (session.isDisposed) return;

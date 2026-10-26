@@ -22,6 +22,7 @@ import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import { useTunnelStore } from "@/stores/useTunnelStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import type { BackupSummary, RestoreStrategy } from "@/types/backup";
 
 interface RestoreBackupModalProps {
@@ -162,6 +163,15 @@ export function RestoreBackupModal({ isOpen, onClose }: RestoreBackupModalProps)
     setErrorMsg(null);
     setIsRestoring(true);
     try {
+      const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+      if (hasMasterPassword && isLocked) {
+        const unlocked = await requestUnlock("restore backup credentials into vault");
+        if (!unlocked) {
+          setIsRestoring(false);
+          return;
+        }
+      }
+
       await api.backupRestore(fileContent, passphrase, strategy);
 
       // Refresh all core application stores

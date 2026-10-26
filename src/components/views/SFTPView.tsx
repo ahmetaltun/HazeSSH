@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import { api } from "@/services/api";
 import type { FileEntry, TransferTask } from "@/types/sftp";
 import { FileExplorerPane } from "@/components/sftp/FileExplorerPane";
@@ -98,6 +99,12 @@ export function SFTPView() {
     if (!hostToConnect) {
       setConnectionError("No remote host selected. Please choose a host to connect.");
       return;
+    }
+
+    const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+    if (hasMasterPassword && isLocked) {
+      const unlocked = await requestUnlock(`connect to ${hostToConnect.label} via SFTP`);
+      if (!unlocked) return;
     }
 
     if (isConnected && selectedHostId && selectedHostId !== hostToConnect.id) {

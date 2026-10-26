@@ -57,10 +57,9 @@ export function AppShell() {
     setCommandPaletteOpen,
     setShortcutsModalOpen,
     isVaultUnlockModalOpen,
-    setVaultUnlockModalOpen,
   } = useLayoutStore();
   const { initTheme } = useThemeStore();
-  const { fetchStatus } = useVaultStore();
+  const { fetchStatus, resolveUnlockRequest } = useVaultStore();
   const { fetchAll } = useHostStore();
   const {
     tabs,
@@ -384,7 +383,8 @@ export function AppShell() {
       <VaultModal
         isOpen={isVaultUnlockModalOpen}
         mode="unlock"
-        onClose={() => setVaultUnlockModalOpen(false)}
+        onClose={() => resolveUnlockRequest(false)}
+        onSuccess={() => resolveUnlockRequest(true)}
       />
     </div>
   );

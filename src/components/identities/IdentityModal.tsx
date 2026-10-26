@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { KeyRound, ShieldCheck, Copy, Check, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import { api } from "@/services/api";
 import type { GeneratedKeyPair } from "@/types/crypto";
 import { KeyFileDropzone } from "@/components/identities/KeyFileDropzone";
@@ -161,6 +162,15 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
 
     setIsSubmitting(true);
     try {
+      const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+      if (hasMasterPassword && isLocked) {
+        const unlocked = await requestUnlock("save this encrypted identity");
+        if (!unlocked) {
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       const created = await createIdentity({
         name: name.trim(),
         identity_type: identityType,

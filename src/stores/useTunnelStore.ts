@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
+import { useVaultStore } from "@/stores/useVaultStore";
 import type { Tunnel, CreateTunnelInput, TunnelRuntimeStatus } from "@/types/tunnel";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 
@@ -103,6 +104,13 @@ export const useTunnelStore = create<TunnelState>((set, get) => ({
   },
 
   startTunnel: async (id: string) => {
+    const tunnel = get().tunnels.find((t) => t.id === id);
+    const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
+    if (hasMasterPassword && isLocked) {
+      const unlocked = await requestUnlock(`start tunnel "${tunnel?.name || "tunnel"}"`);
+      if (!unlocked) return;
+    }
+
     // Optimistically set to starting
     set((state) => ({
       statuses: {
