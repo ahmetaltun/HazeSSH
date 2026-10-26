@@ -73,7 +73,7 @@ export function SettingsView() {
         </div>
       </div>
 
-      <div className="flex-1 p-6 overflow-y-auto space-y-6 max-w-4xl">
+      <div className="flex-1 w-full p-6 overflow-y-auto space-y-6">
         {/* Security & Vault Section */}
         <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-4">
           <div className="flex items-center gap-2.5">
@@ -434,7 +434,7 @@ export function SettingsView() {
 
           <div className="divider my-1"></div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
             <div className="p-3.5 rounded-xl border border-base-300 bg-base-100 space-y-1">
               <div className="flex items-center justify-between font-semibold">
                 <span>Unified Native Titlebar</span>

@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Search,
   Plus,
@@ -40,18 +39,6 @@ export function Topbar() {
     setShortcutsModalOpen,
   } = useLayoutStore();
   const { isBroadcastEnabled, toggleBroadcast } = useBroadcastStore();
-
-  const handleHeaderDoubleClick = async (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement | null;
-    if (target && target.closest("button, input, select, textarea, a, .dropdown")) {
-      return;
-    }
-    try {
-      await getCurrentWindow().toggleMaximize();
-    } catch (err) {
-      console.warn("Failed to toggle maximize:", err);
-    }
-  };
 
   const handleQuickConnect = (e: FormEvent) => {
     e.preventDefault();
@@ -151,7 +138,6 @@ export function Topbar() {
     <>
       <header
         data-tauri-drag-region
-        onDoubleClick={handleHeaderDoubleClick}
         className={`h-11 bg-base-200/95 backdrop-blur-md border-b border-base-300 flex items-center justify-between gap-3 select-none shrink-0 z-30 transition-all ${
           isMacOS ? "pl-20 pr-3" : "px-3"
         }`}
