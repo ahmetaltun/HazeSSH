@@ -267,7 +267,7 @@ impl PuttySessionDraft {
         }
     }
 
-    fn to_candidate(self, existing: &[Host]) -> Option<SshConfigHostCandidate> {
+    fn into_candidate(self, existing: &[Host]) -> Option<SshConfigHostCandidate> {
         let raw_name = self.session_name.trim();
         if raw_name.eq_ignore_ascii_case("Default Settings") || raw_name.is_empty() {
             return None;
@@ -336,7 +336,7 @@ pub fn parse_putty_reg(
         // Section header e.g. [HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Production%20Web]
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             if let Some(prev) = current_session.take()
-                && let Some(candidate) = prev.to_candidate(existing_hosts)
+                && let Some(candidate) = prev.into_candidate(existing_hosts)
             {
                 candidates.push(candidate);
             }
@@ -363,7 +363,7 @@ pub fn parse_putty_reg(
     }
 
     if let Some(last) = current_session.take()
-        && let Some(candidate) = last.to_candidate(existing_hosts)
+        && let Some(candidate) = last.into_candidate(existing_hosts)
     {
         candidates.push(candidate);
     }
@@ -438,7 +438,7 @@ pub fn detect_putty_sessions(
             draft.parse_line(line);
         }
 
-        if let Some(candidate) = draft.to_candidate(existing_hosts) {
+        if let Some(candidate) = draft.into_candidate(existing_hosts) {
             candidates.push(candidate);
         }
     }
