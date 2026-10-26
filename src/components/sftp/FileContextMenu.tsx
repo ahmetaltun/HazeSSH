@@ -4,6 +4,7 @@ import {
   FilePenLine,
   FolderOpen,
   CornerDownRight,
+  CornerDownLeft,
   Copy,
   Edit2,
   Trash2,
@@ -39,7 +40,7 @@ export function FileContextMenu({
   y,
   targetEntry,
   selectedFiles,
-  mode: _mode,
+  mode,
   transferLabel = "Transfer",
   onOpenFolder,
   onPreviewFile,
@@ -189,7 +190,11 @@ export function FileContextMenu({
               }}
               className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left"
             >
-              <CornerDownRight className="w-3.5 h-3.5 text-secondary" />
+              {mode === "remote" || transferLabel.toLowerCase().includes("download") ? (
+                <CornerDownLeft className="w-3.5 h-3.5 text-secondary" />
+              ) : (
+                <CornerDownRight className="w-3.5 h-3.5 text-secondary" />
+              )}
               <span>
                 {transferLabel}
                 {activeTargets.length > 1 ? ` (${activeTargets.length})` : ""}

@@ -15,6 +15,7 @@ import {
   HardDrive,
   Globe,
   CornerDownRight,
+  CornerDownLeft,
   FilePenLine,
   AlertTriangle,
   Eye,
@@ -768,7 +769,11 @@ export function FileExplorerPane({
                 onClick={() => onTransfer(activeSelectedFiles)}
                 className="btn btn-primary btn-xs gap-1"
               >
-                <CornerDownRight className="w-3 h-3" />
+                {mode === "remote" || transferLabel.toLowerCase().includes("download") ? (
+                  <CornerDownLeft className="w-3 h-3" />
+                ) : (
+                  <CornerDownRight className="w-3 h-3" />
+                )}
                 <span>
                   {transferLabel}
                   {activeSelectedFiles.length > 1 ? ` (${activeSelectedFiles.length})` : ""}
