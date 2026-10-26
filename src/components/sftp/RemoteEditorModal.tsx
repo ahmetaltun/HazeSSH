@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { FileCode, Save, X, AlertTriangle, Check, WrapText } from "lucide-react";
+import { FileCode, Save, X, AlertTriangle, Check, WrapText, RotateCcw, Loader2 } from "lucide-react";
 import { api } from "@/services/api";
 import { detectLanguageName } from "@/utils/codeLanguages";
 import { CodeEditor } from "@/components/common/CodeEditor";
@@ -35,6 +35,8 @@ export function RemoteEditorModal({
   const [lineWrapping, setLineWrapping] = useState(false);
   const [languageOverride, setLanguageOverride] = useState<string>("auto");
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [isSavingAndClosing, setIsSavingAndClosing] = useState(false);
 
   const hasUnsavedChanges = content !== initialContent;
 
@@ -52,6 +54,8 @@ export function RemoteEditorModal({
     setSaveSuccess(false);
     setLanguageOverride("auto");
     setCursorPos({ line: 1, col: 1 });
+    setShowUnsavedDialog(false);
+    setIsSavingAndClosing(false);
 
     const fetchPromise =
       mode === "local" || !hostId
@@ -78,8 +82,8 @@ export function RemoteEditorModal({
     };
   }, [isOpen, mode, hostId, filePath]);
 
-  const handleSave = useCallback(async () => {
-    if (isSaving) return;
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (isSaving) return false;
     setIsSaving(true);
     setErrorMsg(null);
     try {
@@ -92,24 +96,64 @@ export function RemoteEditorModal({
       setSaveSuccess(true);
       onSaved?.();
       setTimeout(() => setSaveSuccess(false), 3000);
+      return true;
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setIsSaving(false);
     }
   }, [isSaving, mode, hostId, filePath, content, onSaved]);
 
-  if (!isOpen) return null;
-
-  const handleSafeClose = () => {
+  const handleSafeClose = useCallback(() => {
     if (hasUnsavedChanges) {
-      if (confirm("You have unsaved changes in this file. Are you sure you want to close?")) {
-        onClose();
-      }
+      setShowUnsavedDialog(true);
     } else {
       onClose();
     }
-  };
+  }, [hasUnsavedChanges, onClose]);
+
+  const handleDiscardAndClose = useCallback(() => {
+    setShowUnsavedDialog(false);
+    onClose();
+  }, [onClose]);
+
+  const handleSaveAndClose = useCallback(async () => {
+    setIsSavingAndClosing(true);
+    const success = await handleSave();
+    setIsSavingAndClosing(false);
+    if (success) {
+      setShowUnsavedDialog(false);
+      onClose();
+    }
+  }, [handleSave, onClose]);
+
+  const handleRevert = useCallback(() => {
+    setContent(initialContent);
+    setErrorMsg(null);
+  }, [initialContent]);
+
+  // Handle Escape key to either close the unsaved confirmation or close the modal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (showUnsavedDialog) {
+          if (!isSavingAndClosing) {
+            setShowUnsavedDialog(false);
+          }
+        } else if (!e.defaultPrevented) {
+          handleSafeClose();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, showUnsavedDialog, isSavingAndClosing, handleSafeClose]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="modal modal-open z-50">
@@ -125,7 +169,18 @@ export function RemoteEditorModal({
               onSelectLanguage={setLanguageOverride}
             />
             {hasUnsavedChanges && (
-              <span className="badge badge-warning badge-xs text-[10px]">Unsaved *</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="badge badge-warning badge-xs text-[10px]">Unsaved *</span>
+                <button
+                  type="button"
+                  onClick={handleRevert}
+                  className="btn btn-ghost btn-xs text-[10px] h-5 min-h-0 px-1.5 text-base-content/60 hover:text-base-content gap-1"
+                  title="Revert all unsaved changes to original content"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Revert</span>
+                </button>
+              </div>
             )}
             <span className="text-[11px] text-base-content/50 font-mono truncate hidden md:inline">
               ({mode === "local" || !hostLabel ? `Local: ${filePath}` : `${hostLabel}: ${filePath}`})
@@ -229,6 +284,75 @@ export function RemoteEditorModal({
         </div>
       </div>
       <div className="modal-backdrop bg-black/70" onClick={handleSafeClose} />
+
+      {/* In-App Unsaved Changes Confirmation Modal */}
+      {showUnsavedDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="bg-base-200 border border-base-300 rounded-2xl p-5 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-warning/15 text-warning flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-sm text-base-content leading-snug">
+                  Unsaved Changes
+                </h3>
+                <p className="text-xs text-base-content/70 mt-1.5 leading-relaxed">
+                  You have unsaved changes in{" "}
+                  <span className="font-mono font-semibold text-base-content">&ldquo;{fileName}&rdquo;</span>.
+                  Do you want to save your changes before closing?
+                </p>
+                <div className="mt-2 text-[11px] font-mono text-base-content/50 truncate">
+                  Target: {mode === "local" || !hostLabel ? "Local" : hostLabel} ({filePath})
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowUnsavedDialog(false)}
+                disabled={isSavingAndClosing}
+                className="btn btn-xs btn-ghost border border-base-300 text-xs px-3"
+              >
+                Keep Editing
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardAndClose}
+                disabled={isSavingAndClosing}
+                className="btn btn-xs btn-error btn-outline text-xs px-3"
+              >
+                Discard & Close
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAndClose}
+                disabled={isSavingAndClosing || isSaving}
+                className="btn btn-xs btn-primary text-xs px-3 gap-1.5 shadow-xs"
+              >
+                {isSavingAndClosing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save & Close</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity -z-10"
+            onClick={() => {
+              if (!isSavingAndClosing) setShowUnsavedDialog(false);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

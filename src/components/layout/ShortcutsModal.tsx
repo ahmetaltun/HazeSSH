@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Command, X, Laptop, Terminal, Split } from "lucide-react";
+import { Command, X, Laptop, Terminal, Split, FolderGit2 } from "lucide-react";
 import { formatShortcut } from "@/utils/platform";
 
 interface ShortcutsModalProps {
@@ -69,6 +69,16 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
         { description: "Split Down (Vertical)", mac: "⌘⇧\\", win: "Ctrl+Shift+\\" },
         { description: "Search in Buffer / View", mac: "⌘F", win: "Ctrl+F" },
         { description: "Dismiss / Close Modal", mac: "Esc", win: "Esc" },
+      ],
+    },
+    {
+      title: "SFTP & File Manager",
+      icon: <FolderGit2 className="w-4 h-4 text-secondary" />,
+      shortcuts: [
+        { description: "Select All Files", mac: "⌘A", win: "Ctrl+A" },
+        { description: "Deselect All Files", mac: "Esc / ⌘⇧A", win: "Esc / Ctrl+Shift+A" },
+        { description: "Switch Active Pane", mac: "Tab", win: "Tab" },
+        { description: "Multi-select Items", mac: "⌘Click / ⇧Click", win: "Ctrl+Click / ⇧Click" },
       ],
     },
   ];

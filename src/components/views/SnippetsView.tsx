@@ -18,6 +18,7 @@ import { useSnippetStore } from "@/stores/useSnippetStore";
 import { SnippetModal } from "@/components/snippets/SnippetModal";
 import { SnippetRunnerModal } from "@/components/snippets/SnippetRunnerModal";
 import { BatchSnippetModal } from "@/components/snippets/BatchSnippetModal";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
 import type { Snippet } from "@/types/snippet";
 
 export function SnippetsView() {
@@ -35,6 +36,7 @@ export function SnippetsView() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [snippetToEdit, setSnippetToEdit] = useState<Snippet | null>(null);
+  const [snippetToDelete, setSnippetToDelete] = useState<Snippet | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -99,15 +101,16 @@ export function SnippetsView() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (snippet: Snippet) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete snippet "${snippet.title}"? This cannot be undone.`
-    );
-    if (!confirmed) return;
+  const handleDeleteClick = (snippet: Snippet) => {
+    setSnippetToDelete(snippet);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!snippetToDelete) return;
     try {
-      setDeletingId(snippet.id);
-      await deleteSnippet(snippet.id);
+      setDeletingId(snippetToDelete.id);
+      await deleteSnippet(snippetToDelete.id);
+      setSnippetToDelete(null);
     } catch (err) {
       console.error("Failed to delete snippet:", err);
     } finally {
@@ -334,7 +337,7 @@ export function SnippetsView() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDelete(snippet)}
+                          onClick={() => handleDeleteClick(snippet)}
                           disabled={deletingId === snippet.id}
                           className="btn btn-xs btn-circle btn-ghost text-base-content/60 hover:text-error"
                           title="Delete snippet"
@@ -455,6 +458,32 @@ export function SnippetsView() {
         initialSnippet={batchSnippet}
         onClose={() => setIsBatchModalOpen(false)}
       />
+
+      {/* Delete Confirmation Modal */}
+      {snippetToDelete && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Snippet"
+          variant="danger"
+          confirmLabel="Delete Snippet"
+          isLoading={Boolean(deletingId)}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => {
+            if (!deletingId) setSnippetToDelete(null);
+          }}
+          message={
+            <div className="space-y-1.5">
+              <p>
+                Are you sure you want to permanently delete snippet{" "}
+                <span className="font-bold text-base-content">&ldquo;{snippetToDelete.title}&rdquo;</span>?
+              </p>
+              <p className="text-[11px] text-base-content/60">
+                This action cannot be undone.
+              </p>
+            </div>
+          }
+        />
+      )}
     </div>
   );
 }

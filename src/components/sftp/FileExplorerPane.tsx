@@ -40,6 +40,8 @@ interface FileExplorerPaneProps {
   readonly onTransfer?: (files: FileEntry[]) => void;
   readonly transferLabel?: string;
   readonly refreshKey?: number;
+  readonly isActive?: boolean;
+  readonly onFocusPane?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -110,7 +112,10 @@ export function FileExplorerPane({
   onTransfer,
   transferLabel = "Transfer",
   refreshKey = 0,
+  isActive = false,
+  onFocusPane,
 }: FileExplorerPaneProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [internalSelectedFiles, setInternalSelectedFiles] = useState<FileEntry[]>([]);
   const lastClickedEntryRef = useRef<FileEntry | null>(null);
@@ -316,6 +321,59 @@ export function FileExplorerPane({
     }
   };
 
+  // Desktop Keyboard Shortcuts (Cmd+A / Ctrl+A to select all, Escape / Cmd+Shift+A to deselect all)
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. If any modal inside this pane is open, do not handle
+      if (isMkdirOpen || isRenameOpen || isDeleteOpen) return;
+
+      // 2. If user is focused on an input, textarea, or contentEditable, do not intercept
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          Boolean(target.closest("input, textarea, [contenteditable='true']")))
+      ) {
+        return;
+      }
+
+      const isMetaOrCtrl = e.metaKey || e.ctrlKey;
+
+      // Cmd+A / Ctrl+A: Select All Files in active pane
+      if (isMetaOrCtrl && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSelectFiles([...filteredEntries]);
+        return;
+      }
+
+      // Escape: Deselect All Files in active pane
+      if (e.key === "Escape") {
+        if (activeSelectedFiles.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleSelectFiles([]);
+        }
+        return;
+      }
+
+      // Cmd+Shift+A: Deselect All Files
+      if (isMetaOrCtrl && e.shiftKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSelectFiles([]);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isActive, isMkdirOpen, isRenameOpen, isDeleteOpen, filteredEntries, activeSelectedFiles]);
+
   const handleCreateFolder = async (e: FormEvent) => {
     e.preventDefault();
     if (!newFolderName.trim()) return;
@@ -396,7 +454,17 @@ export function FileExplorerPane({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-base-100 border border-base-300 rounded-xl overflow-hidden select-none relative">
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      onMouseDownCapture={() => onFocusPane?.()}
+      onClickCapture={() => onFocusPane?.()}
+      className={`flex-1 flex flex-col h-full bg-base-100 border rounded-xl overflow-hidden select-none relative focus:outline-hidden transition-all duration-150 ${
+        isActive
+          ? "border-primary/50 ring-1 ring-primary/25 shadow-xs"
+          : "border-base-300"
+      }`}
+    >
       {/* Pane Top Header */}
       <div className="h-11 bg-base-200/70 border-b border-base-300 px-3 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
@@ -406,6 +474,12 @@ export function FileExplorerPane({
             <HardDrive className="w-4 h-4 text-secondary shrink-0" />
           )}
           <span className="font-bold text-xs truncate">{title}</span>
+          {isActive && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-primary shrink-0 animate-pulse"
+              title="Active Pane"
+            />
+          )}
         </div>
 
         <div className="flex items-center gap-1">
@@ -450,6 +524,16 @@ export function FileExplorerPane({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                if (searchTerm) {
+                  setSearchTerm("");
+                } else {
+                  (e.target as HTMLInputElement).blur();
+                }
+              }
+            }}
+            onFocus={() => onFocusPane?.()}
             placeholder="Filter files..."
             className="input input-xs input-bordered w-full pl-6 text-[10px]"
           />
@@ -476,6 +560,18 @@ export function FileExplorerPane({
       {/* File List Table */}
       <div
         className="flex-1 overflow-y-auto min-h-0 bg-base-100"
+        onClick={(e) => {
+          onFocusPane?.();
+          const target = e.target as HTMLElement;
+          if (
+            target === e.currentTarget ||
+            target.tagName === "TABLE" ||
+            target.tagName === "TBODY"
+          ) {
+            handleSelectFiles([]);
+            lastClickedEntryRef.current = null;
+          }
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           setContextMenu({ x: e.clientX, y: e.clientY, entry: null });

@@ -25,10 +25,20 @@ import { HostSelectDropdown } from "@/components/hosts/HostSelectDropdown";
 
 export function SFTPView() {
   const { hosts } = useHostStore();
-  const { sftpTargetHostId, setSftpTargetHostId } = useLayoutStore();
+  const {
+    currentView,
+    activeSection,
+    isCommandPaletteOpen,
+    isShortcutsModalOpen,
+    sftpTargetHostId,
+    setSftpTargetHostId,
+  } = useLayoutStore();
   const [selectedHostId, setSelectedHostId] = useState<string>(() => {
     return sftpTargetHostId || (hosts.length > 0 ? hosts[0].id : "");
   });
+
+  // Active Pane state (local vs remote)
+  const [activePane, setActivePane] = useState<"local" | "remote">("local");
 
   // Connection states
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -142,7 +152,54 @@ export function SFTPView() {
     setSelectedRemoteFiles([]);
     setRemotePath(".");
     setConnectionError(null);
+    setActivePane("local");
   };
+
+  // Ensure activePane falls back to local if remote is not connected
+  useEffect(() => {
+    if (!isConnected && activePane === "remote") {
+      setActivePane("local");
+    }
+  }, [isConnected, activePane]);
+
+  // Dual-pane Tab navigation to alternate between Local and Remote panes
+  useEffect(() => {
+    const isSFTPActive = currentView === "sftp" && activeSection === "management";
+    if (!isSFTPActive || !isConnected || !selectedHost) return;
+    if (isCommandPaletteOpen || isShortcutsModalOpen || editingTarget || previewTarget) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Tab") {
+        const target = e.target as HTMLElement | null;
+        const isInputField =
+          target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable ||
+            Boolean(target.closest("input, textarea, [contenteditable='true']")));
+
+        if (isInputField) {
+          // Preserve normal Tab navigation when actively editing an input
+          return;
+        }
+
+        e.preventDefault();
+        setActivePane((prev) => (prev === "local" ? "remote" : "local"));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    currentView,
+    activeSection,
+    isConnected,
+    selectedHost,
+    isCommandPaletteOpen,
+    isShortcutsModalOpen,
+    editingTarget,
+    previewTarget,
+  ]);
 
   const handleHostChange = (newHostId: string) => {
     if (newHostId !== selectedHostId) {
@@ -354,6 +411,8 @@ export function SFTPView() {
             onTransfer={handleUploadFiles}
             transferLabel="Upload"
             refreshKey={localRefreshKey}
+            isActive={activePane === "local"}
+            onFocusPane={() => setActivePane("local")}
           />
         </div>
 
@@ -427,6 +486,8 @@ export function SFTPView() {
               onTransfer={handleDownloadFiles}
               transferLabel="Download"
               refreshKey={remoteRefreshKey}
+              isActive={activePane === "remote"}
+              onFocusPane={() => setActivePane("remote")}
             />
           ) : (
             <div className="border border-base-300 rounded-xl h-full flex flex-col items-center justify-center p-6 text-center space-y-4 bg-base-200/20">

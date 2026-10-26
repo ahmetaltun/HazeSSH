@@ -20,6 +20,7 @@ import {
 import { useTunnelStore } from "@/stores/useTunnelStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { TunnelModal } from "@/components/tunnels/TunnelModal";
+import { ConfirmModal } from "@/components/common/ConfirmModal";
 import type { Tunnel } from "@/types/tunnel";
 
 function formatBytes(bytes: number): string {
@@ -40,6 +41,8 @@ export function TunnelsView() {
   const [typeFilter, setTypeFilter] = useState<"all" | "local" | "remote" | "dynamic">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [actionInProgress, setActionInProgress] = useState<Record<string, boolean>>({});
+  const [tunnelToDelete, setTunnelToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingTunnel, setIsDeletingTunnel] = useState(false);
 
   useEffect(() => {
     fetchTunnels();
@@ -69,13 +72,20 @@ export function TunnelsView() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete tunnel "${name}"?`)) {
-      try {
-        await deleteTunnel(id);
-      } catch (err: unknown) {
-        console.error("Failed to delete tunnel:", err);
-      }
+  const handleDeleteClick = (id: string, name: string) => {
+    setTunnelToDelete({ id, name });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!tunnelToDelete) return;
+    setIsDeletingTunnel(true);
+    try {
+      await deleteTunnel(tunnelToDelete.id);
+      setTunnelToDelete(null);
+    } catch (err: unknown) {
+      console.error("Failed to delete tunnel:", err);
+    } finally {
+      setIsDeletingTunnel(false);
     }
   };
 
@@ -322,7 +332,7 @@ export function TunnelsView() {
                       {/* Delete button */}
                       <button
                         type="button"
-                        onClick={() => handleDelete(tunnel.id, tunnel.name)}
+                        onClick={() => handleDeleteClick(tunnel.id, tunnel.name)}
                         className="btn btn-ghost btn-xs btn-circle text-base-content/40 hover:text-error transition-colors"
                         title="Delete Tunnel"
                       >
@@ -466,6 +476,32 @@ export function TunnelsView() {
 
       {/* New Tunnel Modal */}
       <TunnelModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+
+      {/* Delete Tunnel Confirmation Modal */}
+      {tunnelToDelete && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Tunnel"
+          variant="danger"
+          confirmLabel="Delete Tunnel"
+          isLoading={isDeletingTunnel}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => {
+            if (!isDeletingTunnel) setTunnelToDelete(null);
+          }}
+          message={
+            <div className="space-y-1.5">
+              <p>
+                Are you sure you want to permanently delete tunnel{" "}
+                <span className="font-bold text-base-content">&ldquo;{tunnelToDelete.name}&rdquo;</span>?
+              </p>
+              <p className="text-[11px] text-base-content/60">
+                This will terminate any active forwarding sessions on this tunnel.
+              </p>
+            </div>
+          }
+        />
+      )}
     </div>
   );
 }
