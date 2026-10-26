@@ -1,7 +1,9 @@
-import { useState, useEffect, type KeyboardEvent } from "react";
-import { FileCode, Save, X, AlertTriangle, Check } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { FileCode, Save, X, AlertTriangle, Check, WrapText } from "lucide-react";
 import { api } from "@/services/api";
-import { getLanguageLabel } from "@/utils/fileTypes";
+import { detectLanguageName } from "@/utils/codeLanguages";
+import { CodeEditor } from "@/components/common/CodeEditor";
+import { LanguagePicker } from "@/components/common/LanguagePicker";
 
 interface RemoteEditorModalProps {
   readonly isOpen: boolean;
@@ -30,8 +32,16 @@ export function RemoteEditorModal({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [lineWrapping, setLineWrapping] = useState(false);
+  const [languageOverride, setLanguageOverride] = useState<string>("auto");
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
 
   const hasUnsavedChanges = content !== initialContent;
+
+  const activeLanguageName = useMemo(
+    () => detectLanguageName(fileName, languageOverride),
+    [fileName, languageOverride]
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -40,6 +50,8 @@ export function RemoteEditorModal({
     setIsLoading(true);
     setErrorMsg(null);
     setSaveSuccess(false);
+    setLanguageOverride("auto");
+    setCursorPos({ line: 1, col: 1 });
 
     const fetchPromise =
       mode === "local" || !hostId
@@ -66,9 +78,8 @@ export function RemoteEditorModal({
     };
   }, [isOpen, mode, hostId, filePath]);
 
-  if (!isOpen) return null;
-
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
+    if (isSaving) return;
     setIsSaving(true);
     setErrorMsg(null);
     try {
@@ -86,27 +97,9 @@ export function RemoteEditorModal({
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [isSaving, mode, hostId, filePath, content, onSaved]);
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Cmd+S or Ctrl+S to save
-    if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-      e.preventDefault();
-      handleSave();
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      const target = e.currentTarget;
-      const start = target.selectionStart;
-      const end = target.selectionEnd;
-
-      const newContent = content.substring(0, start) + "  " + content.substring(end);
-      setContent(newContent);
-
-      setTimeout(() => {
-        target.selectionStart = target.selectionEnd = start + 2;
-      }, 0);
-    }
-  };
+  if (!isOpen) return null;
 
   const handleSafeClose = () => {
     if (hasUnsavedChanges) {
@@ -126,9 +119,11 @@ export function RemoteEditorModal({
           <div className="flex items-center gap-2 overflow-hidden">
             <FileCode className="w-4 h-4 text-primary shrink-0" />
             <span className="font-bold text-xs truncate max-w-xs">{fileName}</span>
-            <span className="badge badge-sm badge-outline font-mono text-[10px] text-primary border-primary/30 shrink-0">
-              {getLanguageLabel(fileName)}
-            </span>
+            <LanguagePicker
+              selectedLanguage={languageOverride}
+              activeLanguageName={activeLanguageName}
+              onSelectLanguage={setLanguageOverride}
+            />
             {hasUnsavedChanges && (
               <span className="badge badge-warning badge-xs text-[10px]">Unsaved *</span>
             )}
@@ -138,6 +133,17 @@ export function RemoteEditorModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Word Wrap Toggle */}
+            <button
+              type="button"
+              onClick={() => setLineWrapping((w) => !w)}
+              className={`btn btn-xs gap-1 ${lineWrapping ? "btn-primary" : "btn-ghost"}`}
+              title="Toggle Word Wrap"
+            >
+              <WrapText className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Wrap</span>
+            </button>
+
             {saveSuccess && (
               <span className="text-xs text-success flex items-center gap-1 font-semibold animate-fade-in">
                 <Check className="w-3.5 h-3.5" /> Saved!
@@ -186,25 +192,38 @@ export function RemoteEditorModal({
               </span>
             </div>
           ) : (
-            <textarea
+            <CodeEditor
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onKeyDown={handleKeyDown}
-              spellCheck={false}
-              className="flex-1 w-full h-full p-4 font-mono text-xs bg-base-100 text-base-content resize-none border-0 focus:outline-hidden leading-relaxed overflow-auto selection:bg-primary/20"
+              onChange={setContent}
+              fileName={fileName}
+              language={languageOverride}
+              readOnly={false}
+              lineWrapping={lineWrapping}
+              onSave={handleSave}
+              onCursorChange={(line, col) => setCursorPos({ line, col })}
               placeholder="Empty file..."
-              autoFocus
+              autoFocus={true}
+              className="flex-1 min-h-0 bg-base-100"
             />
           )}
         </div>
 
         {/* Editor Status Footer */}
         <div className="h-7 bg-base-300 px-4 border-t border-base-200 flex items-center justify-between text-[11px] text-base-content/60 font-mono select-none shrink-0">
-          <div>
-            Lines: {content.split("\n").length} | Characters: {content.length}
+          <div className="flex items-center gap-3">
+            <span>
+              Ln {cursorPos.line}, Col {cursorPos.col}
+            </span>
+            <span className="opacity-30">•</span>
+            <span>
+              Lines: {content ? content.split("\n").length : 0} | Characters: {content.length}
+            </span>
           </div>
           <div className="flex items-center gap-3">
+            <span className="text-primary font-semibold">{activeLanguageName}</span>
+            <span className="opacity-30">•</span>
             <span>UTF-8</span>
+            <span className="opacity-30">•</span>
             <span>Tab: 2 spaces</span>
           </div>
         </div>

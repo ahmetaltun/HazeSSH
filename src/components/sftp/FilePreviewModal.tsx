@@ -16,15 +16,18 @@ import {
   File,
   Eye,
   Code,
+  WrapText,
 } from "lucide-react";
 import { api } from "@/services/api";
 import type { FileEntry } from "@/types/sftp";
 import {
   getFileCategory,
-  getLanguageLabel,
   getMimeType,
   isEditableText,
 } from "@/utils/fileTypes";
+import { detectLanguageName } from "@/utils/codeLanguages";
+import { CodeEditor } from "@/components/common/CodeEditor";
+import { LanguagePicker } from "@/components/common/LanguagePicker";
 
 interface FilePreviewModalProps {
   readonly isOpen: boolean;
@@ -60,7 +63,65 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   return new Blob([byteArray], { type: mimeType });
 }
 
-// Lightweight, safe React Markdown parser without external dependencies
+// Inline formatting helper for Markdown
+function renderInlineFormatting(text: string): ReactNode {
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={i} className="px-1 py-0.5 bg-base-300 rounded font-mono text-[11px] text-primary">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} className="font-semibold text-base-content">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+// Syntax-highlighted code block for Markdown preview
+function MarkdownCodeBlock({ code, language }: { readonly code: string; readonly language: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-3 rounded-xl bg-base-200/60 border border-base-300 overflow-hidden font-mono text-xs">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-base-300/40 border-b border-base-300 text-[11px] select-none">
+        <span className="font-bold uppercase tracking-wider text-primary text-[10px]">
+          {language || "code"}
+        </span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="btn btn-ghost btn-xs h-6 px-1.5 gap-1 text-[10px]"
+          title="Copy code"
+        >
+          {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+          <span>{copied ? "Copied" : "Copy"}</span>
+        </button>
+      </div>
+      <div className="p-1">
+        <CodeEditor
+          value={code}
+          readOnly={true}
+          language={language}
+          height="auto"
+          maxHeight="400px"
+          lineWrapping={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Lightweight React Markdown parser with CodeEditor syntax highlighting
 function renderSimpleMarkdown(md: string): ReactNode[] {
   const lines = md.split("\n");
   const nodes: ReactNode[] = [];
@@ -72,10 +133,11 @@ function renderSimpleMarkdown(md: string): ReactNode[] {
     if (line.trim().startsWith("```")) {
       if (inCodeBlock) {
         nodes.push(
-          <div key={`codeblock-${index}`} className="my-2 rounded bg-base-300 p-3 font-mono text-xs overflow-x-auto text-base-content border border-base-content/10">
-            {codeLang && <div className="text-[10px] text-base-content/50 uppercase font-bold mb-1">{codeLang}</div>}
-            <pre><code>{codeBuffer.join("\n")}</code></pre>
-          </div>
+          <MarkdownCodeBlock
+            key={`codeblock-${index}`}
+            code={codeBuffer.join("\n")}
+            language={codeLang}
+          />
         );
         codeBuffer = [];
         inCodeBlock = false;
@@ -142,52 +204,6 @@ function renderSimpleMarkdown(md: string): ReactNode[] {
   return nodes;
 }
 
-function renderInlineFormatting(text: string): ReactNode {
-  // Simple inline code & bold rendering
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return (
-        <code key={i} className="px-1 py-0.5 bg-base-300 rounded font-mono text-[11px] text-primary">
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i} className="font-semibold text-base-content">{part.slice(2, -2)}</strong>;
-    }
-    return part;
-  });
-}
-
-interface CodeViewerProps {
-  readonly content: string;
-}
-
-function CodeViewer({ content }: CodeViewerProps) {
-  const lines = useMemo(() => content.split("\n"), [content]);
-
-  return (
-    <div className="flex-1 min-h-0 font-mono text-xs overflow-auto bg-base-200/30 rounded-xl border border-base-300">
-      <div className="flex min-w-full w-max">
-        {/* Sticky line numbers column */}
-        <div className="sticky left-0 z-10 py-3 pl-3 pr-2.5 select-none text-right text-base-content/30 border-r border-base-300 bg-base-200 text-[11px] leading-5 shrink-0 tabular-nums">
-          {lines.map((_, i) => (
-            <div key={i}>{i + 1}</div>
-          ))}
-        </div>
-        {/* Code text */}
-        <pre
-          className="py-3 pl-4 pr-6 select-text whitespace-pre leading-5 flex-1 text-base-content/90 font-mono text-xs m-0 bg-transparent"
-          style={{ tabSize: 2 }}
-        >
-          {content}
-        </pre>
-      </div>
-    </div>
-  );
-}
-
 export function FilePreviewModal({
   isOpen,
   file,
@@ -203,6 +219,8 @@ export function FilePreviewModal({
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [lineWrapping, setLineWrapping] = useState(false);
+  const [languageOverride, setLanguageOverride] = useState<string>("auto");
 
   // Markdown view state
   const [mdViewMode, setMdViewMode] = useState<"rendered" | "raw">("rendered");
@@ -213,8 +231,12 @@ export function FilePreviewModal({
 
   const previewType = useMemo(() => (file ? getFileCategory(file.name) : "binary"), [file]);
   const mimeType = useMemo(() => (file ? getMimeType(file.name) : ""), [file]);
-  const languageLabel = useMemo(() => (file ? getLanguageLabel(file.name) : ""), [file]);
   const isEditable = useMemo(() => (file ? isEditableText(file.name) : false), [file]);
+
+  const activeLanguageName = useMemo(
+    () => detectLanguageName(file?.name, languageOverride),
+    [file?.name, languageOverride]
+  );
 
   const activeUrlRef = useRef<string | null>(null);
 
@@ -236,6 +258,7 @@ export function FilePreviewModal({
     setErrorMsg(null);
     setImgZoom(1);
     setImgDimensions(null);
+    setLanguageOverride("auto");
     if (activeUrlRef.current) {
       URL.revokeObjectURL(activeUrlRef.current);
       activeUrlRef.current = null;
@@ -300,9 +323,12 @@ export function FilePreviewModal({
     }
   };
 
+  const isCodeOrMarkdownRaw =
+    previewType === "code" || (previewType === "markdown" && mdViewMode === "raw");
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-base-100 border border-base-300 w-full max-w-4xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="bg-base-100 border border-base-300 w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="h-14 px-4 bg-base-200/70 border-b border-base-300 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 overflow-hidden">
@@ -322,17 +348,19 @@ export function FilePreviewModal({
             <div className="flex flex-col overflow-hidden">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm truncate">{file.name}</span>
-                {languageLabel && (
-                  <span className="badge badge-sm badge-outline font-mono text-[10px] text-primary border-primary/30 shrink-0">
-                    {languageLabel}
-                  </span>
+                {(previewType === "code" || previewType === "markdown") && (
+                  <LanguagePicker
+                    selectedLanguage={languageOverride}
+                    activeLanguageName={activeLanguageName}
+                    onSelectLanguage={setLanguageOverride}
+                  />
                 )}
               </div>
               <span className="text-[10px] text-base-content/50 truncate font-mono">
                 {mode === "remote" && hostLabel ? `[${hostLabel}] ` : ""}
                 {file.path} • {formatBytes(file.size)}
                 {imgDimensions ? ` • ${imgDimensions.w} × ${imgDimensions.h} px` : ""}
-                {(previewType === "code" || (previewType === "markdown" && mdViewMode === "raw")) && textContent ? ` • ${textContent.split("\n").length} lines` : ""}
+                {isCodeOrMarkdownRaw && textContent ? ` • ${textContent.split("\n").length} lines` : ""}
               </span>
             </div>
           </div>
@@ -358,6 +386,19 @@ export function FilePreviewModal({
                   Source
                 </button>
               </div>
+            )}
+
+            {/* Word Wrap Toggle for Code / Raw Markdown */}
+            {isCodeOrMarkdownRaw && (
+              <button
+                type="button"
+                onClick={() => setLineWrapping((w) => !w)}
+                className={`btn btn-xs gap-1 ${lineWrapping ? "btn-primary" : "btn-ghost"}`}
+                title="Toggle Word Wrap"
+              >
+                <WrapText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Wrap</span>
+              </button>
             )}
 
             {/* Image Zoom Controls */}
@@ -394,7 +435,7 @@ export function FilePreviewModal({
             )}
 
             {/* Copy Text Action */}
-            {(previewType === "code" || (previewType === "markdown" && mdViewMode === "raw")) && textContent && (
+            {isCodeOrMarkdownRaw && textContent && (
               <button
                 type="button"
                 onClick={handleCopyText}
@@ -508,10 +549,24 @@ export function FilePreviewModal({
                 </div>
               </div>
             ) : (
-              <CodeViewer content={textContent} />
+              <CodeEditor
+                value={textContent}
+                readOnly={true}
+                fileName={file.name}
+                language={languageOverride}
+                lineWrapping={lineWrapping}
+                className="flex-1 min-h-0 rounded-xl border border-base-300 bg-base-200/30 overflow-hidden"
+              />
             )
           ) : previewType === "code" ? (
-            <CodeViewer content={textContent} />
+            <CodeEditor
+              value={textContent}
+              readOnly={true}
+              fileName={file.name}
+              language={languageOverride}
+              lineWrapping={lineWrapping}
+              className="flex-1 min-h-0 rounded-xl border border-base-300 bg-base-200/30 overflow-hidden"
+            />
           ) : (
             /* Unsupported / Binary fallback */
             <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6 text-center space-y-4 overflow-y-auto">

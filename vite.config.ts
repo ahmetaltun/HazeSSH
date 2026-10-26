@@ -37,12 +37,20 @@ export default defineConfig(() => ({
     },
   },
   build: {
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes("node_modules/@xterm")) {
             return "vendor-xterm";
+          }
+          if (
+            id.includes("node_modules/@codemirror") ||
+            id.includes("node_modules/@uiw") ||
+            id.includes("node_modules/@lezer") ||
+            id.includes("node_modules/codemirror")
+          ) {
+            return "vendor-codemirror";
           }
           if (id.includes("node_modules/lucide-react")) {
             return "vendor-lucide";

@@ -166,3 +166,33 @@ textarea:focus-within,
   outline: none !important;
   border-color: var(--color-primary, #3b82f6) !important;
 }
+
+/* ==========================================================================
+   CodeMirror Scroll Container & Layout Constraints
+   ========================================================================== */
+
+.cm-theme.h-full {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  flex: 1 1 0% !important;
+  overflow: hidden !important;
+}
+
+.cm-theme.h-full .cm-editor {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  flex: 1 1 0% !important;
+  overflow: hidden !important;
+}
+
+.cm-theme.h-full .cm-scroller {
+  flex: 1 1 0% !important;
+  overflow: auto !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overscroll-behavior: contain;
+}
