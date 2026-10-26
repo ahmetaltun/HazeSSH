@@ -15,7 +15,12 @@ import {
   ArrowRight,
   Plus,
   Radio,
+  Keyboard,
+  Sidebar,
+  Maximize2,
+  Minus,
 } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { useHostStore } from "@/stores/useHostStore";
@@ -23,6 +28,7 @@ import { useSnippetStore } from "@/stores/useSnippetStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useThemeStore, AVAILABLE_THEMES } from "@/stores/useThemeStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
+import { formatShortcut } from "@/utils/platform";
 import type { NavigationView } from "@/types/navigation";
 
 interface PaletteItem {
@@ -36,8 +42,14 @@ interface PaletteItem {
 }
 
 export function CommandPaletteModal() {
-  const { isCommandPaletteOpen, setCommandPaletteOpen, setView, setActiveSection } =
-    useLayoutStore();
+  const {
+    isCommandPaletteOpen,
+    setCommandPaletteOpen,
+    setView,
+    setActiveSection,
+    toggleSidebar,
+    setShortcutsModalOpen,
+  } = useLayoutStore();
   const { hosts } = useHostStore();
   const { snippets } = useSnippetStore();
   const { openTab, splitActivePane, closePane, getActiveTab } = useMultiplexerStore();
@@ -101,7 +113,7 @@ export function CommandPaletteModal() {
         subtitle: "Launch a clean local shell in a new tab",
         category: "Actions",
         icon: Plus,
-        badge: "⌘T",
+        badge: formatShortcut("⌘T", "Ctrl+T"),
         onSelect: () => {
           openTab({ title: "Local Terminal", status: "idle" });
           setActiveSection("terminal");
@@ -109,11 +121,11 @@ export function CommandPaletteModal() {
       },
       {
         id: "action_split_vert",
-        title: "Split Active Pane Vertically",
-        subtitle: "Add a side-by-side terminal pane (⌘D)",
+        title: "Split Active Pane Right (Horizontal)",
+        subtitle: "Add a side-by-side terminal pane",
         category: "Actions",
         icon: Columns2,
-        badge: "⌘D",
+        badge: formatShortcut("⌘\\", "Ctrl+\\"),
         onSelect: () => {
           splitActivePane("horizontal");
           setActiveSection("terminal");
@@ -121,11 +133,11 @@ export function CommandPaletteModal() {
       },
       {
         id: "action_split_horiz",
-        title: "Split Active Pane Horizontally",
-        subtitle: "Add a stacked terminal pane (⌘⇧D)",
+        title: "Split Active Pane Down (Vertical)",
+        subtitle: "Add a stacked terminal pane",
         category: "Actions",
         icon: Rows2,
-        badge: "⌘⇧D",
+        badge: formatShortcut("⌘⇧\\", "Ctrl+Shift+\\"),
         onSelect: () => {
           splitActivePane("vertical");
           setActiveSection("terminal");
@@ -134,10 +146,10 @@ export function CommandPaletteModal() {
       {
         id: "action_close_pane",
         title: "Close Current Pane",
-        subtitle: "Close the currently focused terminal pane (⌘W)",
+        subtitle: "Close the currently focused terminal pane",
         category: "Actions",
         icon: X,
-        badge: "⌘W",
+        badge: formatShortcut("⌘W", "Ctrl+W"),
         onSelect: () => {
           const tab = getActiveTab();
           if (tab) {
@@ -149,25 +161,72 @@ export function CommandPaletteModal() {
         id: "action_toggle_broadcast",
         title: isBroadcastEnabled ? "Disable Broadcast Input Mode" : "Enable Broadcast Input Mode",
         subtitle: isBroadcastEnabled
-          ? "Stop mirroring keystrokes across open terminal panes (⌘⌥B)"
-          : "Mirror keystrokes entered in active pane to other panes (⌘⌥B)",
+          ? "Stop mirroring keystrokes across open terminal panes"
+          : "Mirror keystrokes entered in active pane to other panes",
         category: "Actions",
         icon: Radio,
-        badge: "⌘⌥B",
+        badge: formatShortcut("⌘⌥B", "Ctrl+Alt+B"),
         onSelect: () => {
           toggleBroadcast();
+        },
+      },
+      {
+        id: "action_toggle_sidebar",
+        title: "Toggle Sidebar",
+        subtitle: "Expand or collapse navigation sidebar",
+        category: "Actions",
+        icon: Sidebar,
+        badge: formatShortcut("⌘B", "Ctrl+B"),
+        onSelect: () => {
+          toggleSidebar();
+        },
+      },
+      {
+        id: "action_shortcuts_modal",
+        title: "Keyboard Shortcuts",
+        subtitle: "View comprehensive list of all desktop hotkeys",
+        category: "Actions",
+        icon: Keyboard,
+        badge: formatShortcut("⌘/", "Ctrl+/"),
+        onSelect: () => {
+          setShortcutsModalOpen(true);
+        },
+      },
+      {
+        id: "action_toggle_maximize",
+        title: "Toggle Window Maximize",
+        subtitle: "Maximize or restore desktop application window",
+        category: "Actions",
+        icon: Maximize2,
+        onSelect: () => {
+          void getCurrentWindow().toggleMaximize();
+        },
+      },
+      {
+        id: "action_minimize_window",
+        title: "Minimize Window",
+        subtitle: "Minimize desktop application window",
+        category: "Actions",
+        icon: Minus,
+        onSelect: () => {
+          void getCurrentWindow().minimize();
         },
       }
     );
 
     // 3. Navigation Views
-    const navViews: Array<{ id: NavigationView; label: string; icon: typeof Search }> = [
-      { id: "hosts", label: "Hosts & Groups", icon: Server },
-      { id: "sftp", label: "SFTP File Manager", icon: FolderGit2 },
-      { id: "tunnels", label: "Port Forwarding & Tunnels", icon: Network },
-      { id: "snippets", label: "Snippets & Scripts", icon: Code2 },
-      { id: "history", label: "Session Logs", icon: History },
-      { id: "settings", label: "Settings & Vault", icon: Settings },
+    const navViews: Array<{
+      id: NavigationView;
+      label: string;
+      shortcut: string;
+      icon: typeof Search;
+    }> = [
+      { id: "hosts", label: "Hosts & Groups", shortcut: "⌘1", icon: Server },
+      { id: "tunnels", label: "Port Forwarding & Tunnels", shortcut: "⌘2", icon: Network },
+      { id: "sftp", label: "SFTP File Manager", shortcut: "⌘3", icon: FolderGit2 },
+      { id: "snippets", label: "Snippets & Scripts", shortcut: "⌘4", icon: Code2 },
+      { id: "history", label: "Session Logs", shortcut: "⌘5", icon: History },
+      { id: "settings", label: "Settings & Vault", shortcut: "⌘,", icon: Settings },
     ];
 
     navViews.forEach((nav) => {
@@ -177,6 +236,7 @@ export function CommandPaletteModal() {
         subtitle: `Switch to ${nav.label} management view`,
         category: "Navigation",
         icon: nav.icon,
+        badge: formatShortcut(nav.shortcut),
         onSelect: () => {
           setView(nav.id);
           setActiveSection("management");

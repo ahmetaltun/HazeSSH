@@ -6,6 +6,7 @@ interface LayoutState {
   readonly isSidebarCollapsed: boolean;
   readonly isCommandPaletteOpen: boolean;
   readonly isAboutModalOpen: boolean;
+  readonly isShortcutsModalOpen: boolean;
   readonly isQuickConnectOpen: boolean;
   readonly isVaultLocked: boolean;
   readonly hasMasterPassword: boolean;
@@ -20,6 +21,7 @@ interface LayoutState {
   readonly toggleSidebar: () => void;
   readonly setCommandPaletteOpen: (open: boolean) => void;
   readonly setAboutModalOpen: (open: boolean) => void;
+  readonly setShortcutsModalOpen: (open: boolean) => void;
   readonly setQuickConnectOpen: (open: boolean) => void;
   readonly setVaultLocked: (locked: boolean) => void;
   readonly setHasMasterPassword: (hasPassword: boolean) => void;
@@ -39,6 +41,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
   })(),
   isCommandPaletteOpen: false,
   isAboutModalOpen: false,
+  isShortcutsModalOpen: false,
   isQuickConnectOpen: false,
   isVaultLocked: false,
   hasMasterPassword: false,
@@ -64,6 +67,7 @@ export const useLayoutStore = create<LayoutState>((set) => ({
 
   setCommandPaletteOpen: (open: boolean) => set({ isCommandPaletteOpen: open }),
   setAboutModalOpen: (open: boolean) => set({ isAboutModalOpen: open }),
+  setShortcutsModalOpen: (open: boolean) => set({ isShortcutsModalOpen: open }),
   setQuickConnectOpen: (open: boolean) => set({ isQuickConnectOpen: open }),
   setVaultLocked: (locked: boolean) => set({ isVaultLocked: locked }),
   setHasMasterPassword: (hasPassword: boolean) => set({ hasMasterPassword: hasPassword }),

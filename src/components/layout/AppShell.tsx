@@ -12,6 +12,9 @@ import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
+import { initDesktopInterceptors } from "@/utils/desktopInterceptors";
+import { formatShortcut } from "@/utils/platform";
+import type { NavigationView } from "@/types/navigation";
 import { Terminal, Layers, Loader2 } from "lucide-react";
 
 // Code-split secondary management views to optimize bundle size and cold-start latency
@@ -43,13 +46,26 @@ function ViewLoadingFallback() {
 }
 
 export function AppShell() {
-  const { currentView, activeSection, setActiveSection, setCommandPaletteOpen } =
-    useLayoutStore();
+  const {
+    currentView,
+    setView,
+    toggleSidebar,
+    activeSection,
+    setActiveSection,
+    setCommandPaletteOpen,
+    setShortcutsModalOpen,
+  } = useLayoutStore();
   const { initTheme } = useThemeStore();
   const { fetchStatus } = useVaultStore();
   const { fetchAll } = useHostStore();
-  const { tabs, openTab, closePane, getActiveTab } =
-    useMultiplexerStore();
+  const {
+    tabs,
+    openTab,
+    closeTab,
+    closePane,
+    splitActivePane,
+    getActiveTab,
+  } = useMultiplexerStore();
 
   // Track visited management views to retain their DOM state across view navigation while preserving lazy-loading
   const [visitedViews, setVisitedViews] = useState<Set<string>>(() => new Set([currentView]));
@@ -69,32 +85,160 @@ export function AppShell() {
     fetchAll();
   }, [initTheme, fetchStatus, fetchAll]);
 
-  // Global Keyboard Shortcuts
+  // Global Desktop Environment Interceptors & Hotkeys
   useEffect(() => {
+    // 1. Suppress browser-level right click, file-drop navigation, and accidental reloads
+    const cleanupInterceptors = initDesktopInterceptors();
+
+    // 2. Desktop Keyboard Navigation
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMetaOrCtrl = e.metaKey || e.ctrlKey;
 
-      if (isMetaOrCtrl && e.key.toLowerCase() === "k") {
+      // ⌘K or ⌘⇧P : Command Palette
+      if (
+        (isMetaOrCtrl && e.key.toLowerCase() === "k") ||
+        (isMetaOrCtrl && e.shiftKey && e.key.toLowerCase() === "p")
+      ) {
         e.preventDefault();
         setCommandPaletteOpen(true);
-      } else if (isMetaOrCtrl && e.altKey && e.key.toLowerCase() === "b") {
+        return;
+      }
+
+      // ⌘, : Open Settings & Vault (Universal Desktop Standard)
+      if (isMetaOrCtrl && e.key === ",") {
+        e.preventDefault();
+        setView("settings");
+        return;
+      }
+
+      // ⌘B : Toggle Sidebar Collapse
+      if (isMetaOrCtrl && e.key.toLowerCase() === "b" && !e.altKey) {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // ⌘/ or ⌘? : Open Keyboard Shortcuts Modal
+      if (isMetaOrCtrl && (e.key === "/" || e.key === "?")) {
+        e.preventDefault();
+        setShortcutsModalOpen(true);
+        return;
+      }
+
+      // ⌘⌥B : Toggle Broadcast Keystrokes
+      if (isMetaOrCtrl && e.altKey && e.key.toLowerCase() === "b") {
         e.preventDefault();
         useBroadcastStore.getState().toggleBroadcast();
-      } else if (isMetaOrCtrl && e.key.toLowerCase() === "t") {
+        return;
+      }
+
+      // ⌘T : Open New Local Terminal Tab
+      if (isMetaOrCtrl && e.key.toLowerCase() === "t") {
         e.preventDefault();
         openTab({ title: "Local Terminal", status: "idle" });
-      } else if (isMetaOrCtrl && e.key.toLowerCase() === "w") {
+        return;
+      }
+
+      // ⌘⇧W : Close Entire Active Tab
+      if (isMetaOrCtrl && e.shiftKey && e.key.toLowerCase() === "w") {
+        const activeTab = getActiveTab();
+        if (activeTab) {
+          e.preventDefault();
+          closeTab(activeTab.id);
+        }
+        return;
+      }
+
+      // ⌘W : Close Active Pane (or Tab if single pane)
+      if (isMetaOrCtrl && e.key.toLowerCase() === "w") {
         const activeTab = getActiveTab();
         if (activeTab) {
           e.preventDefault();
           closePane(activeTab.id, activeTab.activePaneId);
         }
+        return;
+      }
+
+      // ⌘\ : Split Pane Right (Horizontal)
+      if (isMetaOrCtrl && !e.shiftKey && e.key === "\\") {
+        e.preventDefault();
+        splitActivePane("horizontal");
+        setActiveSection("terminal");
+        return;
+      }
+
+      // ⌘⇧\ or ⌘⇧D : Split Pane Down (Vertical)
+      if (
+        (isMetaOrCtrl && e.shiftKey && e.key === "\\") ||
+        (isMetaOrCtrl && e.shiftKey && e.key.toLowerCase() === "d")
+      ) {
+        e.preventDefault();
+        splitActivePane("vertical");
+        setActiveSection("terminal");
+        return;
+      }
+
+      // ⌘1 to ⌘6: Switch View (in management) OR switch Tab (in terminal)
+      if (isMetaOrCtrl && e.key >= "1" && e.key <= "9") {
+        const num = parseInt(e.key, 10);
+        const currentActiveSection = useLayoutStore.getState().activeSection;
+        const currentTabs = useMultiplexerStore.getState().tabs;
+
+        if (currentActiveSection === "terminal" && currentTabs.length > 0) {
+          const targetTab = currentTabs[num - 1];
+          if (targetTab) {
+            e.preventDefault();
+            useMultiplexerStore.getState().setActiveTab(targetTab.id);
+            return;
+          }
+        } else if (num >= 1 && num <= 6) {
+          const views: readonly NavigationView[] = [
+            "hosts",
+            "tunnels",
+            "sftp",
+            "snippets",
+            "history",
+            "settings",
+          ];
+          e.preventDefault();
+          setView(views[num - 1]);
+          return;
+        }
+      }
+
+      // ⌃Tab / ⌃⇧Tab : Cycle active tabs
+      if (e.ctrlKey && e.key === "Tab") {
+        const { tabs: currentTabs, activeTabId, setActiveTab } =
+          useMultiplexerStore.getState();
+        if (currentTabs.length > 1 && activeTabId) {
+          e.preventDefault();
+          const currentIdx = currentTabs.findIndex((t) => t.id === activeTabId);
+          if (currentIdx !== -1) {
+            const step = e.shiftKey ? -1 : 1;
+            const nextIdx = (currentIdx + step + currentTabs.length) % currentTabs.length;
+            setActiveTab(currentTabs[nextIdx].id);
+          }
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setCommandPaletteOpen, openTab, closePane, getActiveTab]);
+    return () => {
+      cleanupInterceptors?.();
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    setCommandPaletteOpen,
+    setView,
+    toggleSidebar,
+    setShortcutsModalOpen,
+    openTab,
+    closeTab,
+    closePane,
+    splitActivePane,
+    setActiveSection,
+    getActiveTab,
+  ]);
 
   const renderActiveManagementViews = () => (
     <>
@@ -145,73 +289,76 @@ export function AppShell() {
   );
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-base-100 text-base-content antialiased">
-      {/* Sidebar Navigation */}
-      <Sidebar />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content antialiased select-none">
+      {/* Topbar: Unified Desktop Window Header & Draggable Titlebar */}
+      <Topbar />
 
-      {/* Main Workspace Column */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* Topbar */}
-        <Topbar />
+      {/* Main Row: Sidebar + Workspace */}
+      <div className="flex-1 flex min-h-0 w-full overflow-hidden">
+        {/* Sidebar Navigation */}
+        <Sidebar />
 
-        {/* Section Pill Switcher (if user has open terminal sessions) */}
-        {tabs.length > 0 && (
-          <div className="h-9 bg-base-300/80 border-b border-base-300 flex items-center justify-between px-3 shrink-0">
-            <div className="join bg-base-200/80 p-0.5 rounded-lg border border-base-300">
-              <button
-                type="button"
-                onClick={() => setActiveSection("terminal")}
-                className={`btn btn-xs join-item gap-1.5 transition-all ${
-                  activeSection === "terminal"
-                    ? "btn-primary font-semibold shadow-xs"
-                    : "btn-ghost text-base-content/60 hover:text-base-content"
-                }`}
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>Terminals ({tabs.length})</span>
-              </button>
+        {/* Main Workspace Column */}
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+          {/* Section Pill Switcher (if user has open terminal sessions) */}
+          {tabs.length > 0 && (
+            <div className="h-8 bg-base-300/80 border-b border-base-300 flex items-center justify-between px-3 shrink-0">
+              <div className="join bg-base-200/80 p-0.5 rounded-lg border border-base-300">
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("terminal")}
+                  className={`btn btn-xs h-6 join-item gap-1.5 transition-all ${
+                    activeSection === "terminal"
+                      ? "btn-primary font-semibold shadow-xs"
+                      : "btn-ghost text-base-content/60 hover:text-base-content"
+                  }`}
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Terminals ({tabs.length})</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveSection("management")}
-                className={`btn btn-xs join-item gap-1.5 transition-all ${
-                  activeSection === "management"
-                    ? "btn-primary font-semibold shadow-xs"
-                    : "btn-ghost text-base-content/60 hover:text-base-content"
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span className="capitalize">{currentView}</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("management")}
+                  className={`btn btn-xs h-6 join-item gap-1.5 transition-all ${
+                    activeSection === "management"
+                      ? "btn-primary font-semibold shadow-xs"
+                      : "btn-ghost text-base-content/60 hover:text-base-content"
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span className="capitalize">{currentView}</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] text-base-content/40 font-mono">
+                New Tab: <kbd className="kbd kbd-xs">{formatShortcut("⌘T", "Ctrl+T")}</kbd>
+              </div>
             </div>
+          )}
 
-            <div className="text-[11px] text-base-content/40 font-mono">
-              Shortcut: <kbd className="kbd kbd-xs">⌘T</kbd> New Tab
+          {/* Workspace Body */}
+          <main className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+            <div
+              className={`flex-1 min-h-0 flex flex-col overflow-hidden relative ${
+                activeSection === "terminal" ? "" : "hidden"
+              }`}
+            >
+              <MultiplexerArea />
             </div>
-          </div>
-        )}
-
-        {/* Workspace Body */}
-        <main className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-          <div
-            className={`flex-1 min-h-0 flex flex-col overflow-hidden relative ${
-              activeSection === "terminal" ? "" : "hidden"
-            }`}
-          >
-            <MultiplexerArea />
-          </div>
-          <div
-            className={`flex-1 min-h-0 flex flex-col overflow-hidden relative ${
-              activeSection === "management" ? "" : "hidden"
-            }`}
-          >
-            {renderActiveManagementViews()}
-          </div>
-        </main>
-
-        {/* Status Bar */}
-        <StatusBar />
+            <div
+              className={`flex-1 min-h-0 flex flex-col overflow-hidden relative ${
+                activeSection === "management" ? "" : "hidden"
+              }`}
+            >
+              {renderActiveManagementViews()}
+            </div>
+          </main>
+        </div>
       </div>
+
+      {/* Desktop Status Bar */}
+      <StatusBar />
 
       {/* Global Command Palette & About Modals */}
       <CommandPaletteModal />

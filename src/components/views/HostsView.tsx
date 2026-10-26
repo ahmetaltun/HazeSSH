@@ -30,6 +30,7 @@ import { GroupModal } from "@/components/hosts/GroupModal";
 import { IdentityManagerModal } from "@/components/identities/IdentityManagerModal";
 import { ServerHealthGauges } from "@/components/hosts/ServerHealthGauges";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { HostContextMenu } from "@/components/hosts/HostContextMenu";
 
 export function HostsView() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -37,6 +38,7 @@ export function HostsView() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [copiedHostId, setCopiedHostId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; host: Host } | null>(null);
 
   // Modals state
   const [isHostModalOpen, setIsHostModalOpen] = useState(false);
@@ -461,7 +463,13 @@ export function HostsView() {
                 return (
                   <div
                     key={host.id}
-                    className="card bg-base-200/50 hover:bg-base-200/80 border border-base-300/80 hover:border-primary/40 rounded-2xl transition-all duration-200 shadow-xs hover:shadow-md group flex flex-col justify-between overflow-hidden"
+                    onDoubleClick={() => handleConnect(host)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setContextMenu({ x: e.clientX, y: e.clientY, host });
+                    }}
+                    className="card bg-base-200/50 hover:bg-base-200/80 border border-base-300/80 hover:border-primary/40 rounded-2xl transition-all duration-200 shadow-xs hover:shadow-md group flex flex-col justify-between overflow-hidden cursor-pointer"
                   >
                     <div className="p-5 space-y-3.5 flex-1 flex flex-col justify-between">
                       <div className="space-y-3">
@@ -653,7 +661,16 @@ export function HostsView() {
                     const jumpHost = hosts.find((h) => h.id === host.jump_host_id);
 
                     return (
-                      <tr key={host.id} className="hover:bg-base-200/50 transition-colors">
+                      <tr
+                        key={host.id}
+                        onDoubleClick={() => handleConnect(host)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setContextMenu({ x: e.clientX, y: e.clientY, host });
+                        }}
+                        className="hover:bg-base-200/50 transition-colors cursor-pointer"
+                      >
                         <td>
                           <span
                             className="w-2.5 h-2.5 rounded-full block"
@@ -807,6 +824,17 @@ export function HostsView() {
               </p>
             </div>
           }
+        />
+      )}
+      {/* Host Right-Click Context Menu */}
+      {contextMenu && (
+        <HostContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          host={contextMenu.host}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onClose={() => setContextMenu(null)}
         />
       )}
     </div>

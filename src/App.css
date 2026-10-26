@@ -3,87 +3,128 @@
   themes: all;
 }
 
-/* Universal Outline Removal across the entire application */
-*,
-*::before,
-*::after {
-  outline: none !important;
-  outline-width: 0 !important;
-  outline-style: none !important;
-  outline-color: transparent !important;
+/* ==========================================================================
+   Desktop Application Shell & Platform System Styles
+   ========================================================================== */
+
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light dark;
 }
 
-*:focus,
-*:focus-visible,
-*:focus-within,
-*:active {
-  outline: none !important;
-  outline-width: 0 !important;
-  outline-style: none !important;
-  outline-color: transparent !important;
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* Specific resets for form inputs, dropdowns, and interactive buttons */
+/* Draggable desktop window regions */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+/* Interactive elements inside draggable regions must be non-draggable */
+button,
+a,
 input,
 select,
 textarea,
-button,
+[role="button"],
 [tabindex],
-.input,
-.select,
-.textarea,
-.btn,
-.join-item {
-  outline: none !important;
-  outline-style: none !important;
-  outline-width: 0 !important;
-  outline-offset: 0 !important;
-  -webkit-tap-highlight-color: transparent;
+.no-drag,
+.join,
+.dropdown {
+  -webkit-app-region: no-drag;
 }
 
+/* Disable accidental image and SVG dragging */
+img,
+svg {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* Allow text selection strictly inside text inputs, code editors, and terminals */
+input,
+textarea,
+[contenteditable="true"],
+.select-text,
+.xterm,
+pre,
+code {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+/* ==========================================================================
+   Desktop Custom Scrollbars (macOS / Windows 11 style)
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==========================================================================
+   Subtle Desktop Focus States & Interactive Resets
+   ========================================================================== */
+
+/* Remove harsh default browser focus on mouse click, but maintain accessible desktop focus rings on keyboard nav */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6) !important;
+  outline-offset: 1px !important;
+}
+
+/* Specific focus resets for inputs */
 input:focus,
 input:focus-within,
-input:focus-visible,
-input:active,
 select:focus,
 select:focus-within,
-select:focus-visible,
-select:active,
 textarea:focus,
 textarea:focus-within,
-textarea:focus-visible,
-textarea:active,
-button:focus,
-button:focus-visible,
-button:active,
-.input:focus,
-.input:focus-within,
-.input:focus-visible,
-.input:active,
-.select:focus,
-.select:focus-within,
-.select:focus-visible,
-.select:active,
-.textarea:focus,
-.textarea:focus-within,
-.textarea:focus-visible,
-.textarea:active,
-.btn:focus,
-.btn:focus-visible,
-.btn:active {
-  outline: none !important;
-  outline-style: none !important;
-  outline-width: 0 !important;
-  outline-offset: 0 !important;
-  box-shadow: none !important;
-}
-
-/* Subtle, clean focus border for inputs instead of jarring outlines */
 .input:focus,
 .input:focus-within,
 .select:focus,
 .select:focus-within,
 .textarea:focus,
 .textarea:focus-within {
-  border-color: var(--color-primary) !important;
+  outline: none !important;
+  border-color: var(--color-primary, #3b82f6) !important;
 }

@@ -9,6 +9,7 @@ import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
 import { useTerminalSettingsStore } from "@/stores/useTerminalSettingsStore";
 import { getTerminalTheme } from "@/services/terminalThemes";
 import { FileDropModal, type DroppedFileInfo } from "@/components/terminal/FileDropModal";
+import { TerminalContextMenu } from "@/components/terminal/TerminalContextMenu";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
 import { attachTerminalRenderer } from "@/components/terminal/terminalRenderer";
 import type { TerminalPane } from "@/types/terminal";
@@ -29,6 +30,7 @@ export function XTermTerminal({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [droppedFile, setDroppedFile] = useState<DroppedFileInfo | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const { currentTheme } = useThemeStore();
   const {
@@ -283,6 +285,11 @@ export function XTermTerminal({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
       className={`w-full h-full p-2 bg-base-100 overflow-hidden select-text relative transition-all ${
         isDragOver ? "ring-2 ring-primary ring-inset" : ""
       }`}
@@ -329,6 +336,15 @@ export function XTermTerminal({
             {pane.status}
           </span>
         </div>
+      )}
+      {/* Terminal Right-Click Context Menu */}
+      {contextMenu && (
+        <TerminalContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          pane={pane}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );

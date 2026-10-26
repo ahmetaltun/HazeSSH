@@ -139,6 +139,10 @@ interface MultiplexerState {
 
   readonly openTab: (initialPane?: Partial<TerminalPane>, tabTitle?: string) => string;
   readonly closeTab: (tabId: string) => void;
+  readonly closeOtherTabs: (keepTabId: string) => void;
+  readonly closeTabsToTheRight: (targetTabId: string) => void;
+  readonly renameTab: (tabId: string, newTitle: string) => void;
+  readonly duplicateTab: (tabId: string) => string | null;
   readonly setActiveTab: (tabId: string) => void;
   readonly splitActivePane: (direction: SplitDirection, newPaneData?: Partial<TerminalPane>) => string | null;
   readonly closePane: (tabId: string, paneId: string) => void;
@@ -213,6 +217,79 @@ export const useMultiplexerStore = create<MultiplexerState>((set, get) => ({
         activeTabId: nextActiveId,
       };
     });
+  },
+
+  closeOtherTabs: (keepTabId) => {
+    const tabsToClose = get().tabs.filter((t) => t.id !== keepTabId);
+    for (const tab of tabsToClose) {
+      const paneIds = collectPaneIds(tab.rootNode);
+      for (const pid of paneIds) {
+        void terminalSessionManager.destroySession(pid);
+      }
+    }
+
+    set((state) => ({
+      tabs: state.tabs.filter((t) => t.id === keepTabId),
+      activeTabId: keepTabId,
+    }));
+  },
+
+  closeTabsToTheRight: (targetTabId) => {
+    const { tabs, activeTabId } = get();
+    const targetIdx = tabs.findIndex((t) => t.id === targetTabId);
+    if (targetIdx === -1) return;
+
+    const tabsToKeep = tabs.slice(0, targetIdx + 1);
+    const tabsToClose = tabs.slice(targetIdx + 1);
+
+    for (const tab of tabsToClose) {
+      const paneIds = collectPaneIds(tab.rootNode);
+      for (const pid of paneIds) {
+        void terminalSessionManager.destroySession(pid);
+      }
+    }
+
+    let nextActiveId = activeTabId;
+    if (activeTabId && !tabsToKeep.some((t) => t.id === activeTabId)) {
+      nextActiveId = targetTabId;
+    }
+
+    set({
+      tabs: tabsToKeep,
+      activeTabId: nextActiveId,
+    });
+  },
+
+  renameTab: (tabId, newTitle) => {
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId ? { ...t, title: trimmed } : t
+      ),
+    }));
+  },
+
+  duplicateTab: (tabId) => {
+    const tab = get().tabs.find((t) => t.id === tabId);
+    if (!tab) return null;
+
+    const activePane = findPaneInNode(tab.rootNode, tab.activePaneId) || findFirstLeaf(tab.rootNode).pane;
+    return get().openTab(
+      {
+        title: activePane.title,
+        hostId: activePane.hostId,
+        hostname: activePane.hostname,
+        port: activePane.port,
+        username: activePane.username,
+        connectionType: activePane.connectionType,
+        serialOptions: activePane.serialOptions,
+        telnetOptions: activePane.telnetOptions,
+        status: activePane.status,
+      },
+      `${tab.title} (Copy)`
+    );
   },
 
   setActiveTab: (tabId) => {
