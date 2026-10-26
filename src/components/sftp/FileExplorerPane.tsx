@@ -58,6 +58,7 @@ function formatDate(epochSec: number): string {
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -485,15 +486,11 @@ export function FileExplorerPane({
             <span className="loading loading-spinner loading-sm text-primary" />
             <span className="text-xs text-base-content/50 font-mono">Loading entries...</span>
           </div>
-        ) : filteredEntries.length === 0 && !canGoUp ? (
-          <div className="flex flex-col items-center justify-center h-48 text-base-content/40 text-xs">
-            <span>Empty directory</span>
-          </div>
         ) : (
-          <table className="table table-xs table-pin-rows w-full font-mono">
+          <table className="table table-xs table-pin-rows table-fixed w-full font-mono">
             <thead>
-              <tr className="bg-base-200/50 text-[10px] text-base-content/60">
-                <th className="w-8 px-2 text-center">
+              <tr className="h-8 bg-base-200/50 text-[10px] text-base-content/60">
+                <th className="w-8 px-2 text-center align-middle">
                   <input
                     type="checkbox"
                     checked={isAllSelected}
@@ -505,35 +502,53 @@ export function FileExplorerPane({
                     title={isAllSelected ? "Deselect All" : "Select All"}
                   />
                 </th>
-                <th>Name</th>
-                <th className="w-20 text-right">Size</th>
-                <th className="w-28 text-right hidden sm:table-cell">Modified</th>
-                <th className="w-16 text-right hidden md:table-cell">Perms</th>
+                <th className="w-auto align-middle">Name</th>
+                <th className="w-20 text-right align-middle">Size</th>
+                <th className="w-32 text-right hidden sm:table-cell align-middle">Modified</th>
+                <th className="w-16 text-right hidden md:table-cell align-middle">Perms</th>
               </tr>
             </thead>
             <tbody>
-              {canGoUp && (
-                <tr
-                  key="__parent_directory__"
-                  onClick={() => handleSelectFiles([])}
-                  onDoubleClick={handleGoUp}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  className="cursor-pointer transition-colors text-xs hover:bg-base-200/60 select-none group border-b border-base-200/40"
-                  title="Double-click to go to parent directory"
-                >
-                  <td className="w-8 px-2 text-center" />
-                  <td className="truncate max-w-[180px] flex items-center gap-2 font-sans font-medium text-base-content/80 group-hover:text-primary">
-                    <FolderUp className="w-4 h-4 text-warning fill-warning/20 shrink-0 group-hover:scale-110 transition-transform" />
+              <tr
+                key="__parent_directory__"
+                onClick={() => {
+                  if (canGoUp) {
+                    handleSelectFiles([]);
+                  }
+                }}
+                onDoubleClick={() => {
+                  if (canGoUp) {
+                    handleGoUp();
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className={`h-8 transition-colors text-xs select-none ${
+                  canGoUp
+                    ? "cursor-pointer hover:bg-base-200/60 group"
+                    : "opacity-40 cursor-not-allowed"
+                }`}
+                title={canGoUp ? "Double-click to go to parent directory" : "Already at root directory"}
+              >
+                <td className="w-8 px-2 text-center align-middle">
+                  <span className="inline-block w-4 h-4" />
+                </td>
+                <td className="max-w-0 w-full align-middle">
+                  <div className={`flex items-center gap-2 min-w-0 font-sans font-medium ${
+                    canGoUp ? "text-base-content/80 group-hover:text-primary" : "text-base-content/50"
+                  }`}>
+                    <FolderUp className={`w-4 h-4 shrink-0 transition-transform ${
+                      canGoUp ? "text-warning fill-warning/20 group-hover:scale-110" : "text-base-content/40"
+                    }`} />
                     <span className="font-mono font-bold tracking-wider">..</span>
-                  </td>
-                  <td className="text-right text-[11px] text-base-content/40">-</td>
-                  <td className="text-right text-[10px] text-base-content/40 hidden sm:table-cell">-</td>
-                  <td className="text-right text-[10px] text-base-content/40 hidden md:table-cell">-</td>
-                </tr>
-              )}
+                  </div>
+                </td>
+                <td className="text-right text-[11px] text-base-content/40 whitespace-nowrap align-middle">-</td>
+                <td className="text-right text-[10px] text-base-content/40 whitespace-nowrap hidden sm:table-cell align-middle">-</td>
+                <td className="text-right text-[10px] text-base-content/40 whitespace-nowrap hidden md:table-cell align-middle">-</td>
+              </tr>
               {filteredEntries.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="text-center py-12 text-base-content/40 text-xs italic font-sans">
@@ -558,14 +573,14 @@ export function FileExplorerPane({
                         }
                         setContextMenu({ x: e.clientX, y: e.clientY, entry });
                       }}
-                      className={`cursor-pointer transition-colors text-xs ${
+                      className={`h-8 cursor-pointer transition-colors text-xs ${
                         isSelected
                           ? "bg-primary/20 text-primary font-semibold"
                           : "hover:bg-base-200/50"
                       }`}
                     >
                       <td
-                        className="w-8 px-2 text-center"
+                        className="w-8 px-2 text-center align-middle"
                         onClick={(e) => handleToggleEntryCheckbox(entry, e)}
                       >
                         <input
@@ -575,17 +590,19 @@ export function FileExplorerPane({
                           className="checkbox checkbox-xs rounded pointer-events-none"
                         />
                       </td>
-                      <td className="truncate max-w-[180px] flex items-center gap-2 font-sans">
-                        {getFileIcon(entry)}
-                        <span className="truncate">{entry.name}</span>
+                      <td className="max-w-0 w-full align-middle">
+                        <div className="flex items-center gap-2 min-w-0 font-sans">
+                          {getFileIcon(entry)}
+                          <span className="truncate">{entry.name}</span>
+                        </div>
                       </td>
-                      <td className="text-right text-[11px] text-base-content/60">
+                      <td className="text-right text-[11px] text-base-content/60 whitespace-nowrap align-middle">
                         {entry.is_dir ? "-" : formatBytes(entry.size)}
                       </td>
-                      <td className="text-right text-[10px] text-base-content/50 hidden sm:table-cell">
+                      <td className="text-right text-[10px] text-base-content/50 whitespace-nowrap hidden sm:table-cell align-middle">
                         {formatDate(entry.modified)}
                       </td>
-                      <td className="text-right text-[10px] text-base-content/40 hidden md:table-cell">
+                      <td className="text-right text-[10px] text-base-content/40 whitespace-nowrap hidden md:table-cell align-middle">
                         {entry.permissions}
                       </td>
                     </tr>
