@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type FormEvent } from "react";
 import {
   Folder,
+  FolderUp,
   File,
   FileCode,
   FileText,
@@ -58,6 +59,12 @@ function formatDate(epochSec: number): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function isRootDirectory(path: string): boolean {
+  if (!path || path === "/" || path === "" || path === ".") return true;
+  if (/^[a-zA-Z]:[/\\]?$/.test(path.trim())) return true;
+  return false;
 }
 
 function getFileIcon(entry: FileEntry) {
@@ -208,13 +215,25 @@ export function FileExplorerPane({
     loadDirectory(currentPath, refreshKey > 0);
   }, [mode, hostId, currentPath, refreshKey]);
 
+  const canGoUp = !isRootDirectory(currentPath);
+
   // Navigate up one folder
   const handleGoUp = () => {
-    if (currentPath === "/" || currentPath === "" || currentPath === ".") return;
-    const parts = currentPath.replace(/\/+$/, "").split("/");
+    if (!canGoUp) return;
+    const isWindows = /^[a-zA-Z]:\\/.test(currentPath) || (!currentPath.startsWith("/") && currentPath.includes("\\"));
+    const separator = isWindows ? "\\" : "/";
+    const cleaned = currentPath.replace(/[/\\]+$/, "");
+    const parts = cleaned.split(/[/\\]/);
     parts.pop();
-    const parent = parts.join("/") || "/";
-    onNavigate(parent);
+
+    let parent = parts.join(separator);
+    if (!parent && !isWindows) {
+      parent = "/";
+    } else if (isWindows && /^[a-zA-Z]:$/.test(parent)) {
+      parent = `${parent}\\`;
+    }
+
+    onNavigate(parent || "/");
   };
 
   const handleRowDoubleClick = (entry: FileEntry) => {
@@ -392,7 +411,7 @@ export function FileExplorerPane({
           <button
             type="button"
             onClick={handleGoUp}
-            disabled={currentPath === "/" || currentPath === "" || currentPath === "."}
+            disabled={!canGoUp}
             className="btn btn-ghost btn-xs btn-square"
             title="Go to Parent Directory"
           >
@@ -466,7 +485,7 @@ export function FileExplorerPane({
             <span className="loading loading-spinner loading-sm text-primary" />
             <span className="text-xs text-base-content/50 font-mono">Loading entries...</span>
           </div>
-        ) : filteredEntries.length === 0 ? (
+        ) : filteredEntries.length === 0 && !canGoUp ? (
           <div className="flex flex-col items-center justify-center h-48 text-base-content/40 text-xs">
             <span>Empty directory</span>
           </div>
@@ -493,56 +512,86 @@ export function FileExplorerPane({
               </tr>
             </thead>
             <tbody>
-              {filteredEntries.map((entry) => {
-                const isSelected = activeSelectedFiles.some((f) => f.path === entry.path);
+              {canGoUp && (
+                <tr
+                  key="__parent_directory__"
+                  onClick={() => handleSelectFiles([])}
+                  onDoubleClick={handleGoUp}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  className="cursor-pointer transition-colors text-xs hover:bg-base-200/60 select-none group border-b border-base-200/40"
+                  title="Double-click to go to parent directory"
+                >
+                  <td className="w-8 px-2 text-center" />
+                  <td className="truncate max-w-[180px] flex items-center gap-2 font-sans font-medium text-base-content/80 group-hover:text-primary">
+                    <FolderUp className="w-4 h-4 text-warning fill-warning/20 shrink-0 group-hover:scale-110 transition-transform" />
+                    <span className="font-mono font-bold tracking-wider">..</span>
+                  </td>
+                  <td className="text-right text-[11px] text-base-content/40">-</td>
+                  <td className="text-right text-[10px] text-base-content/40 hidden sm:table-cell">-</td>
+                  <td className="text-right text-[10px] text-base-content/40 hidden md:table-cell">-</td>
+                </tr>
+              )}
+              {filteredEntries.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-12 text-base-content/40 text-xs italic font-sans">
+                    {searchTerm ? "No matching files or folders" : "Empty directory"}
+                  </td>
+                </tr>
+              ) : (
+                filteredEntries.map((entry) => {
+                  const isSelected = activeSelectedFiles.some((f) => f.path === entry.path);
 
-                return (
-                  <tr
-                    key={entry.path}
-                    onClick={(e) => handleRowClick(entry, e)}
-                    onDoubleClick={() => handleRowDoubleClick(entry)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (!activeSelectedFiles.some((f) => f.path === entry.path)) {
-                        handleSelectFiles([entry]);
-                        lastClickedEntryRef.current = entry;
-                      }
-                      setContextMenu({ x: e.clientX, y: e.clientY, entry });
-                    }}
-                    className={`cursor-pointer transition-colors text-xs ${
-                      isSelected
-                        ? "bg-primary/20 text-primary font-semibold"
-                        : "hover:bg-base-200/50"
-                    }`}
-                  >
-                    <td
-                      className="w-8 px-2 text-center"
-                      onClick={(e) => handleToggleEntryCheckbox(entry, e)}
+                  return (
+                    <tr
+                      key={entry.path}
+                      onClick={(e) => handleRowClick(entry, e)}
+                      onDoubleClick={() => handleRowDoubleClick(entry)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!activeSelectedFiles.some((f) => f.path === entry.path)) {
+                          handleSelectFiles([entry]);
+                          lastClickedEntryRef.current = entry;
+                        }
+                        setContextMenu({ x: e.clientX, y: e.clientY, entry });
+                      }}
+                      className={`cursor-pointer transition-colors text-xs ${
+                        isSelected
+                          ? "bg-primary/20 text-primary font-semibold"
+                          : "hover:bg-base-200/50"
+                      }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => {}}
-                        className="checkbox checkbox-xs rounded pointer-events-none"
-                      />
-                    </td>
-                    <td className="truncate max-w-[180px] flex items-center gap-2 font-sans">
-                      {getFileIcon(entry)}
-                      <span className="truncate">{entry.name}</span>
-                    </td>
-                    <td className="text-right text-[11px] text-base-content/60">
-                      {entry.is_dir ? "-" : formatBytes(entry.size)}
-                    </td>
-                    <td className="text-right text-[10px] text-base-content/50 hidden sm:table-cell">
-                      {formatDate(entry.modified)}
-                    </td>
-                    <td className="text-right text-[10px] text-base-content/40 hidden md:table-cell">
-                      {entry.permissions}
-                    </td>
-                  </tr>
-                );
-              })}
+                      <td
+                        className="w-8 px-2 text-center"
+                        onClick={(e) => handleToggleEntryCheckbox(entry, e)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="checkbox checkbox-xs rounded pointer-events-none"
+                        />
+                      </td>
+                      <td className="truncate max-w-[180px] flex items-center gap-2 font-sans">
+                        {getFileIcon(entry)}
+                        <span className="truncate">{entry.name}</span>
+                      </td>
+                      <td className="text-right text-[11px] text-base-content/60">
+                        {entry.is_dir ? "-" : formatBytes(entry.size)}
+                      </td>
+                      <td className="text-right text-[10px] text-base-content/50 hidden sm:table-cell">
+                        {formatDate(entry.modified)}
+                      </td>
+                      <td className="text-right text-[10px] text-base-content/40 hidden md:table-cell">
+                        {entry.permissions}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         )}
