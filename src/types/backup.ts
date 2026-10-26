@@ -23,3 +23,14 @@ export const BackupSummarySchema = z.object({
 export type BackupSummary = z.infer<typeof BackupSummarySchema>;
 
 export type RestoreStrategy = "merge" | "overwrite";
+
+export interface BackupExportResult {
+  filePath: string;
+  fileSizeBytes: number;
+  exportedAt: number;
+  hostsCount: number;
+  groupsCount: number;
+  identitiesCount: number;
+  snippetsCount: number;
+  tunnelsCount: number;
+}

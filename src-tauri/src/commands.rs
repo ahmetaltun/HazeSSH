@@ -643,6 +643,209 @@ pub fn sftp_local_read_binary(path: String) -> Result<String, String> {
 
 // --- Backup & Restore Commands ---
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupExportResult {
+    pub file_path: String,
+    pub file_size_bytes: u64,
+    pub exported_at: i64,
+    pub hosts_count: usize,
+    pub groups_count: usize,
+    pub identities_count: usize,
+    pub snippets_count: usize,
+    pub tunnels_count: usize,
+}
+
+#[tauri::command]
+pub fn backup_export_to_file(
+    file_path: String,
+    passphrase: String,
+    state: State<'_, AppState>,
+) -> Result<BackupExportResult, String> {
+    if passphrase.trim().is_empty() {
+        return Err("Export passphrase cannot be empty. A strong passphrase is required to secure your backup.".into());
+    }
+
+    let active_key = state.get_encryption_key()?;
+    let backup_data = state
+        .db
+        .export_backup_data(&active_key)
+        .map_err(|e| format!("Failed to export backup data from database: {}", e))?;
+
+    let json_payload = serde_json::to_string(&backup_data)
+        .map_err(|e| format!("Serialization error during backup generation: {}", e))?;
+
+    let envelope = crypto::export_backup_envelope(&json_payload, &passphrase)
+        .map_err(|e| format!("Encryption error during backup package generation: {}", e))?;
+
+    let serialized = serde_json::to_string_pretty(&envelope)
+        .map_err(|e| format!("Failed to serialize backup envelope: {}", e))?;
+
+    std::fs::write(&file_path, &serialized)
+        .map_err(|e| format!("Failed to write backup archive to '{}': {}", file_path, e))?;
+
+    let file_size_bytes = serialized.as_bytes().len() as u64;
+
+    Ok(BackupExportResult {
+        file_path,
+        file_size_bytes,
+        exported_at: backup_data.exported_at,
+        hosts_count: backup_data.hosts.len(),
+        groups_count: backup_data.groups.len(),
+        identities_count: backup_data.identities.len(),
+        snippets_count: backup_data.snippets.len(),
+        tunnels_count: backup_data.tunnels.len(),
+    })
+}
+
+#[tauri::command]
+pub fn backup_read_file(file_path: String) -> Result<String, String> {
+    std::fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read backup file at '{}': {}", file_path, e))
+}
+
+#[cfg(target_os = "macos")]
+fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let script = format!(
+        "POSIX path of (choose file name with prompt \"Save Haze Backup Archive\" default name \"{}\")",
+        default_name.replace('"', "\\\"")
+    );
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("Failed to launch save dialog: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn os_pick_file_dialog() -> Result<Option<String>, String> {
+    let script = "POSIX path of (choose file with prompt \"Select Haze Backup Archive (.haze, .json)\")";
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .map_err(|e| format!("Failed to launch file selection dialog: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let script = format!(
+        "Add-Type -AssemblyName System.Windows.Forms; $dlg = New-Object System.Windows.Forms.SaveFileDialog; $dlg.Filter = 'Haze Backup Archive (*.haze)|*.haze|All files (*.*)|*.*'; $dlg.FileName = '{}'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ $dlg.FileName }}",
+        default_name.replace('\'', "''")
+    );
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .output()
+        .map_err(|e| format!("Failed to launch save dialog on Windows: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn os_pick_file_dialog() -> Result<Option<String>, String> {
+    let script = "Add-Type -AssemblyName System.Windows.Forms; $dlg = New-Object System.Windows.Forms.OpenFileDialog; $dlg.Filter = 'Haze Backup Archive (*.haze;*.json)|*.haze;*.json|All files (*.*)|*.*'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dlg.FileName }";
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .output()
+        .map_err(|e| format!("Failed to launch file dialog on Windows: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let output = std::process::Command::new("zenity")
+        .args(["--file-selection", "--save", "--confirm-overwrite", "--title=Save Haze Backup Archive", &format!("--filename={}", default_name)])
+        .output();
+
+    if let Ok(out) = output {
+        if out.status.success() {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Ok(Some(path));
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(target_os = "linux")]
+fn os_pick_file_dialog() -> Result<Option<String>, String> {
+    let output = std::process::Command::new("zenity")
+        .args(["--file-selection", "--title=Select Haze Backup Archive", "--file-filter=Haze Backup (*.haze *.json) | *.haze *.json"])
+        .output();
+
+    if let Ok(out) = output {
+        if out.status.success() {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Ok(Some(path));
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn os_save_file_dialog(_default_name: &str) -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn os_pick_file_dialog() -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+#[tauri::command]
+pub fn dialog_save_backup_path(default_filename: String) -> Result<Option<String>, String> {
+    os_save_file_dialog(&default_filename)
+}
+
+#[tauri::command]
+pub fn dialog_pick_backup_file() -> Result<Option<String>, String> {
+    os_pick_file_dialog()
+}
+
 #[tauri::command]
 pub fn backup_export(passphrase: String, state: State<'_, AppState>) -> Result<String, String> {
     if passphrase.trim().is_empty() {

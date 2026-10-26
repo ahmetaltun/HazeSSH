@@ -14,7 +14,7 @@ import type { Tunnel, CreateTunnelInput, TunnelRuntimeStatus } from "@/types/tun
 import type { GeneratedKeyPair } from "@/types/crypto";
 import type { SshEvent } from "@/types/ssh";
 import type { FileEntry } from "@/types/sftp";
-import type { BackupSummary, RestoreStrategy } from "@/types/backup";
+import type { BackupSummary, RestoreStrategy, BackupExportResult } from "@/types/backup";
 import type {
   SshConfigParseResult,
   ImportSshHostsInput,
@@ -243,6 +243,25 @@ export const api = {
   },
 
   // --- Backup & Restore ---
+  dialogSaveBackupPath: async (defaultFilename: string): Promise<string | null> => {
+    return await invoke<string | null>("dialog_save_backup_path", { defaultFilename });
+  },
+
+  dialogPickBackupFile: async (): Promise<string | null> => {
+    return await invoke<string | null>("dialog_pick_backup_file");
+  },
+
+  backupExportToFile: async (
+    filePath: string,
+    passphrase: string,
+  ): Promise<BackupExportResult> => {
+    return await invoke<BackupExportResult>("backup_export_to_file", { filePath, passphrase });
+  },
+
+  backupReadFile: async (filePath: string): Promise<string> => {
+    return await invoke<string>("backup_read_file", { filePath });
+  },
+
   backupExport: async (passphrase: string): Promise<string> => {
     return await invoke<string>("backup_export", { passphrase });
   },
