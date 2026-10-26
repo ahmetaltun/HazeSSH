@@ -77,6 +77,7 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
       shortcuts: [
         { description: "Select All Files", mac: "⌘A", win: "Ctrl+A" },
         { description: "Deselect All Files", mac: "Esc / ⌘⇧A", win: "Esc / Ctrl+Shift+A" },
+        { description: "Delete Selected", mac: "⌘⌫ / Del", win: "Del" },
         { description: "Switch Active Pane", mac: "Tab", win: "Tab" },
         { description: "Multi-select Items", mac: "⌘Click / ⇧Click", win: "Ctrl+Click / ⇧Click" },
       ],

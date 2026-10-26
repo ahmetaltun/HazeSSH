@@ -321,7 +321,13 @@ export function FileExplorerPane({
     }
   };
 
-  // Desktop Keyboard Shortcuts (Cmd+A / Ctrl+A to select all, Escape / Cmd+Shift+A to deselect all)
+  const handleOpenDelete = (targets: FileEntry[]) => {
+    if (targets.length === 0) return;
+    setFilesToDelete(targets);
+    setIsDeleteOpen(true);
+  };
+
+  // Desktop Keyboard Shortcuts (Cmd+A / Ctrl+A to select all, Escape / Cmd+Shift+A to deselect all, Delete / Cmd+Backspace to delete)
   useEffect(() => {
     if (!isActive) return;
 
@@ -368,6 +374,18 @@ export function FileExplorerPane({
         handleSelectFiles([]);
         return;
       }
+
+      // Delete / Cmd+Backspace: Open delete confirmation for selected files
+      const isDeleteKey =
+        e.key === "Delete" ||
+        (isMetaOrCtrl && e.key === "Backspace");
+
+      if (isDeleteKey && activeSelectedFiles.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleOpenDelete(activeSelectedFiles);
+        return;
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -395,12 +413,6 @@ export function FileExplorerPane({
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
     }
-  };
-
-  const handleOpenDelete = (targets: FileEntry[]) => {
-    if (targets.length === 0) return;
-    setFilesToDelete(targets);
-    setIsDeleteOpen(true);
   };
 
   const handleConfirmDelete = async () => {

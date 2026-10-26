@@ -99,8 +99,11 @@ export function FileContextMenu({
       ? selectedFiles
       : targetEntry
       ? [targetEntry]
+      : selectedFiles.length > 0
+      ? selectedFiles
       : [];
 
+  const hasTargets = activeTargets.length > 0;
   const isSingle = activeTargets.length === 1;
   const singleItem = isSingle ? activeTargets[0] : null;
   const isFolder = singleItem?.is_dir ?? false;
@@ -124,49 +127,54 @@ export function FileContextMenu({
       style={{ top: `${pos.top}px`, left: `${pos.left}px` }}
       className="fixed z-50 min-w-44 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none"
     >
-      {/* If right-clicked on an entry */}
-      {singleItem ? (
+      {/* If any entries are targeted/selected */}
+      {hasTargets ? (
         <>
-          {isFolder ? (
-            <button
-              type="button"
-              onClick={() => {
-                onOpenFolder?.(singleItem);
-                onClose();
-              }}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left font-medium"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-warning" />
-              <span>Open Folder</span>
-            </button>
-          ) : (
+          {/* Single item inspection actions */}
+          {singleItem && (
             <>
-              {/* Preview action */}
-              <button
-                type="button"
-                onClick={() => {
-                  onPreviewFile?.(singleItem);
-                  onClose();
-                }}
-                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left font-medium"
-              >
-                <Eye className="w-3.5 h-3.5 text-primary" />
-                <span>Preview</span>
-              </button>
-
-              {/* Edit action for text/code/md */}
-              {canEdit && (
+              {isFolder ? (
                 <button
                   type="button"
                   onClick={() => {
-                    onEditFile?.(singleItem);
+                    onOpenFolder?.(singleItem);
                     onClose();
                   }}
-                  className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left"
+                  className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left font-medium"
                 >
-                  <FilePenLine className="w-3.5 h-3.5 text-info" />
-                  <span>Edit in Editor</span>
+                  <FolderOpen className="w-3.5 h-3.5 text-warning" />
+                  <span>Open Folder</span>
                 </button>
+              ) : (
+                <>
+                  {/* Preview action */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPreviewFile?.(singleItem);
+                      onClose();
+                    }}
+                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left font-medium"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-primary" />
+                    <span>Preview</span>
+                  </button>
+
+                  {/* Edit action for text/code/md */}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onEditFile?.(singleItem);
+                        onClose();
+                      }}
+                      className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left"
+                    >
+                      <FilePenLine className="w-3.5 h-3.5 text-info" />
+                      <span>Edit in Editor</span>
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}
@@ -191,18 +199,22 @@ export function FileContextMenu({
 
           <div className="h-px bg-base-300 my-1" />
 
-          {/* Copy Path */}
+          {/* Copy Path(s) */}
           <button
             type="button"
             onClick={handleCopyPath}
             className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left"
           >
             <Copy className="w-3.5 h-3.5 text-base-content/70" />
-            <span>Copy Full Path</span>
+            <span>
+              {activeTargets.length > 1
+                ? `Copy ${activeTargets.length} Paths`
+                : "Copy Full Path"}
+            </span>
           </button>
 
           {/* Rename (only single item) */}
-          {isSingle && onRename && (
+          {singleItem && onRename && (
             <button
               type="button"
               onClick={() => {
@@ -218,7 +230,7 @@ export function FileContextMenu({
 
           <div className="h-px bg-base-300 my-1" />
 
-          {/* Delete */}
+          {/* Delete (Multi or Single) */}
           {onDelete && (
             <button
               type="button"
@@ -226,7 +238,7 @@ export function FileContextMenu({
                 onDelete(activeTargets);
                 onClose();
               }}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-error/15 text-error text-left"
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-error/15 text-error text-left font-medium"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>
@@ -234,6 +246,39 @@ export function FileContextMenu({
                 {activeTargets.length > 1 ? ` (${activeTargets.length})` : ""}
               </span>
             </button>
+          )}
+
+          {/* If right-clicked on empty area with active selection, also include New Folder and Refresh */}
+          {!targetEntry && (
+            <>
+              <div className="h-px bg-base-300 my-1" />
+              {onNewFolder && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNewFolder();
+                    onClose();
+                  }}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 text-secondary" />
+                  <span>New Folder</span>
+                </button>
+              )}
+              {onRefresh && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRefresh();
+                    onClose();
+                  }}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-primary" />
+                  <span>Refresh Pane</span>
+                </button>
+              )}
+            </>
           )}
         </>
       ) : (
