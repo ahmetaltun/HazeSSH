@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   Terminal,
   FolderGit2,
   Copy,
   Edit2,
   Trash2,
-  Check,
   PlusSquare,
   TerminalSquare,
 } from "lucide-react";
+import { api } from "@/services/api";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { useHostStore } from "@/stores/useHostStore";
@@ -33,7 +33,6 @@ export function HostContextMenu({
   onClose,
 }: HostContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [copiedType, setCopiedType] = useState<"address" | "command" | null>(null);
 
   const { openTab } = useMultiplexerStore();
   const { setView, setSftpTargetHostId } = useLayoutStore();
@@ -118,24 +117,24 @@ export function HostContextMenu({
 
   const handleCopyAddress = async () => {
     const fullAddress = `${host.username ? `${host.username}@` : ""}${host.hostname}:${host.port}`;
-    await navigator.clipboard.writeText(fullAddress);
-    setCopiedType("address");
-    setTimeout(() => {
-      setCopiedType(null);
-      onClose();
-    }, 500);
+    try {
+      await api.clipboardWriteText(fullAddress);
+    } catch {
+      await navigator.clipboard.writeText(fullAddress);
+    }
+    onClose();
   };
 
   const handleCopySshCommand = async () => {
     const userPart = host.username ? `${host.username}@` : "";
     const portPart = host.port && host.port !== 22 ? ` -p ${host.port}` : "";
     const cmd = `ssh ${userPart}${host.hostname}${portPart}`;
-    await navigator.clipboard.writeText(cmd);
-    setCopiedType("command");
-    setTimeout(() => {
-      setCopiedType(null);
-      onClose();
-    }, 500);
+    try {
+      await api.clipboardWriteText(cmd);
+    } catch {
+      await navigator.clipboard.writeText(cmd);
+    }
+    onClose();
   };
 
   const handleDuplicate = async () => {
@@ -163,7 +162,7 @@ export function HostContextMenu({
     <div
       ref={menuRef}
       style={{ top: `${y}px`, left: `${x}px` }}
-      className="fixed z-50 min-w-52 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none animate-in fade-in zoom-in-95 duration-100 font-sans"
+      className="fixed z-50 min-w-52 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none font-sans"
     >
       {/* Header with host label */}
       <div className="px-3 py-1.5 border-b border-base-300/60 mb-0.5 flex items-center gap-2">
@@ -212,12 +211,8 @@ export function HostContextMenu({
         className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-base-200 text-left cursor-pointer transition-colors"
       >
         <span className="flex items-center gap-2">
-          {copiedType === "command" ? (
-            <Check className="w-3.5 h-3.5 text-success" />
-          ) : (
-            <TerminalSquare className="w-3.5 h-3.5 text-base-content/70" />
-          )}
-          <span>{copiedType === "command" ? "Command Copied!" : "Copy SSH Command"}</span>
+          <TerminalSquare className="w-3.5 h-3.5 text-base-content/70" />
+          <span>Copy SSH Command</span>
         </span>
       </button>
 
@@ -228,12 +223,8 @@ export function HostContextMenu({
         className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-base-200 text-left cursor-pointer transition-colors"
       >
         <span className="flex items-center gap-2">
-          {copiedType === "address" ? (
-            <Check className="w-3.5 h-3.5 text-success" />
-          ) : (
-            <Copy className="w-3.5 h-3.5 text-base-content/70" />
-          )}
-          <span>{copiedType === "address" ? "Address Copied!" : "Copy Address"}</span>
+          <Copy className="w-3.5 h-3.5 text-base-content/70" />
+          <span>Copy Address</span>
         </span>
       </button>
 

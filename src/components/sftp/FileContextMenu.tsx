@@ -9,8 +9,8 @@ import {
   Trash2,
   FolderPlus,
   RefreshCw,
-  Check,
 } from "lucide-react";
+import { api } from "@/services/api";
 import type { FileEntry } from "@/types/sftp";
 import { isEditableText } from "@/utils/fileTypes";
 
@@ -53,7 +53,6 @@ export function FileContextMenu({
 }: FileContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: y, left: x });
-  const [copied, setCopied] = useState(false);
 
   // Position clamping to keep within viewport
   useEffect(() => {
@@ -110,20 +109,20 @@ export function FileContextMenu({
   const handleCopyPath = async () => {
     if (activeTargets.length > 0) {
       const paths = activeTargets.map((f) => f.path).join("\n");
-      await navigator.clipboard.writeText(paths);
-      setCopied(true);
-      setTimeout(() => {
-        setCopied(false);
-        onClose();
-      }, 600);
+      try {
+        await api.clipboardWriteText(paths);
+      } catch {
+        await navigator.clipboard.writeText(paths);
+      }
     }
+    onClose();
   };
 
   return (
     <div
       ref={menuRef}
       style={{ top: `${pos.top}px`, left: `${pos.left}px` }}
-      className="fixed z-50 min-w-44 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-50 min-w-44 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none"
     >
       {/* If right-clicked on an entry */}
       {singleItem ? (
@@ -198,12 +197,8 @@ export function FileContextMenu({
             onClick={handleCopyPath}
             className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-base-200 text-left"
           >
-            {copied ? (
-              <Check className="w-3.5 h-3.5 text-success" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 text-base-content/70" />
-            )}
-            <span>{copied ? "Path Copied!" : "Copy Full Path"}</span>
+            <Copy className="w-3.5 h-3.5 text-base-content/70" />
+            <span>Copy Full Path</span>
           </button>
 
           {/* Rename (only single item) */}

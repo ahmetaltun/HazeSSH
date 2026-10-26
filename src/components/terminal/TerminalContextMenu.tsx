@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   Copy,
   ClipboardPaste,
@@ -7,7 +7,6 @@ import {
   Rows2,
   RotateCcw,
   MousePointer2,
-  Check,
 } from "lucide-react";
 import { api } from "@/services/api";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
@@ -29,7 +28,6 @@ export function TerminalContextMenu({
   onClose,
 }: TerminalContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
   const { splitActivePane } = useMultiplexerStore();
 
   const session = terminalSessionManager.getSession(pane.id);
@@ -85,12 +83,6 @@ export function TerminalContextMenu({
         } catch {
           await navigator.clipboard.writeText(selectedText);
         }
-        setCopied(true);
-        setTimeout(() => {
-          setCopied(false);
-          onClose();
-        }, 500);
-        return;
       }
     }
     onClose();
@@ -139,7 +131,7 @@ export function TerminalContextMenu({
     <div
       ref={menuRef}
       style={{ top: `${y}px`, left: `${x}px` }}
-      className="fixed z-50 min-w-48 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none animate-in fade-in zoom-in-95 duration-100 font-sans"
+      className="fixed z-50 min-w-48 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none font-sans"
     >
       {/* Copy */}
       <button
@@ -151,12 +143,8 @@ export function TerminalContextMenu({
         }`}
       >
         <span className="flex items-center gap-2">
-          {copied ? (
-            <Check className="w-3.5 h-3.5 text-success" />
-          ) : (
-            <Copy className="w-3.5 h-3.5 text-primary" />
-          )}
-          <span>{copied ? "Copied!" : "Copy"}</span>
+          <Copy className="w-3.5 h-3.5 text-primary" />
+          <span>Copy</span>
         </span>
         <kbd className="kbd kbd-xs font-mono text-[9px] text-base-content/40">
           {formatShortcut("⌘C", "Ctrl+C")}

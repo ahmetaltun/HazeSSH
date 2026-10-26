@@ -87,7 +87,7 @@ export function TabContextMenu({
     <div
       ref={menuRef}
       style={{ top: `${y}px`, left: `${x}px` }}
-      className="fixed z-50 min-w-52 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none animate-in fade-in zoom-in-95 duration-100 font-sans"
+      className="fixed z-50 min-w-52 bg-base-100/95 backdrop-blur-md border border-base-300 rounded-lg shadow-2xl py-1 text-xs text-base-content select-none font-sans"
     >
       {/* Tab Title preview header */}
       <div className="px-3 py-1.5 border-b border-base-300/60 mb-0.5 flex items-center justify-between opacity-60">
