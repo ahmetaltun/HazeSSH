@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { useVaultStore } from "@/stores/useVaultStore";
 import { formatShortcut } from "@/utils/platform";
 import type { NavigationView } from "@/types/navigation";
 
@@ -70,9 +71,23 @@ export function Sidebar() {
     activeTunnelCount,
     isVaultLocked,
     hasMasterPassword,
-    setVaultLocked,
+    setVaultUnlockModalOpen,
     setAboutModalOpen,
   } = useLayoutStore();
+  const { lock } = useVaultStore();
+
+  const handleVaultToggle = async () => {
+    if (!hasMasterPassword) {
+      setView("settings");
+      return;
+    }
+
+    if (isVaultLocked) {
+      setVaultUnlockModalOpen(true);
+    } else {
+      await lock();
+    }
+  };
 
   const navItems: readonly NavItemConfig[] = [
     {
@@ -174,14 +189,25 @@ export function Sidebar() {
             isSidebarCollapsed ? "justify-center" : "justify-between"
           }`}
         >
-          <div className="flex items-center gap-2 overflow-hidden">
+          <button
+            type="button"
+            onClick={handleVaultToggle}
+            className="flex items-center gap-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity text-left flex-1"
+            title={
+              hasMasterPassword
+                ? isVaultLocked
+                  ? "Vault is locked. Click to unlock with Master Password."
+                  : "Vault is unlocked. Click to lock vault."
+                : "Protected with Device Vault. Click to configure Master Password in Settings."
+            }
+          >
             <div
               className={`w-2 h-2 rounded-full shrink-0 ${
                 isVaultLocked ? "bg-warning animate-pulse" : "bg-success"
               }`}
             />
             {!isSidebarCollapsed && (
-              <span className="text-[11px] text-base-content/70 truncate">
+              <span className="text-[11px] text-base-content/70 truncate select-none">
                 {hasMasterPassword
                   ? isVaultLocked
                     ? "Vault Locked"
@@ -189,20 +215,20 @@ export function Sidebar() {
                   : "Device Vault"}
               </span>
             )}
-          </div>
+          </button>
 
           {!isSidebarCollapsed && hasMasterPassword && (
             <button
               type="button"
-              onClick={() => setVaultLocked(!isVaultLocked)}
-              className="btn btn-ghost btn-xs btn-circle text-base-content/60 hover:text-base-content"
+              onClick={handleVaultToggle}
+              className="btn btn-ghost btn-xs btn-circle text-base-content/60 hover:text-base-content shrink-0"
               title={isVaultLocked ? "Unlock Vault" : "Lock Vault"}
               aria-label={isVaultLocked ? "Unlock Vault" : "Lock Vault"}
             >
               {isVaultLocked ? (
-                <Lock className="w-3 h-3 text-warning" />
+                <Lock className="w-3.5 h-3.5 text-warning" />
               ) : (
-                <Unlock className="w-3 h-3" />
+                <Unlock className="w-3.5 h-3.5" />
               )}
             </button>
           )}

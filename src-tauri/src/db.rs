@@ -469,6 +469,137 @@ impl Database {
         Ok(rows > 0)
     }
 
+    pub fn update_identity_encrypted_secret(
+        &self,
+        id: &str,
+        encrypted_secret: &str,
+        encrypted_passphrase: Option<&str>,
+    ) -> Result<(), DbError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE identities SET encrypted_secret = ?1, encrypted_passphrase = ?2 WHERE id = ?3",
+            params![encrypted_secret, encrypted_passphrase, id],
+        )?;
+        Ok(())
+    }
+
+    /// Atomically re-encrypts all stored identity secrets and passphrases from a source key to a target key.
+    /// If an item can already be decrypted with `target_key`, it is safely skipped (idempotent migration).
+    /// If an item fails to decrypt with `source_key` and a `fallback_key` is provided, it attempts
+    /// decrypting with `fallback_key` (enabling seamless self-healing of legacy records).
+    /// If any record cannot be decrypted or encrypted, the entire operation is rolled back.
+    pub fn reencrypt_all_identities(
+        &self,
+        source_key: &[u8; 32],
+        target_key: &[u8; 32],
+        fallback_key: Option<&[u8; 32]>,
+    ) -> Result<usize, DbError> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        let mut stmt = tx.prepare(
+            "SELECT id, name, encrypted_secret, encrypted_passphrase FROM identities",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+
+        let mut identities_to_update = Vec::new();
+
+        for row in rows {
+            let (id, name, enc_secret, enc_pass) = row?;
+
+            // If the record can already be decrypted with target_key, it's already migrated
+            let already_target_secret = crypto::decrypt_secret(&enc_secret, target_key);
+            let already_target_pass = match enc_pass {
+                Some(ref ep) => crypto::decrypt_secret(ep, target_key).is_ok(),
+                None => true,
+            };
+
+            if already_target_secret.is_ok() && already_target_pass {
+                continue;
+            }
+
+            // Decrypt secret: try source_key, then fallback_key if provided
+            let secret = match crypto::decrypt_secret(&enc_secret, source_key) {
+                Ok(s) => s,
+                Err(err) => {
+                    if let Some(fb_key) = fallback_key {
+                        crypto::decrypt_secret(&enc_secret, fb_key).map_err(|fb_err| {
+                            DbError::Crypto(format!(
+                                "Failed to decrypt secret for identity '{}' ({}) with both source key ({}) and fallback key ({})",
+                                name, id, err, fb_err
+                            ))
+                        })?
+                    } else {
+                        return Err(DbError::Crypto(format!(
+                            "Failed to decrypt secret for identity '{}' ({}) with source key: {}",
+                            name, id, err
+                        )));
+                    }
+                }
+            };
+
+            // Decrypt passphrase if present
+            let passphrase = match enc_pass {
+                Some(ref ep) => {
+                    let p = match crypto::decrypt_secret(ep, source_key) {
+                        Ok(p) => p,
+                        Err(err) => {
+                            if let Some(fb_key) = fallback_key {
+                                crypto::decrypt_secret(ep, fb_key).map_err(|fb_err| {
+                                    DbError::Crypto(format!(
+                                        "Failed to decrypt passphrase for identity '{}' ({}) with both source key ({}) and fallback key ({})",
+                                        name, id, err, fb_err
+                                    ))
+                                })?
+                            } else {
+                                return Err(DbError::Crypto(format!(
+                                    "Failed to decrypt passphrase for identity '{}' ({}) with source key: {}",
+                                    name, id, err
+                                )));
+                            }
+                        }
+                    };
+                    Some(p)
+                }
+                None => None,
+            };
+
+            // Re-encrypt with target key
+            let new_enc_secret = crypto::encrypt_secret(&secret, target_key)
+                .map_err(|e| DbError::Crypto(format!("Failed to re-encrypt secret for identity '{}': {}", name, e)))?;
+
+            let new_enc_pass = match passphrase {
+                Some(ref p) => Some(crypto::encrypt_secret(p, target_key).map_err(|e| {
+                    DbError::Crypto(format!("Failed to re-encrypt passphrase for identity '{}': {}", name, e))
+                })?),
+                None => None,
+            };
+
+            identities_to_update.push((id, new_enc_secret, new_enc_pass));
+        }
+
+        drop(stmt);
+
+        let count = identities_to_update.len();
+        for (id, new_enc_secret, new_enc_pass) in identities_to_update {
+            tx.execute(
+                "UPDATE identities SET encrypted_secret = ?1, encrypted_passphrase = ?2 WHERE id = ?3",
+                params![new_enc_secret, new_enc_pass, id],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(count)
+    }
+
     // --- Snippets Operations ---
 
     pub fn list_snippets(&self) -> Result<Vec<Snippet>, DbError> {
@@ -698,13 +829,32 @@ impl Database {
         let mut identities = Vec::new();
         for item in id_iter {
             let (id, name, identity_type, username, enc_secret, enc_pass, created_at) = item?;
-            let decrypted_secret = crypto::decrypt_secret(&enc_secret, active_key).map_err(|e| {
-                DbError::Crypto(format!("Failed to decrypt secret for identity '{}': {}", name, e))
-            })?;
+            let decrypted_secret = match crypto::decrypt_secret(&enc_secret, active_key) {
+                Ok(s) => s,
+                Err(err) => {
+                    let (salt, _, _) = self.get_vault_salt_and_hash()?;
+                    let device_key = crypto::derive_key("haze_ssh_device_key", salt.as_bytes())
+                        .map_err(|e| DbError::Crypto(format!("Failed to derive device key: {}", e)))?;
+                    crypto::decrypt_secret(&enc_secret, &device_key).map_err(|_| {
+                        DbError::Crypto(format!("Failed to decrypt secret for identity '{}': {}", name, err))
+                    })?
+                }
+            };
             let decrypted_passphrase = match enc_pass {
-                Some(ref p) => Some(crypto::decrypt_secret(p, active_key).map_err(|e| {
-                    DbError::Crypto(format!("Failed to decrypt passphrase for identity '{}': {}", name, e))
-                })?),
+                Some(ref p) => {
+                    let decrypted_p = match crypto::decrypt_secret(p, active_key) {
+                        Ok(val) => val,
+                        Err(err) => {
+                            let (salt, _, _) = self.get_vault_salt_and_hash()?;
+                            let device_key = crypto::derive_key("haze_ssh_device_key", salt.as_bytes())
+                                .map_err(|e| DbError::Crypto(format!("Failed to derive device key: {}", e)))?;
+                            crypto::decrypt_secret(p, &device_key).map_err(|_| {
+                                DbError::Crypto(format!("Failed to decrypt passphrase for identity '{}': {}", name, err))
+                            })?
+                        }
+                    };
+                    Some(decrypted_p)
+                }
                 None => None,
             };
 
@@ -1679,5 +1829,165 @@ mod tests {
         let hosts = db.list_hosts().unwrap();
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].label, "Backup Host");
+    }
+
+    #[test]
+    fn test_reencrypt_all_identities_roundtrip() {
+        let db = setup_test_db();
+        let key_a = [0x11u8; 32];
+        let key_b = [0x22u8; 32];
+
+        // 1. Create two identities encrypted with key_a
+        let enc_secret_1 = crypto::encrypt_secret("secret_alpha", &key_a).unwrap();
+        let enc_pass_1 = Some(crypto::encrypt_secret("pass_alpha", &key_a).unwrap());
+        let ident1 = db
+            .create_identity(
+                CreateIdentityInput {
+                    name: "Key A 1".into(),
+                    identity_type: "key".into(),
+                    username: Some("root".into()),
+                    secret: "".into(),
+                    passphrase: None,
+                },
+                enc_secret_1,
+                enc_pass_1,
+            )
+            .unwrap();
+
+        let enc_secret_2 = crypto::encrypt_secret("secret_beta", &key_a).unwrap();
+        let ident2 = db
+            .create_identity(
+                CreateIdentityInput {
+                    name: "Key A 2".into(),
+                    identity_type: "password".into(),
+                    username: Some("user".into()),
+                    secret: "".into(),
+                    passphrase: None,
+                },
+                enc_secret_2,
+                None,
+            )
+            .unwrap();
+
+        // 2. Re-encrypt from key_a to key_b
+        let count = db.reencrypt_all_identities(&key_a, &key_b, None).unwrap();
+        assert_eq!(count, 2);
+
+        // 3. Verify they can now be decrypted with key_b
+        let (s1, p1) = db.get_identity_secret(&ident1.id).unwrap();
+        assert_eq!(crypto::decrypt_secret(&s1, &key_b).unwrap(), "secret_alpha");
+        assert_eq!(crypto::decrypt_secret(&p1.unwrap(), &key_b).unwrap(), "pass_alpha");
+
+        let (s2, p2) = db.get_identity_secret(&ident2.id).unwrap();
+        assert_eq!(crypto::decrypt_secret(&s2, &key_b).unwrap(), "secret_beta");
+        assert!(p2.is_none());
+
+        // 4. Verify that key_a now fails
+        assert!(crypto::decrypt_secret(&s1, &key_a).is_err());
+    }
+
+    #[test]
+    fn test_reencrypt_all_identities_with_fallback() {
+        let db = setup_test_db();
+        let legacy_key = [0x33u8; 32];
+        let current_key = [0x44u8; 32];
+        let new_key = [0x55u8; 32];
+
+        // Identity 1: Encrypted with current_key
+        let enc1 = crypto::encrypt_secret("val_current", &current_key).unwrap();
+        let id1 = db
+            .create_identity(
+                CreateIdentityInput {
+                    name: "Current Ident".into(),
+                    identity_type: "password".into(),
+                    username: None,
+                    secret: "".into(),
+                    passphrase: None,
+                },
+                enc1,
+                None,
+            )
+            .unwrap()
+            .id;
+
+        // Identity 2: Encrypted with legacy_key (simulating existing records prior to master pwd)
+        let enc2 = crypto::encrypt_secret("val_legacy", &legacy_key).unwrap();
+        let id2 = db
+            .create_identity(
+                CreateIdentityInput {
+                    name: "Legacy Ident".into(),
+                    identity_type: "key".into(),
+                    username: None,
+                    secret: "".into(),
+                    passphrase: None,
+                },
+                enc2,
+                None,
+            )
+            .unwrap()
+            .id;
+
+        // Re-encrypt from current_key to new_key, using legacy_key as fallback
+        let count = db
+            .reencrypt_all_identities(&current_key, &new_key, Some(&legacy_key))
+            .unwrap();
+        assert_eq!(count, 2);
+
+        // Both should now be decrypted with new_key
+        let (s1, _) = db.get_identity_secret(&id1).unwrap();
+        assert_eq!(crypto::decrypt_secret(&s1, &new_key).unwrap(), "val_current");
+
+        let (s2, _) = db.get_identity_secret(&id2).unwrap();
+        assert_eq!(crypto::decrypt_secret(&s2, &new_key).unwrap(), "val_legacy");
+    }
+
+    #[test]
+    fn test_reencrypt_all_identities_rollback_on_failure() {
+        let db = setup_test_db();
+        let key_a = [0x66u8; 32];
+        let key_b = [0x77u8; 32];
+
+        // Identity 1: Valid
+        let enc1 = crypto::encrypt_secret("valid_secret", &key_a).unwrap();
+        let id1 = db
+            .create_identity(
+                CreateIdentityInput {
+                    name: "Valid Ident".into(),
+                    identity_type: "password".into(),
+                    username: None,
+                    secret: "".into(),
+                    passphrase: None,
+                },
+                enc1.clone(),
+                None,
+            )
+            .unwrap()
+            .id;
+
+        // Identity 2: Corrupted payload that cannot be decrypted
+        let corrupted_enc = "not_valid_base64_or_ciphertext".to_string();
+        let _id2 = db
+            .create_identity(
+                CreateIdentityInput {
+                    name: "Corrupt Ident".into(),
+                    identity_type: "password".into(),
+                    username: None,
+                    secret: "".into(),
+                    passphrase: None,
+                },
+                corrupted_enc,
+                None,
+            )
+            .unwrap()
+            .id;
+
+        // Attempt re-encryption; should fail and rollback
+        let result = db.reencrypt_all_identities(&key_a, &key_b, None);
+        assert!(result.is_err());
+
+        // Identity 1 should STILL have original ciphertext intact with key_a
+        let (s1, _) = db.get_identity_secret(&id1).unwrap();
+        assert_eq!(s1, enc1);
+        assert_eq!(crypto::decrypt_secret(&s1, &key_a).unwrap(), "valid_secret");
     }
 }

@@ -60,6 +60,10 @@ export function SettingsView() {
 
   const handleToggle = () => {
     if (hasMasterPassword) {
+      if (isLocked) {
+        setModalMode("unlock");
+        return;
+      }
       setModalMode("disable");
     } else {
       setModalMode("setup");

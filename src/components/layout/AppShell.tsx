@@ -4,6 +4,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { CommandPaletteModal } from "@/components/layout/CommandPaletteModal";
 import { AboutModal } from "@/components/layout/AboutModal";
+import { VaultModal } from "@/components/vault/VaultModal";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { MultiplexerArea } from "@/components/multiplexer/MultiplexerArea";
 import { HostsView } from "@/components/views/HostsView";
@@ -55,6 +56,8 @@ export function AppShell() {
     setActiveSection,
     setCommandPaletteOpen,
     setShortcutsModalOpen,
+    isVaultUnlockModalOpen,
+    setVaultUnlockModalOpen,
   } = useLayoutStore();
   const { initTheme } = useThemeStore();
   const { fetchStatus } = useVaultStore();
@@ -376,6 +379,13 @@ export function AppShell() {
       {/* Global Command Palette & About Modals */}
       <CommandPaletteModal />
       <AboutModal />
+
+      {/* Global Vault Unlock Modal */}
+      <VaultModal
+        isOpen={isVaultUnlockModalOpen}
+        mode="unlock"
+        onClose={() => setVaultUnlockModalOpen(false)}
+      />
     </div>
   );
 }

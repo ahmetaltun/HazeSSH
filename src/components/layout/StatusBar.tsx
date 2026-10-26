@@ -18,6 +18,7 @@ export function StatusBar() {
     setActiveSection,
     setAboutModalOpen,
     setCommandPaletteOpen,
+    setVaultUnlockModalOpen,
   } = useLayoutStore();
   const { tabs } = useMultiplexerStore();
 
@@ -53,9 +54,19 @@ export function StatusBar() {
 
         <button
           type="button"
-          onClick={() => setView("settings")}
+          onClick={() => {
+            if (hasMasterPassword && isVaultLocked) {
+              setVaultUnlockModalOpen(true);
+            } else {
+              setView("settings");
+            }
+          }}
           className="flex items-center gap-1 hover:text-base-content transition-colors cursor-pointer"
-          title="Click to view Vault Security settings"
+          title={
+            hasMasterPassword && isVaultLocked
+              ? "Vault is locked. Click to unlock with Master Password."
+              : "Click to view Vault Security settings"
+          }
         >
           <ShieldCheck
             className={`w-3 h-3 ${isVaultLocked ? "text-warning" : "text-success"}`}

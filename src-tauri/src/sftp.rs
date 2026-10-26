@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::commands::AppState;
-use crate::crypto;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileEntry {
@@ -128,19 +127,9 @@ async fn connect_sftp(
     let mut auth_success = false;
 
     if let Some(ref iid) = host.identity_id {
-        let enc_key = state.get_encryption_key()?;
-        let (enc_secret, enc_pass) = state.db.get_identity_secret(iid).map_err(|e| e.to_string())?;
-        let secret = crypto::decrypt_secret(&enc_secret, &enc_key)
-            .map_err(|e| format!("Failed to decrypt identity secret: {}", e))?;
+        let (secret, pass) = state.get_decrypted_identity(iid)?;
 
         if secret.contains("PRIVATE KEY") {
-            let pass = if let Some(ref ep) = enc_pass {
-                Some(crypto::decrypt_secret(ep, &enc_key)
-                    .map_err(|e| format!("Failed to decrypt passphrase: {}", e))?)
-            } else {
-                None
-            };
-
             if let Ok(key_pair) = russh_keys::decode_secret_key(&secret, pass.as_deref())
                 && let Ok(success) = session.authenticate_publickey(&username, Arc::new(key_pair)).await {
                     auth_success = success;

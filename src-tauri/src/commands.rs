@@ -34,11 +34,21 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Derives the transparent deterministic device-level key from the unique vault salt.
+    pub fn get_device_key(&self) -> Result<[u8; 32], String> {
+        let (salt, _hash, _is_password_enabled) = self
+            .db
+            .get_vault_salt_and_hash()
+            .map_err(|e| format!("Database error while checking vault salt: {}", e))?;
+        crypto::derive_key("haze_ssh_device_key", salt.as_bytes())
+            .map_err(|e| format!("Failed to derive local device encryption key: {}", e))
+    }
+
     /// Returns the active 32-byte encryption key.
     /// If a master password is set and the vault is locked, returns an error.
     /// If no master password is set, derives a transparent local-device key using the unique vault salt.
     pub fn get_encryption_key(&self) -> Result<[u8; 32], String> {
-        let (salt, _hash, is_password_enabled) = self
+        let (_, _, is_password_enabled) = self
             .db
             .get_vault_salt_and_hash()
             .map_err(|e| format!("Database error while checking vault salt: {}", e))?;
@@ -50,9 +60,74 @@ impl AppState {
                 None => Err("Vault is locked. Please unlock with master password.".into()),
             }
         } else {
-            // Master password is not enabled: derive a deterministic device-level key from unique salt
-            crypto::derive_key("haze_ssh_device_key", salt.as_bytes())
-                .map_err(|e| format!("Failed to derive local device encryption key: {}", e))
+            self.get_device_key()
+        }
+    }
+
+    /// Decrypts the secret and optional passphrase for a given identity ID.
+    /// Uses the active encryption key. If decryption fails and a master password is set,
+    /// it attempts to decrypt using the legacy device key as a fallback.
+    /// If fallback succeeds, it transparently heals the record by re-encrypting it
+    /// with the active key in the database.
+    pub fn get_decrypted_identity(
+        &self,
+        identity_id: &str,
+    ) -> Result<(String, Option<String>), String> {
+        let active_key = self.get_encryption_key()?;
+        let (enc_secret, enc_pass) = self
+            .db
+            .get_identity_secret(identity_id)
+            .map_err(|e| format!("Failed to get identity secret for '{}': {}", identity_id, e))?;
+
+        let secret_res = crypto::decrypt_secret(&enc_secret, &active_key);
+
+        match secret_res {
+            Ok(secret) => {
+                let passphrase = match enc_pass {
+                    Some(ref ep) => Some(
+                        crypto::decrypt_secret(ep, &active_key)
+                            .map_err(|e| format!("Failed to decrypt identity passphrase: {}", e))?,
+                    ),
+                    None => None,
+                };
+                Ok((secret, passphrase))
+            }
+            Err(primary_err) => {
+                // If primary key failed, check if fallback to device key recovers the identity
+                let device_key = self.get_device_key()?;
+                if device_key != active_key {
+                    if let Ok(secret) = crypto::decrypt_secret(&enc_secret, &device_key) {
+                        let passphrase = match enc_pass {
+                            Some(ref ep) => Some(
+                                crypto::decrypt_secret(ep, &device_key).map_err(|e| {
+                                    format!("Failed to decrypt identity passphrase with device key: {}", e)
+                                })?,
+                            ),
+                            None => None,
+                        };
+
+                        // Transparently heal the record in SQLite with active_key
+                        if let Ok(new_enc_secret) = crypto::encrypt_secret(&secret, &active_key) {
+                            let new_enc_pass = match passphrase {
+                                Some(ref p) => crypto::encrypt_secret(p, &active_key).ok(),
+                                None => None,
+                            };
+                            let _ = self.db.update_identity_encrypted_secret(
+                                identity_id,
+                                &new_enc_secret,
+                                new_enc_pass.as_deref(),
+                            );
+                        }
+
+                        return Ok((secret, passphrase));
+                    }
+                }
+
+                Err(format!(
+                    "Failed to decrypt identity secret: {}",
+                    primary_err
+                ))
+            }
         }
     }
 }
@@ -73,30 +148,63 @@ pub fn vault_set_master_password(
     password: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let (salt, _, is_password_currently_enabled) = state
+        .db
+        .get_vault_salt_and_hash()
+        .map_err(|e| format!("Database error while checking vault salt: {}", e))?;
+
+    let device_key = state.get_device_key()?;
+
     match password {
         Some(pwd) if !pwd.trim().is_empty() => {
-            let hash = crypto::hash_password(&pwd)
+            let new_hash = crypto::hash_password(&pwd)
                 .map_err(|e| format!("Error hashing master password: {}", e))?;
 
-            let (salt, _, _) = state
-                .db
-                .get_vault_salt_and_hash()
-                .map_err(|e| format!("Error getting vault salt: {}", e))?;
+            let new_key = crypto::derive_key(&pwd, salt.as_bytes())
+                .map_err(|e| format!("Error deriving new key: {}", e))?;
 
-            let key = crypto::derive_key(&pwd, salt.as_bytes())
-                .map_err(|e| format!("Error deriving key: {}", e))?;
+            // Determine source key for re-encryption
+            let source_key = if is_password_currently_enabled {
+                let guard = state.active_key.lock().unwrap();
+                guard.ok_or_else(|| {
+                    "Cannot change master password while vault is locked. Please unlock the vault first.".to_string()
+                })?
+            } else {
+                device_key
+            };
+
+            // Re-encrypt all identities from source_key to new_key (with device_key as fallback)
+            state
+                .db
+                .reencrypt_all_identities(&source_key, &new_key, Some(&device_key))
+                .map_err(|e| format!("Failed to re-encrypt stored credentials with new master password: {}", e))?;
 
             state
                 .db
-                .set_master_password(Some(&hash), true)
+                .set_master_password(Some(&new_hash), true)
                 .map_err(|e| format!("Failed to save master password settings: {}", e))?;
 
             let mut guard = state.active_key.lock().unwrap();
-            *guard = Some(key);
+            *guard = Some(new_key);
             Ok(())
         }
         _ => {
-            // Disable master password
+            // Disable master password: must re-encrypt from current active key to device key
+            if is_password_currently_enabled {
+                let source_key = {
+                    let guard = state.active_key.lock().unwrap();
+                    guard.ok_or_else(|| {
+                        "Cannot disable master password while vault is locked. Please unlock the vault first.".to_string()
+                    })?
+                };
+
+                // Re-encrypt from source_key to device_key (with device_key as fallback)
+                state
+                    .db
+                    .reencrypt_all_identities(&source_key, &device_key, Some(&device_key))
+                    .map_err(|e| format!("Failed to re-encrypt stored credentials with device key: {}", e))?;
+            }
+
             state
                 .db
                 .set_master_password(None, false)
@@ -137,6 +245,12 @@ pub fn vault_unlock(password: String, state: State<'_, AppState>) -> Result<bool
 
     let mut guard = state.active_key.lock().unwrap();
     *guard = Some(key);
+    drop(guard);
+
+    // Opportunistically migrate any legacy device_key identities to the unlocked key
+    if let Ok(device_key) = state.get_device_key() {
+        let _ = state.db.reencrypt_all_identities(&device_key, &key, None);
+    }
 
     Ok(true)
 }
@@ -347,22 +461,9 @@ pub async fn tunnel_start(id: String, state: State<'_, AppState>) -> Result<(), 
     let mut passphrase = None;
 
     if let Some(ref iid) = host.identity_id {
-        let enc_key = state.get_encryption_key()?;
-        let (enc_secret, enc_pass) = state
-            .db
-            .get_identity_secret(iid)
-            .map_err(|e| format!("Failed to get identity secret: {}", e))?;
-        secret = Some(
-            crypto::decrypt_secret(&enc_secret, &enc_key)
-                .map_err(|e| format!("Failed to decrypt identity secret: {}", e))?,
-        );
-
-        if let Some(ref ep) = enc_pass {
-            passphrase = Some(
-                crypto::decrypt_secret(ep, &enc_key)
-                    .map_err(|e| format!("Failed to decrypt identity passphrase: {}", e))?,
-            );
-        }
+        let (s, p) = state.get_decrypted_identity(iid)?;
+        secret = Some(s);
+        passphrase = p;
     }
 
     state
@@ -423,15 +524,8 @@ pub async fn ssh_connect(
             let mut passphrase = None;
 
             if let Some(ref iid) = host.identity_id {
-                let enc_key = state.get_encryption_key()?;
-                let (enc_secret, enc_pass) = state.db.get_identity_secret(iid).map_err(|e| e.to_string())?;
-                let secret = crypto::decrypt_secret(&enc_secret, &enc_key)
-                    .map_err(|e| format!("Failed to decrypt identity secret: {}", e))?;
-
-                if let Some(ep) = enc_pass {
-                    passphrase = Some(crypto::decrypt_secret(&ep, &enc_key)
-                        .map_err(|e| format!("Failed to decrypt identity passphrase: {}", e))?);
-                }
+                let (secret, dec_pass) = state.get_decrypted_identity(iid)?;
+                passphrase = dec_pass;
 
                 if secret.contains("PRIVATE KEY") {
                     key = Some(secret);

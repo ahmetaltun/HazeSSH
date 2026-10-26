@@ -7,7 +7,6 @@ use russh_keys::key;
 use chrono::Utc;
 
 use crate::commands::AppState;
-use crate::crypto;
 use crate::models::ServerMetrics;
 
 pub const PROBE_COMMAND: &str = r#"
@@ -66,25 +65,9 @@ pub async fn fetch_server_metrics(
     let mut auth_success = false;
 
     if let Some(ref iid) = host.identity_id {
-        let enc_key = state.get_encryption_key()?;
-        let (enc_secret, enc_pass) = state
-            .db
-            .get_identity_secret(iid)
-            .map_err(|e| format!("Failed to read credentials: {}", e))?;
-
-        let secret = crypto::decrypt_secret(&enc_secret, &enc_key)
-            .map_err(|e| format!("Failed to decrypt identity secret: {}", e))?;
+        let (secret, pass) = state.get_decrypted_identity(iid)?;
 
         if secret.contains("PRIVATE KEY") {
-            let pass = if let Some(ref ep) = enc_pass {
-                Some(
-                    crypto::decrypt_secret(ep, &enc_key)
-                        .map_err(|e| format!("Failed to decrypt key passphrase: {}", e))?,
-                )
-            } else {
-                None
-            };
-
             if let Ok(key_pair) = russh_keys::decode_secret_key(&secret, pass.as_deref())
                 && let Ok(success) = session.authenticate_publickey(&username, Arc::new(key_pair)).await {
                     auth_success = success;
