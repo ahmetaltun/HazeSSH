@@ -95,32 +95,32 @@ impl AppState {
             Err(primary_err) => {
                 // If primary key failed, check if fallback to device key recovers the identity
                 let device_key = self.get_device_key()?;
-                if device_key != active_key {
-                    if let Ok(secret) = crypto::decrypt_secret(&enc_secret, &device_key) {
-                        let passphrase = match enc_pass {
-                            Some(ref ep) => Some(
-                                crypto::decrypt_secret(ep, &device_key).map_err(|e| {
-                                    format!("Failed to decrypt identity passphrase with device key: {}", e)
-                                })?,
-                            ),
+                if device_key != active_key
+                    && let Ok(secret) = crypto::decrypt_secret(&enc_secret, &device_key)
+                {
+                    let passphrase = match enc_pass {
+                        Some(ref ep) => Some(
+                            crypto::decrypt_secret(ep, &device_key).map_err(|e| {
+                                format!("Failed to decrypt identity passphrase with device key: {}", e)
+                            })?,
+                        ),
+                        None => None,
+                    };
+
+                    // Transparently heal the record in SQLite with active_key
+                    if let Ok(new_enc_secret) = crypto::encrypt_secret(&secret, &active_key) {
+                        let new_enc_pass = match passphrase {
+                            Some(ref p) => crypto::encrypt_secret(p, &active_key).ok(),
                             None => None,
                         };
-
-                        // Transparently heal the record in SQLite with active_key
-                        if let Ok(new_enc_secret) = crypto::encrypt_secret(&secret, &active_key) {
-                            let new_enc_pass = match passphrase {
-                                Some(ref p) => crypto::encrypt_secret(p, &active_key).ok(),
-                                None => None,
-                            };
-                            let _ = self.db.update_identity_encrypted_secret(
-                                identity_id,
-                                &new_enc_secret,
-                                new_enc_pass.as_deref(),
-                            );
-                        }
-
-                        return Ok((secret, passphrase));
+                        let _ = self.db.update_identity_encrypted_secret(
+                            identity_id,
+                            &new_enc_secret,
+                            new_enc_pass.as_deref(),
+                        );
                     }
+
+                    return Ok((secret, passphrase));
                 }
 
                 Err(format!(
@@ -789,7 +789,7 @@ pub fn backup_export_to_file(
     std::fs::write(&file_path, &serialized)
         .map_err(|e| format!("Failed to write backup archive to '{}': {}", file_path, e))?;
 
-    let file_size_bytes = serialized.as_bytes().len() as u64;
+    let file_size_bytes = serialized.len() as u64;
 
     Ok(BackupExportResult {
         file_path,
@@ -903,12 +903,12 @@ fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
         .args(["--file-selection", "--save", "--confirm-overwrite", "--title=Save Haze Backup Archive", &format!("--filename={}", default_name)])
         .output();
 
-    if let Ok(out) = output {
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Ok(Some(path));
-            }
+    if let Ok(out) = output
+        && out.status.success()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Ok(Some(path));
         }
     }
     Ok(None)
@@ -920,12 +920,12 @@ fn os_pick_file_dialog() -> Result<Option<String>, String> {
         .args(["--file-selection", "--title=Select Haze Backup Archive", "--file-filter=Haze Backup (*.haze *.json) | *.haze *.json"])
         .output();
 
-    if let Ok(out) = output {
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Ok(Some(path));
-            }
+    if let Ok(out) = output
+        && out.status.success()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Ok(Some(path));
         }
     }
     Ok(None)

@@ -236,10 +236,10 @@ impl PuttySessionDraft {
                     }
                 }
                 "PortNumber" => {
-                    if let Some(hex_part) = raw_val.strip_prefix("dword:") {
-                        if let Ok(parsed_hex) = u32::from_str_radix(hex_part, 16) {
-                            self.port = Some(parsed_hex as u16);
-                        }
+                    if let Some(hex_part) = raw_val.strip_prefix("dword:")
+                        && let Ok(parsed_hex) = u32::from_str_radix(hex_part, 16)
+                    {
+                        self.port = Some(parsed_hex as u16);
                     } else if let Ok(parsed_dec) = raw_val.trim_matches('"').parse::<u16>() {
                         self.port = Some(parsed_dec);
                     }
@@ -335,10 +335,10 @@ pub fn parse_putty_reg(
 
         // Section header e.g. [HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Production%20Web]
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            if let Some(prev) = current_session.take() {
-                if let Some(candidate) = prev.to_candidate(existing_hosts) {
-                    candidates.push(candidate);
-                }
+            if let Some(prev) = current_session.take()
+                && let Some(candidate) = prev.to_candidate(existing_hosts)
+            {
+                candidates.push(candidate);
             }
 
             let header = &trimmed[1..trimmed.len() - 1];
@@ -362,10 +362,10 @@ pub fn parse_putty_reg(
         }
     }
 
-    if let Some(last) = current_session.take() {
-        if let Some(candidate) = last.to_candidate(existing_hosts) {
-            candidates.push(candidate);
-        }
+    if let Some(last) = current_session.take()
+        && let Some(candidate) = last.to_candidate(existing_hosts)
+    {
+        candidates.push(candidate);
     }
 
     Ok(candidates)
