@@ -336,4 +336,13 @@ export const api = {
   telnetDisconnect: async (sessionId: string): Promise<void> => {
     return await invoke<void>("telnet_disconnect", { sessionId });
   },
+
+  // --- Clipboard ---
+  clipboardReadText: async (): Promise<string> => {
+    return await invoke<string>("clipboard_read_text");
+  },
+
+  clipboardWriteText: async (text: string): Promise<void> => {
+    return await invoke<void>("clipboard_write_text", { text });
+  },
 };

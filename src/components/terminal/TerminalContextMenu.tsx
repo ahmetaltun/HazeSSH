@@ -9,6 +9,7 @@ import {
   MousePointer2,
   Check,
 } from "lucide-react";
+import { api } from "@/services/api";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
 import { formatShortcut } from "@/utils/platform";
@@ -79,7 +80,11 @@ export function TerminalContextMenu({
     if (session) {
       const selectedText = session.term.getSelection();
       if (selectedText) {
-        await navigator.clipboard.writeText(selectedText);
+        try {
+          await api.clipboardWriteText(selectedText);
+        } catch {
+          await navigator.clipboard.writeText(selectedText);
+        }
         setCopied(true);
         setTimeout(() => {
           setCopied(false);
@@ -93,7 +98,13 @@ export function TerminalContextMenu({
 
   const handlePaste = async () => {
     try {
-      const text = await navigator.clipboard.readText();
+      let text = "";
+      try {
+        text = await api.clipboardReadText();
+      } catch {
+        text = await navigator.clipboard.readText();
+      }
+
       if (text && session) {
         session.term.paste(text);
       }

@@ -123,6 +123,8 @@ pub fn run() {
             commands::telnet_connect,
             commands::telnet_write,
             commands::telnet_disconnect,
+            commands::clipboard_read_text,
+            commands::clipboard_write_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

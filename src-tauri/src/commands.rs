@@ -912,5 +912,126 @@ pub async fn telnet_disconnect(
     state.telnet_manager.disconnect(&session_id).await
 }
 
+#[tauri::command]
+pub fn clipboard_read_text() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("pbpaste")
+            .output()
+            .map_err(|e| format!("Failed to read macOS pasteboard: {}", e))?;
+        return String::from_utf8(output.stdout)
+            .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(output) = std::process::Command::new("wl-paste").output() {
+            if output.status.success() {
+                return String::from_utf8(output.stdout)
+                    .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
+            }
+        }
+        let output = std::process::Command::new("xclip")
+            .args(["-selection", "clipboard", "-o"])
+            .output()
+            .map_err(|e| format!("Failed to read Linux clipboard: {}", e))?;
+        return String::from_utf8(output.stdout)
+            .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", "Get-Clipboard"])
+            .output()
+            .map_err(|e| format!("Failed to read Windows clipboard: {}", e))?;
+        return String::from_utf8(output.stdout)
+            .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Err("Unsupported operating system for native clipboard reading".into())
+    }
+}
+
+#[tauri::command]
+pub fn clipboard_write_text(text: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn pbcopy: {}", e))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("Failed to write to pbcopy stdin: {}", e))?;
+        }
+        child
+            .wait()
+            .map_err(|e| format!("pbcopy failed to terminate: {}", e))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        if let Ok(mut child) = std::process::Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            if let Ok(status) = child.wait() {
+                if status.success() {
+                    return Ok(());
+                }
+            }
+        }
+        let mut child = std::process::Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn xclip: {}", e))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("Failed to write to xclip stdin: {}", e))?;
+        }
+        child
+            .wait()
+            .map_err(|e| format!("xclip failed to terminate: {}", e))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("clip")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn clip: {}", e))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("Failed to write to clip stdin: {}", e))?;
+        }
+        child
+            .wait()
+            .map_err(|e| format!("clip failed to terminate: {}", e))?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = text;
+        Err("Unsupported operating system for native clipboard writing".into())
+    }
+}
+
+
 
 
