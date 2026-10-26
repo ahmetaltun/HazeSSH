@@ -56,6 +56,14 @@ pub fn run() {
                 sftp_manager: Arc::new(sftp::SftpManager::new()),
             });
 
+            // Fallback safety timeout: ensure window is revealed even if frontend script crashes
+            if let Some(win) = app.get_webview_window("main") {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(3500));
+                    let _ = win.show();
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

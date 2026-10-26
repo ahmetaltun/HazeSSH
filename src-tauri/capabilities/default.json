@@ -12,6 +12,8 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-is-maximized",
-    "core:window:allow-set-title-bar-style"
+    "core:window:allow-set-title-bar-style",
+    "core:window:allow-show",
+    "core:window:allow-set-focus"
   ]
 }

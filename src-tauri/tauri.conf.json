@@ -12,13 +12,16 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Haze SSH",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
         "hiddenTitle": true,
-        "titleBarStyle": "Overlay"
+        "titleBarStyle": "Overlay",
+        "visible": false,
+        "backgroundColor": "#282a36"
       }
     ],
     "security": {

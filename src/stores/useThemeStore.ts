@@ -59,8 +59,20 @@ interface ThemeState {
 const STORAGE_KEY = "haze_ssh_theme";
 const DEFAULT_THEME: ThemeId = "dracula";
 
+const getInitialTheme = (): ThemeId => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
+    if (saved && AVAILABLE_THEMES.some((t) => t.id === saved)) {
+      return saved;
+    }
+  } catch {
+    // Fallback if storage access is restricted
+  }
+  return DEFAULT_THEME;
+};
+
 export const useThemeStore = create<ThemeState>((set) => ({
-  currentTheme: DEFAULT_THEME,
+  currentTheme: getInitialTheme(),
 
   setTheme: (theme: ThemeId) => {
     try {
