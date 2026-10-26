@@ -16,6 +16,8 @@ import { useHostStore } from "@/stores/useHostStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { formatShortcut } from "@/utils/platform";
 import { useTerminalSettingsStore, POPULAR_TERMINAL_FONTS } from "@/stores/useTerminalSettingsStore";
+import { TERMINAL_THEME_OPTIONS } from "@/services/terminalThemes";
+import { terminalSessionManager } from "@/services/terminalSessionManager";
 import { VaultModal } from "@/components/vault/VaultModal";
 import { IdentityManagerModal } from "@/components/identities/IdentityManagerModal";
 import { ExportBackupModal } from "@/components/settings/ExportBackupModal";
@@ -36,6 +38,7 @@ export function SettingsView() {
     cursorBlink,
     scrollback,
     gpuAcceleration,
+    terminalTheme,
     setFontFamily,
     setFontSize,
     setLineHeight,
@@ -43,6 +46,7 @@ export function SettingsView() {
     setCursorBlink,
     setScrollback,
     setGpuAcceleration,
+    setTerminalTheme,
     resetToDefaults,
   } = useTerminalSettingsStore();
 
@@ -174,7 +178,11 @@ export function SettingsView() {
 
             <button
               type="button"
-              onClick={resetToDefaults}
+              onClick={() => {
+                resetToDefaults();
+                terminalSessionManager.syncSettings();
+                terminalSessionManager.syncTheme("auto");
+              }}
               className="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
               title="Reset terminal appearance to defaults"
             >
@@ -186,6 +194,57 @@ export function SettingsView() {
           <div className="divider my-1"></div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Terminal Color Palette */}
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-xs font-semibold text-base-content/80 flex items-center justify-between">
+                <span>Terminal Color Palette</span>
+                <span className="text-[10px] text-base-content/50 font-mono">
+                  {terminalTheme === "auto" ? "Synchronized with App Theme" : "Custom Override"}
+                </span>
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={terminalTheme}
+                  onChange={(e) => {
+                    const nextTheme = e.target.value;
+                    setTerminalTheme(nextTheme);
+                    terminalSessionManager.syncTheme(nextTheme);
+                  }}
+                  className="select select-sm select-bordered flex-1 text-xs"
+                >
+                  <optgroup label="Automatic Synchronization">
+                    <option value="auto">Auto (Match Active App Theme)</option>
+                  </optgroup>
+                  <optgroup label="Light Color Themes">
+                    {TERMINAL_THEME_OPTIONS.filter((t) => t.group === "light").map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Dark Color Themes">
+                    {TERMINAL_THEME_OPTIONS.filter((t) => t.group === "dark").map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                {terminalTheme !== "auto" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTerminalTheme("auto");
+                      terminalSessionManager.syncTheme("auto");
+                    }}
+                    className="btn btn-sm btn-ghost text-xs text-primary shrink-0"
+                    title="Reset to automatic app theme synchronization"
+                  >
+                    Reset to Auto
+                  </button>
+                )}
+              </div>
+            </div>
             {/* Font Family Selection */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-base-content/80 flex items-center justify-between">

@@ -7,7 +7,7 @@ import { api } from "@/services/api";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
 import { useTerminalSettingsStore } from "@/stores/useTerminalSettingsStore";
-import { getTerminalTheme } from "@/services/terminalThemes";
+import { resolveTerminalTheme } from "@/services/terminalThemes";
 import { FileDropModal, type DroppedFileInfo } from "@/components/terminal/FileDropModal";
 import { TerminalContextMenu } from "@/components/terminal/TerminalContextMenu";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
@@ -41,7 +41,10 @@ export function XTermTerminal({
     cursorBlink,
     scrollback,
     gpuAcceleration,
+    terminalTheme,
   } = useTerminalSettingsStore();
+
+  const activeTheme = resolveTerminalTheme(terminalTheme, currentTheme);
 
   const handlePastePath = (path: string) => {
     const toSend = path.includes(" ") ? `"${path}" ` : `${path} `;
@@ -243,9 +246,9 @@ export function XTermTerminal({
   useEffect(() => {
     const session = terminalSessionManager.getSession(pane.id);
     if (session) {
-      session.term.options.theme = getTerminalTheme(currentTheme);
+      session.term.options.theme = activeTheme;
     }
-  }, [currentTheme, pane.id]);
+  }, [activeTheme, pane.id]);
 
   // Sync typography and appearance settings live
   useEffect(() => {
@@ -290,7 +293,8 @@ export function XTermTerminal({
         e.stopPropagation();
         setContextMenu({ x: e.clientX, y: e.clientY });
       }}
-      className={`w-full h-full p-2 bg-base-100 overflow-hidden select-text relative transition-all ${
+      style={{ backgroundColor: activeTheme.background }}
+      className={`w-full h-full p-2 overflow-hidden select-text relative transition-colors duration-150 ${
         isDragOver ? "ring-2 ring-primary ring-inset" : ""
       }`}
       onClick={() => {

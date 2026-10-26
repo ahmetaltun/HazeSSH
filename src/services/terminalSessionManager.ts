@@ -4,7 +4,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { attachTerminalRenderer, type TerminalRendererHandle } from "@/components/terminal/terminalRenderer";
 import { api } from "@/services/api";
-import { getTerminalTheme } from "@/services/terminalThemes";
+import { resolveTerminalTheme } from "@/services/terminalThemes";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useTerminalSettingsStore } from "@/stores/useTerminalSettingsStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
@@ -64,7 +64,7 @@ class TerminalSessionManager {
       fontSize: initialSettings.fontSize,
       fontFamily: initialSettings.fontFamily,
       lineHeight: initialSettings.lineHeight,
-      theme: getTerminalTheme(currentTheme),
+      theme: resolveTerminalTheme(initialSettings.terminalTheme, currentTheme),
       allowProposedApi: true,
       scrollback: initialSettings.scrollback,
     });
@@ -498,8 +498,10 @@ class TerminalSessionManager {
     session.wrapperEl.remove();
   }
 
-  public syncTheme(themeName: string): void {
-    const theme = getTerminalTheme(themeName);
+  public syncTheme(terminalPreference?: string, appThemeId?: string): void {
+    const pref = terminalPreference ?? useTerminalSettingsStore.getState().terminalTheme;
+    const appTheme = appThemeId ?? useThemeStore.getState().currentTheme;
+    const theme = resolveTerminalTheme(pref, appTheme);
     for (const session of this.sessions.values()) {
       if (!session.isDisposed) {
         session.term.options.theme = theme;
@@ -543,3 +545,13 @@ class TerminalSessionManager {
 }
 
 export const terminalSessionManager = new TerminalSessionManager();
+
+// Automatically keep all active terminal sessions synchronized with app and terminal theme changes
+useThemeStore.subscribe((state) => {
+  terminalSessionManager.syncTheme(undefined, state.currentTheme);
+});
+
+useTerminalSettingsStore.subscribe((state) => {
+  terminalSessionManager.syncTheme(state.terminalTheme);
+});
+

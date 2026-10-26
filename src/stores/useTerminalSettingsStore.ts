@@ -52,6 +52,7 @@ interface TerminalSettingsState {
   readonly scrollback: number;
   readonly copyOnSelect: boolean;
   readonly gpuAcceleration: GpuAccelerationMode;
+  readonly terminalTheme: string;
 
   readonly setFontFamily: (fontFamily: string) => void;
   readonly setFontSize: (fontSize: number) => void;
@@ -61,6 +62,7 @@ interface TerminalSettingsState {
   readonly setScrollback: (scrollback: number) => void;
   readonly setCopyOnSelect: (copyOnSelect: boolean) => void;
   readonly setGpuAcceleration: (gpuAcceleration: GpuAccelerationMode) => void;
+  readonly setTerminalTheme: (terminalTheme: string) => void;
   readonly resetToDefaults: () => void;
 }
 
@@ -75,6 +77,7 @@ const DEFAULT_SETTINGS = {
   scrollback: 10000,
   copyOnSelect: false,
   gpuAcceleration: "auto" as GpuAccelerationMode,
+  terminalTheme: "auto",
 };
 
 function loadSavedSettings() {
@@ -102,6 +105,7 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
         scrollback: get().scrollback,
         copyOnSelect: get().copyOnSelect,
         gpuAcceleration: get().gpuAcceleration,
+        terminalTheme: get().terminalTheme,
         ...partial,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -151,6 +155,11 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
     setGpuAcceleration: (gpuAcceleration) => {
       persist({ gpuAcceleration });
       set({ gpuAcceleration });
+    },
+
+    setTerminalTheme: (terminalTheme) => {
+      persist({ terminalTheme });
+      set({ terminalTheme });
     },
 
     resetToDefaults: () => {
