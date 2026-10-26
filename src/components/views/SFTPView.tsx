@@ -48,7 +48,10 @@ export function SFTPView() {
   const [remoteRefreshKey, setRemoteRefreshKey] = useState(0);
 
   // In-app Editor state
-  const [editingFile, setEditingFile] = useState<FileEntry | null>(null);
+  const [editingTarget, setEditingTarget] = useState<{
+    file: FileEntry;
+    mode: "local" | "remote";
+  } | null>(null);
 
   // File Preview state
   const [previewTarget, setPreviewTarget] = useState<{
@@ -150,8 +153,12 @@ export function SFTPView() {
     }
   };
 
+  const handleOpenLocalFile = (file: FileEntry) => {
+    setEditingTarget({ file, mode: "local" });
+  };
+
   const handleOpenRemoteFile = (file: FileEntry) => {
-    setEditingFile(file);
+    setEditingTarget({ file, mode: "remote" });
   };
 
   const handleUploadFiles = async (files: FileEntry[]) => {
@@ -342,7 +349,7 @@ export function SFTPView() {
             selectedFiles={selectedLocalFiles}
             onSelectFiles={setSelectedLocalFiles}
             onNavigate={setLocalPath}
-            onOpenFile={(f) => setPreviewTarget({ file: f, mode: "local" })}
+            onOpenFile={handleOpenLocalFile}
             onPreviewFile={(f) => setPreviewTarget({ file: f, mode: "local" })}
             onTransfer={handleUploadFiles}
             transferLabel="Upload"
@@ -543,16 +550,23 @@ export function SFTPView() {
         </div>
       )}
 
-      {/* In-App Remote File Editor Modal */}
-      {editingFile && selectedHost && (
+      {/* In-App File Editor Modal */}
+      {editingTarget && (
         <RemoteEditorModal
           isOpen={true}
-          hostId={selectedHost.id}
-          hostLabel={selectedHost.label}
-          filePath={editingFile.path}
-          fileName={editingFile.name}
-          onClose={() => setEditingFile(null)}
-          onSaved={() => setRemoteRefreshKey((k) => k + 1)}
+          mode={editingTarget.mode}
+          hostId={selectedHost?.id}
+          hostLabel={selectedHost?.label}
+          filePath={editingTarget.file.path}
+          fileName={editingTarget.file.name}
+          onClose={() => setEditingTarget(null)}
+          onSaved={() => {
+            if (editingTarget.mode === "remote") {
+              setRemoteRefreshKey((k) => k + 1);
+            } else {
+              setLocalRefreshKey((k) => k + 1);
+            }
+          }}
         />
       )}
 
@@ -569,6 +583,8 @@ export function SFTPView() {
             setPreviewTarget(null);
             if (previewTarget.mode === "remote") {
               handleOpenRemoteFile(f);
+            } else {
+              handleOpenLocalFile(f);
             }
           }}
           onTransfer={(f) => {

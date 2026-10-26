@@ -269,8 +269,7 @@ export function FilePreviewModal({
           if (mode === "remote" && hostId) {
             text = await api.sftpReadFile(hostId, file.path);
           } else {
-            const base64 = await api.sftpLocalReadBinary(file.path);
-            text = new TextDecoder().decode(base64ToBlob(base64, "text/plain").slice() as unknown as ArrayBuffer);
+            text = await api.sftpLocalReadFile(file.path);
           }
           if (!isMounted) return;
           setTextContent(text);
@@ -428,7 +427,7 @@ export function FilePreviewModal({
                 type="button"
                 onClick={() => onTransfer(file)}
                 className="btn btn-ghost btn-xs btn-square"
-                title="Transfer file"
+                title={mode === "remote" ? "Download file" : "Upload file"}
               >
                 <Download className="w-3.5 h-3.5 text-secondary" />
               </button>
@@ -548,7 +547,7 @@ export function FilePreviewModal({
                   className="btn btn-primary btn-sm gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Transfer / Download to View</span>
+                  <span>{mode === "remote" ? "Download to View" : "Upload to Remote"}</span>
                 </button>
               )}
             </div>

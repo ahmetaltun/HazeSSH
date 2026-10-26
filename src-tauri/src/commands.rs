@@ -735,6 +735,17 @@ pub fn sftp_local_read_binary(path: String) -> Result<String, String> {
     sftp::local_read_binary(path)
 }
 
+#[tauri::command]
+pub fn sftp_local_read_file(path: String) -> Result<String, String> {
+    sftp::local_read_file(path)
+}
+
+#[tauri::command]
+pub fn sftp_local_write_file(path: String, content: String) -> Result<(), String> {
+    sftp::local_write_file(path, content)
+}
+
+
 // --- Backup & Restore Commands ---
 
 #[derive(serde::Serialize)]

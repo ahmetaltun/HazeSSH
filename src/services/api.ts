@@ -231,6 +231,14 @@ export const api = {
     return await invoke<string>("sftp_local_read_binary", { path });
   },
 
+  sftpLocalReadFile: async (path: string): Promise<string> => {
+    return await invoke<string>("sftp_local_read_file", { path });
+  },
+
+  sftpLocalWriteFile: async (path: string, content: string): Promise<void> => {
+    return await invoke<void>("sftp_local_write_file", { path, content });
+  },
+
   sftpLocalMkdir: async (path: string): Promise<void> => {
     return await invoke<void>("sftp_local_mkdir", { path });
   },

@@ -103,6 +103,8 @@ pub fn run() {
             commands::sftp_list_local,
             commands::sftp_get_local_home,
             commands::sftp_local_read_binary,
+            commands::sftp_local_read_file,
+            commands::sftp_local_write_file,
             commands::sftp_local_mkdir,
             commands::sftp_local_delete,
             commands::sftp_local_rename,

@@ -5,8 +5,9 @@ import { getLanguageLabel } from "@/utils/fileTypes";
 
 interface RemoteEditorModalProps {
   readonly isOpen: boolean;
-  readonly hostId: string;
-  readonly hostLabel: string;
+  readonly mode?: "remote" | "local";
+  readonly hostId?: string;
+  readonly hostLabel?: string;
   readonly filePath: string;
   readonly fileName: string;
   readonly onClose: () => void;
@@ -15,6 +16,7 @@ interface RemoteEditorModalProps {
 
 export function RemoteEditorModal({
   isOpen,
+  mode = "remote",
   hostId,
   hostLabel,
   filePath,
@@ -39,8 +41,12 @@ export function RemoteEditorModal({
     setErrorMsg(null);
     setSaveSuccess(false);
 
-    api
-      .sftpReadFile(hostId, filePath)
+    const fetchPromise =
+      mode === "local" || !hostId
+        ? api.sftpLocalReadFile(filePath)
+        : api.sftpReadFile(hostId, filePath);
+
+    fetchPromise
       .then((data) => {
         if (isMounted) {
           setContent(data);
@@ -58,7 +64,7 @@ export function RemoteEditorModal({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, hostId, filePath]);
+  }, [isOpen, mode, hostId, filePath]);
 
   if (!isOpen) return null;
 
@@ -66,7 +72,11 @@ export function RemoteEditorModal({
     setIsSaving(true);
     setErrorMsg(null);
     try {
-      await api.sftpWriteFile(hostId, filePath, content);
+      if (mode === "local" || !hostId) {
+        await api.sftpLocalWriteFile(filePath, content);
+      } else {
+        await api.sftpWriteFile(hostId, filePath, content);
+      }
       setInitialContent(content);
       setSaveSuccess(true);
       onSaved?.();
@@ -123,7 +133,7 @@ export function RemoteEditorModal({
               <span className="badge badge-warning badge-xs text-[10px]">Unsaved *</span>
             )}
             <span className="text-[11px] text-base-content/50 font-mono truncate hidden md:inline">
-              ({hostLabel}: {filePath})
+              ({mode === "local" || !hostLabel ? `Local: ${filePath}` : `${hostLabel}: ${filePath}`})
             </span>
           </div>
 
@@ -139,7 +149,7 @@ export function RemoteEditorModal({
               onClick={handleSave}
               disabled={isSaving || isLoading}
               className="btn btn-xs btn-primary gap-1"
-              title="Save Remote File (Cmd+S)"
+              title={mode === "local" ? "Save Local File (Cmd+S)" : "Save Remote File (Cmd+S)"}
             >
               <Save className="w-3 h-3" />
               <span>{isSaving ? "Saving..." : "Save (⌘S)"}</span>
@@ -170,7 +180,9 @@ export function RemoteEditorModal({
             <div className="flex-1 flex flex-col items-center justify-center space-y-2">
               <span className="loading loading-spinner loading-md text-primary" />
               <span className="text-xs text-base-content/60 font-mono">
-                Downloading file content from remote server...
+                {mode === "local"
+                  ? "Loading local file content..."
+                  : "Downloading file content from remote server..."}
               </span>
             </div>
           ) : (

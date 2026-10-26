@@ -732,3 +732,24 @@ pub fn local_read_binary(local_path: String) -> Result<String, String> {
     Ok(BASE64.encode(&content))
 }
 
+pub fn local_read_file(local_path: String) -> Result<String, String> {
+    let p = Path::new(&local_path);
+    if let Ok(meta) = p.metadata()
+        && meta.len() > 10 * 1024 * 1024
+    {
+        return Err(format!(
+            "File size ({} MB) exceeds preview/editor limit of 10 MB.",
+            meta.len() / (1024 * 1024)
+        ));
+    }
+
+    fs::read_to_string(p)
+        .map_err(|e| format!("Failed to read local file '{}': {}", local_path, e))
+}
+
+pub fn local_write_file(local_path: String, content: String) -> Result<(), String> {
+    fs::write(&local_path, content.as_bytes())
+        .map_err(|e| format!("Failed to write to local file '{}': {}", local_path, e))
+}
+
+
