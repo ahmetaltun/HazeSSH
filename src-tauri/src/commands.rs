@@ -912,41 +912,77 @@ pub async fn telnet_disconnect(
     state.telnet_manager.disconnect(&session_id).await
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn run_clipboard_read_command(program: &str, args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to execute '{}': {}", program, e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Command '{}' exited with non-zero status: {}",
+            program, output.status
+        ));
+    }
+
+    String::from_utf8(output.stdout)
+        .map_err(|e| format!("Clipboard content from '{}' is not valid UTF-8: {}", program, e))
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn run_clipboard_write_command(program: &str, args: &[&str], text: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn '{}': {}", program, e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|e| format!("Failed to write to '{}' stdin: {}", program, e))?;
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("Process '{}' failed to terminate: {}", program, e))?;
+
+    if !status.success() {
+        return Err(format!(
+            "Command '{}' exited with non-zero status: {}",
+            program, status
+        ));
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn clipboard_read_text() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        let output = std::process::Command::new("pbpaste")
-            .output()
-            .map_err(|e| format!("Failed to read macOS pasteboard: {}", e))?;
-        return String::from_utf8(output.stdout)
-            .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
+        run_clipboard_read_command("pbpaste", &[])
     }
 
     #[cfg(target_os = "linux")]
     {
-        if let Ok(output) = std::process::Command::new("wl-paste").output() {
-            if output.status.success() {
-                return String::from_utf8(output.stdout)
-                    .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
-            }
-        }
-        let output = std::process::Command::new("xclip")
-            .args(["-selection", "clipboard", "-o"])
-            .output()
-            .map_err(|e| format!("Failed to read Linux clipboard: {}", e))?;
-        return String::from_utf8(output.stdout)
-            .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
+        run_clipboard_read_command("wl-paste", &[])
+            .or_else(|_| run_clipboard_read_command("xclip", &["-selection", "clipboard", "-o"]))
+            .or_else(|_| run_clipboard_read_command("xsel", &["--clipboard", "--output"]))
+            .map_err(|e| {
+                format!(
+                    "Failed to read Linux clipboard (tried wl-paste, xclip, and xsel): {}",
+                    e
+                )
+            })
     }
 
     #[cfg(target_os = "windows")]
     {
-        let output = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", "Get-Clipboard"])
-            .output()
-            .map_err(|e| format!("Failed to read Windows clipboard: {}", e))?;
-        return String::from_utf8(output.stdout)
-            .map_err(|e| format!("Clipboard content is not valid UTF-8: {}", e));
+        run_clipboard_read_command("powershell", &["-NoProfile", "-Command", "Get-Clipboard"])
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
@@ -959,70 +995,25 @@ pub fn clipboard_read_text() -> Result<String, String> {
 pub fn clipboard_write_text(text: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        use std::io::Write;
-        let mut child = std::process::Command::new("pbcopy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn pbcopy: {}", e))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(text.as_bytes())
-                .map_err(|e| format!("Failed to write to pbcopy stdin: {}", e))?;
-        }
-        child
-            .wait()
-            .map_err(|e| format!("pbcopy failed to terminate: {}", e))?;
-        return Ok(());
+        run_clipboard_write_command("pbcopy", &[], &text)
     }
 
     #[cfg(target_os = "linux")]
     {
-        use std::io::Write;
-        if let Ok(mut child) = std::process::Command::new("wl-copy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-        {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(text.as_bytes());
-            }
-            if let Ok(status) = child.wait() {
-                if status.success() {
-                    return Ok(());
-                }
-            }
-        }
-        let mut child = std::process::Command::new("xclip")
-            .args(["-selection", "clipboard"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn xclip: {}", e))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(text.as_bytes())
-                .map_err(|e| format!("Failed to write to xclip stdin: {}", e))?;
-        }
-        child
-            .wait()
-            .map_err(|e| format!("xclip failed to terminate: {}", e))?;
-        return Ok(());
+        run_clipboard_write_command("wl-copy", &[], &text)
+            .or_else(|_| run_clipboard_write_command("xclip", &["-selection", "clipboard"], &text))
+            .or_else(|_| run_clipboard_write_command("xsel", &["--clipboard", "--input"], &text))
+            .map_err(|e| {
+                format!(
+                    "Failed to write to Linux clipboard (tried wl-copy, xclip, and xsel): {}",
+                    e
+                )
+            })
     }
 
     #[cfg(target_os = "windows")]
     {
-        use std::io::Write;
-        let mut child = std::process::Command::new("clip")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn clip: {}", e))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(text.as_bytes())
-                .map_err(|e| format!("Failed to write to clip stdin: {}", e))?;
-        }
-        child
-            .wait()
-            .map_err(|e| format!("clip failed to terminate: {}", e))?;
-        return Ok(());
+        run_clipboard_write_command("clip", &[], &text)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]

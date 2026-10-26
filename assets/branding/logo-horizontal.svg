@@ -1,64 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 90" width="460" height="90" fill="none">
   <defs>
-    <linearGradient id="hzBrandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#BD93F9" />
-      <stop offset="45%" stop-color="#FF79C6" />
-      <stop offset="100%" stop-color="#00F0FF" />
+    <linearGradient id="hzBackground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#382630"/>
+      <stop offset="1" stop-color="#181922"/>
     </linearGradient>
-    <linearGradient id="hzBridgeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#FF79C6" />
-      <stop offset="100%" stop-color="#00F0FF" />
+    <linearGradient id="hzSymbol" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFE1AC"/>
+      <stop offset="1" stop-color="#FF825D"/>
+    </linearGradient>
+    <radialGradient id="hzAura" cx=".36" cy=".26" r=".84">
+      <stop offset="0" stop-color="#F17766" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#F17766" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hzTextGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFE1AC"/>
+      <stop offset="100%" stop-color="#FF825D"/>
     </linearGradient>
   </defs>
 
-  <!-- Left Icon Mark Container (Size 72x72) -->
-  <g transform="translate(10, 9)">
-    <rect width="72" height="72" rx="18" fill="#0E111A" stroke="url(#hzBrandGrad)" stroke-width="2" />
-    
-    <!-- Left Pillar -->
-    <rect x="16" y="16" width="6.5" height="40" rx="3.25" fill="url(#hzBrandGrad)" />
-
-    <!-- Right Pillar -->
-    <rect x="49.5" y="16" width="6.5" height="40" rx="3.25" fill="url(#hzBrandGrad)" />
-
-    <!-- Terminal Prompt Chevron -->
-    <path
-      d="M 22.5 28.5 L 34 36 L 22.5 43.5"
-      stroke="url(#hzBrandGrad)"
-      stroke-width="5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-
-    <!-- Encrypted Bridge -->
-    <path
-      d="M 34 36 L 49.5 36"
-      stroke="url(#hzBridgeGrad)"
-      stroke-width="5"
-      stroke-linecap="round"
-    />
-
-    <!-- Terminal Cursor Underline -->
-    <path
-      d="M 37.5 43.5 L 46.5 43.5"
-      stroke="#00F0FF"
-      stroke-width="4.5"
-      stroke-linecap="round"
-    />
-
-    <!-- Center Data Pulse -->
-    <circle cx="34" cy="36" r="2.2" fill="#FFFFFF" />
-  </g>
+  <!-- Left Icon Mark (72x72) -->
+  <svg x="10" y="9" width="72" height="72" viewBox="0 0 1024 1024">
+    <rect x="48" y="48" width="928" height="928" rx="228" fill="url(#hzBackground)"/>
+    <rect x="48" y="48" width="928" height="928" rx="228" fill="url(#hzAura)"/>
+    <rect x="49.5" y="49.5" width="925" height="925" rx="226.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="3"/>
+    <path d="M290 713V310C290 292 304 278 322 278H342C360 278 374 292 374 310V462H650V310C650 292 664 278 682 278H704C722 278 736 292 736 310V713C736 731 722 745 704 745H682C664 745 650 731 650 713V560H374V713C374 731 360 745 342 745H322C304 745 290 731 290 713Z" fill="url(#hzSymbol)"/>
+    <path d="M511 462L558 511L511 560" fill="none" stroke="#2F222B" stroke-width="45" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
 
   <!-- Typography Lockup -->
-  <g transform="translate(104, 0)">
+  <g transform="translate(98, 0)">
     <!-- Primary App Title -->
     <text x="0" y="48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="-0.5" fill="#FFFFFF">
-      HAZE <tspan fill="url(#hzBrandGrad)">SSH</tspan>
+      HAZE <tspan fill="url(#hzTextGrad)">SSH</tspan>
     </text>
 
     <!-- Subtitle / Tagline -->
-    <text x="2" y="70" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="11" font-weight="600" letter-spacing="3" fill="#8BE9FD" opacity="0.85">
+    <text x="2" y="70" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="11" font-weight="600" letter-spacing="3" fill="#FFE1AC" opacity="0.85">
       PRIVACY-FIRST MULTIPLEXER
     </text>
   </g>

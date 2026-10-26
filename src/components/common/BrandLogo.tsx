@@ -20,7 +20,7 @@ const SIZE_MAP: Record<"sm" | "md" | "lg" | "xl", number> = {
 
 /**
  * BrandLogo — Official vector brand mark & typography lockup for Haze SSH.
- * Implements the Minimalist Monoline Nexus ('H') aesthetic with Violet / Cyan / Magenta accents.
+ * Implements the official warm Ember brand aesthetic (Folded 'H' with terminal chevron).
  */
 export const BrandLogo: FC<BrandLogoProps> = ({
   variant = "mark",
@@ -35,7 +35,7 @@ export const BrandLogo: FC<BrandLogoProps> = ({
   if (variant === "glyph") {
     return (
       <svg
-        viewBox="0 0 64 64"
+        viewBox="260 240 504 530"
         width={pixelSize}
         height={pixelSize}
         fill="none"
@@ -44,25 +44,24 @@ export const BrandLogo: FC<BrandLogoProps> = ({
         className={`shrink-0 ${pulse ? "animate-pulse" : ""} ${className}`}
       >
         <defs>
-          <linearGradient id="glyphGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#BD93F9" />
-            <stop offset="50%" stop-color="#FF79C6" />
-            <stop offset="100%" stop-color="#00F0FF" />
+          <linearGradient id="glyphSymbolGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#FFE1AC" />
+            <stop offset="100%" stopColor="#FF825D" />
           </linearGradient>
         </defs>
 
-        <rect x="14" y="14" width="6" height="36" rx="3" fill="url(#glyphGrad)" />
-        <rect x="44" y="14" width="6" height="36" rx="3" fill="url(#glyphGrad)" />
         <path
-          d="M 20 25 L 30 32 L 20 39"
-          stroke="url(#glyphGrad)"
-          strokeWidth="5"
+          d="M290 713V310C290 292 304 278 322 278H342C360 278 374 292 374 310V462H650V310C650 292 664 278 682 278H704C722 278 736 292 736 310V713C736 731 722 745 704 745H682C664 745 650 731 650 713V560H374V713C374 731 360 745 342 745H322C304 745 290 731 290 713Z"
+          fill="url(#glyphSymbolGrad)"
+        />
+        <path
+          d="M511 462L558 511L511 560"
+          fill="none"
+          stroke="#2F222B"
+          strokeWidth="45"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-        <path d="M 30 32 L 44 32" stroke="#FF79C6" strokeWidth="5" strokeLinecap="round" />
-        <path d="M 33 39 L 41 39" stroke="#00F0FF" strokeWidth="4.5" strokeLinecap="round" />
-        <circle cx="30" cy="32" r="2" fill="#FFFFFF" />
       </svg>
     );
   }
@@ -70,7 +69,7 @@ export const BrandLogo: FC<BrandLogoProps> = ({
   // Standalone Squircle Mark
   const markElement = (
     <svg
-      viewBox="0 0 64 64"
+      viewBox="0 0 1024 1024"
       width={pixelSize}
       height={pixelSize}
       fill="none"
@@ -81,62 +80,50 @@ export const BrandLogo: FC<BrandLogoProps> = ({
       }`}
     >
       <defs>
-        <linearGradient id="markBrandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#BD93F9" />
-          <stop offset="45%" stopColor="#FF79C6" />
-          <stop offset="100%" stopColor="#00F0FF" />
+        <linearGradient id="markBackground" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#382630" />
+          <stop offset="100%" stopColor="#181922" />
         </linearGradient>
-        <linearGradient id="markBorderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#BD93F9" stopOpacity="0.8" />
-          <stop offset="100%" stopColor="#00F0FF" stopOpacity="0.6" />
+        <linearGradient id="markSymbol" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#FFE1AC" />
+          <stop offset="100%" stopColor="#FF825D" />
         </linearGradient>
+        <radialGradient id="markAura" cx=".36" cy=".26" r=".84">
+          <stop offset="0%" stopColor="#F17766" stopOpacity="0.15" />
+          <stop offset="100%" stopColor="#F17766" stopOpacity="0" />
+        </radialGradient>
       </defs>
 
       {/* Rounded Squircle Container */}
+      <rect x="48" y="48" width="928" height="928" rx="228" fill="url(#markBackground)" />
+      <rect x="48" y="48" width="928" height="928" rx="228" fill="url(#markAura)" />
       <rect
-        x="1.5"
-        y="1.5"
-        width="61"
-        height="61"
-        rx="15"
-        fill="#0E111A"
-        stroke="url(#markBorderGrad)"
-        strokeWidth="1.5"
+        x="49.5"
+        y="49.5"
+        width="925"
+        height="925"
+        rx="226.5"
+        fill="none"
+        stroke="#FFFFFF"
+        strokeOpacity="0.08"
+        strokeWidth="3"
       />
 
-      {/* Left Pillar (Local Terminal Client) */}
-      <rect x="15" y="15" width="5.5" height="34" rx="2.75" fill="url(#markBrandGrad)" />
-
-      {/* Right Pillar (Remote Host / Hardware) */}
-      <rect x="43.5" y="15" width="5.5" height="34" rx="2.75" fill="url(#markBrandGrad)" />
-
-      {/* Terminal Prompt Chevron */}
+      {/* Folded 'H' Symbol */}
       <path
-        d="M 20.5 25.5 L 29.5 32 L 20.5 38.5"
-        stroke="url(#markBrandGrad)"
-        strokeWidth="4.5"
+        d="M290 713V310C290 292 304 278 322 278H342C360 278 374 292 374 310V462H650V310C650 292 664 278 682 278H704C722 278 736 292 736 310V713C736 731 722 745 704 745H682C664 745 650 731 650 713V560H374V713C374 731 360 745 342 745H322C304 745 290 731 290 713Z"
+        fill="url(#markSymbol)"
+      />
+
+      {/* Terminal Chevron */}
+      <path
+        d="M511 462L558 511L511 560"
+        fill="none"
+        stroke="#2F222B"
+        strokeWidth="45"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-
-      {/* Encrypted Nexus Bridge */}
-      <path
-        d="M 29.5 32 L 43.5 32"
-        stroke="#FF79C6"
-        strokeWidth="4.5"
-        strokeLinecap="round"
-      />
-
-      {/* Terminal Cursor Underline */}
-      <path
-        d="M 33 38.5 L 40.5 38.5"
-        stroke="#00F0FF"
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-
-      {/* Center Data Pulse Node */}
-      <circle cx="29.5" cy="32" r="2" fill="#FFFFFF" />
     </svg>
   );
 
@@ -153,12 +140,12 @@ export const BrandLogo: FC<BrandLogoProps> = ({
           <span className="font-extrabold tracking-tight text-base font-sans text-base-content">
             Haze
           </span>
-          <span className="font-extrabold tracking-tight text-base bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          <span className="font-extrabold tracking-tight text-base bg-gradient-to-r from-amber-300 via-orange-400 to-rose-400 bg-clip-text text-transparent">
             SSH
           </span>
         </div>
         {showTagline && (
-          <span className="text-[9px] uppercase tracking-widest font-mono font-semibold text-primary/70 mt-1">
+          <span className="text-[9px] uppercase tracking-widest font-mono font-semibold text-orange-400/80 mt-1">
             Privacy-First
           </span>
         )}

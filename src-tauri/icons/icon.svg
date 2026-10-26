@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+<title id="title">HazeSSH — Ember application icon</title>
+<desc id="desc">A minimal folded H with a terminal chevron, finished in warm ember colors.</desc>
+<defs>
+<linearGradient id="background" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#382630"/><stop offset="1" stop-color="#181922"/></linearGradient>
+<linearGradient id="symbol" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE1AC"/><stop offset="1" stop-color="#FF825D"/></linearGradient>
+<radialGradient id="aura" cx=".36" cy=".26" r=".84"><stop offset="0" stop-color="#F17766" stop-opacity="0.11"/><stop offset="1" stop-color="#F17766" stop-opacity="0"/></radialGradient>
+</defs>
+<rect x="48" y="48" width="928" height="928" rx="228" fill="url(#background)"/>
+<rect x="48" y="48" width="928" height="928" rx="228" fill="url(#aura)"/>
+<rect x="49.5" y="49.5" width="925" height="925" rx="226.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.065" stroke-width="3"/>
+<path d="M290 713V310C290 292 304 278 322 278H342C360 278 374 292 374 310V462H650V310C650 292 664 278 682 278H704C722 278 736 292 736 310V713C736 731 722 745 704 745H682C664 745 650 731 650 713V560H374V713C374 731 360 745 342 745H322C304 745 290 731 290 713Z" fill="url(#symbol)"/>
+<path d="M511 462L558 511L511 560" fill="none" stroke="#2F222B" stroke-width="45" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
