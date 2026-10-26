@@ -5,6 +5,7 @@ import { useSnippetStore } from "@/stores/useSnippetStore";
 import type { Host } from "@/types/host";
 import { IdentityModal } from "@/components/identities/IdentityModal";
 import { GroupModal } from "@/components/hosts/GroupModal";
+import { TextInput } from "@/components/common/TextInput";
 
 interface HostModalProps {
   readonly isOpen: boolean;
@@ -239,7 +240,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                 <label className="label py-1">
                   <span className="label-text text-xs font-semibold">Label *</span>
                 </label>
-                <input
+                <TextInput
                   type="text"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
@@ -283,7 +284,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                 <label className="label py-1">
                   <span className="label-text text-xs font-semibold">Hostname or IP *</span>
                 </label>
-                <input
+                <TextInput
                   type="text"
                   value={hostname}
                   onChange={(e) => setHostname(e.target.value)}
@@ -296,7 +297,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                 <label className="label py-1">
                   <span className="label-text text-xs font-semibold">Port</span>
                 </label>
-                <input
+                <TextInput
                   type="number"
                   value={port}
                   onChange={(e) => setPort(parseInt(e.target.value, 10) || 22)}
@@ -311,7 +312,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                 <label className="label py-1">
                   <span className="label-text text-xs font-semibold">Username</span>
                 </label>
-                <input
+                <TextInput
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -356,7 +357,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                   </span>
                 </label>
                 <div className="relative">
-                  <input
+                  <TextInput
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -478,7 +479,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                     </button>
                   </span>
                 ))}
-                <input
+                <TextInput
                   type="text"
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}

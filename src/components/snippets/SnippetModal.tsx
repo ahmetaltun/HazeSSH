@@ -3,6 +3,8 @@ import { Code2, X, AlertCircle, Plus, Tag, HelpCircle, Terminal } from "lucide-r
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import { CreateSnippetInputSchema, UpdateSnippetInputSchema } from "@/types/snippet";
 import type { Snippet } from "@/types/snippet";
+import { TextInput } from "@/components/common/TextInput";
+import { TextArea } from "@/components/common/TextArea";
 
 interface SnippetModalProps {
   readonly isOpen: boolean;
@@ -183,7 +185,7 @@ export function SnippetModal({
               <label className="text-xs font-semibold uppercase tracking-wider text-base-content/70">
                 Title <span className="text-error">*</span>
               </label>
-              <input
+              <TextInput
                 type="text"
                 placeholder="e.g. Restart Docker & Tail Logs"
                 value={title}
@@ -197,7 +199,7 @@ export function SnippetModal({
               <label className="text-xs font-semibold uppercase tracking-wider text-base-content/70">
                 Description
               </label>
-              <input
+              <TextInput
                 type="text"
                 placeholder="Optional short description"
                 value={description}
@@ -237,7 +239,7 @@ export function SnippetModal({
               ))}
             </div>
 
-            <textarea
+            <TextArea
               rows={7}
               placeholder={`# Example script\nsudo systemctl restart docker\ndocker ps --filter "name={{prompt:Container Name}}"\ncurl -I http://{{host.hostname}}:{{host.port}}`}
               value={script}
@@ -254,7 +256,7 @@ export function SnippetModal({
               <span>Tags</span>
             </label>
             <div className="flex gap-2">
-              <input
+              <TextInput
                 type="text"
                 placeholder="Add tag and press Enter (e.g. docker, logs)"
                 value={tagInput}

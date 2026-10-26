@@ -6,6 +6,8 @@ import { api } from "@/services/api";
 import type { GeneratedKeyPair } from "@/types/crypto";
 import { KeyFileDropzone } from "@/components/identities/KeyFileDropzone";
 import { inspectKeyFormat, type KeyInspectionResult } from "@/utils/keyUtils";
+import { TextInput } from "@/components/common/TextInput";
+import { TextArea } from "@/components/common/TextArea";
 
 interface IdentityModalProps {
   readonly isOpen: boolean;
@@ -239,7 +241,7 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
             <label className="label py-1">
               <span className="label-text text-xs font-semibold">Identity Label</span>
             </label>
-            <input
+            <TextInput
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -253,7 +255,7 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
             <label className="label py-1">
               <span className="label-text text-xs font-semibold">Default Username (Optional)</span>
             </label>
-            <input
+            <TextInput
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -267,7 +269,7 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
               <label className="label py-1">
                 <span className="label-text text-xs font-semibold">Password</span>
               </label>
-              <input
+              <TextInput
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -321,7 +323,7 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
 
                   {showRawKey && (
                     <div className="form-control mt-2">
-                      <textarea
+                      <TextArea
                         value={privateKey}
                         onChange={(e) => handleManualKeyChange(e.target.value)}
                         rows={4}
@@ -339,7 +341,7 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
                     </span>
                     <div className="h-px bg-base-300 flex-1" />
                   </div>
-                  <textarea
+                  <TextArea
                     value={privateKey}
                     onChange={(e) => handleManualKeyChange(e.target.value)}
                     placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
@@ -360,7 +362,7 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
                     )}
                   </span>
                 </label>
-                <input
+                <TextInput
                   type="password"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
@@ -398,7 +400,7 @@ export function IdentityModal({ isOpen, onClose, onCreated }: IdentityModalProps
                   <label className="label py-1">
                     <span className="label-text text-xs font-semibold">Comment</span>
                   </label>
-                  <input
+                  <TextInput
                     type="text"
                     value={keyComment}
                     onChange={(e) => setKeyComment(e.target.value)}

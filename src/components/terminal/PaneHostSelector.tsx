@@ -12,6 +12,7 @@ import type { TerminalPane } from "@/types/terminal";
 import type { Host } from "@/types/host";
 import { useHostStore } from "@/stores/useHostStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
+import { TextInput } from "@/components/common/TextInput";
 
 interface PaneHostSelectorProps {
   readonly pane: TerminalPane;
@@ -219,7 +220,7 @@ export function PaneHostSelector({ pane, tabId }: PaneHostSelectorProps) {
             <span>Quick Connect</span>
           </label>
           <div className="join w-full shadow-xs">
-            <input
+            <TextInput
               type="text"
               value={quickConnectInput}
               onChange={(e) => setQuickConnectInput(e.target.value)}
@@ -246,7 +247,7 @@ export function PaneHostSelector({ pane, tabId }: PaneHostSelectorProps) {
             {hosts.length > 4 && (
               <div className="relative max-w-[180px]">
                 <Search className="w-3 h-3 absolute left-2 top-2.5 text-base-content/40" />
-                <input
+                <TextInput
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
