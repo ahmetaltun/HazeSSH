@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, type ChangeEvent } from "react";
+import { useState, useMemo, useRef, useEffect, type ChangeEvent, type DragEvent } from "react";
 import {
   Download,
   AlertCircle,
@@ -10,10 +10,14 @@ import {
   CopyCheck,
   Terminal,
   FileJson,
+  UploadCloud,
+  FileText,
+  ClipboardPaste,
 } from "lucide-react";
 import { api } from "@/services/api";
 import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
+import { readFileAsTextSmart } from "@/utils/fileEncoding";
 import type { SshConfigHostCandidate, ImportResultSummary } from "@/types/importer";
 import type { CreateSnippetInput } from "@/types/snippet";
 
@@ -23,13 +27,17 @@ interface TermiusImportModalProps {
 }
 
 export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps) {
+  const [inputMode, setInputMode] = useState<"file" | "paste">("file");
+  const [pasteContent, setPasteContent] = useState("");
   const [candidates, setCandidates] = useState<SshConfigHostCandidate[]>([]);
   const [snippets, setSnippets] = useState<CreateSnippetInput[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [fileSizeBytes, setFileSizeBytes] = useState<number | null>(null);
   const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
   const [importSnippetsToggle, setImportSnippetsToggle] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDuplicates, setFilterDuplicates] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -38,48 +46,23 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  if (!isOpen) return null;
+  // Clean state when modal opens or closes
+  useEffect(() => {
+    if (!isOpen) {
+      setCandidates([]);
+      setSnippets([]);
+      setFileName(null);
+      setFileSizeBytes(null);
+      setPasteContent("");
+      setSelectedLabels(new Set());
+      setSearchQuery("");
+      setErrorMsg(null);
+      setImportResult(null);
+      setIsDragging(false);
+    }
+  }, [isOpen]);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setErrorMsg(null);
-    setFileName(file.name);
-    setIsLoading(true);
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        const result = await api.termiusParse(text);
-        setCandidates(result.candidates);
-        setSnippets(result.snippets);
-
-        // By default, select all non-duplicate hosts
-        const initialSelected = new Set<string>();
-        result.candidates.forEach((c) => {
-          if (!c.is_duplicate) {
-            initialSelected.add(c.label);
-          }
-        });
-        setSelectedLabels(initialSelected);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setErrorMsg(`Failed to parse Termius export: ${msg}`);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    reader.onerror = () => {
-      setErrorMsg("Failed to read file.");
-      setIsLoading(false);
-    };
-
-    reader.readAsText(file);
-  };
-
+  // IMPORTANT: All hooks are called at the top level before any conditional return
   const filteredCandidates = useMemo(() => {
     return candidates.filter((c) => {
       if (filterDuplicates && c.is_duplicate) {
@@ -96,6 +79,102 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
       );
     });
   }, [candidates, searchQuery, filterDuplicates]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  const parseJsonData = async (text: string, displayName?: string, sizeBytes?: number) => {
+    if (!text.trim()) {
+      setErrorMsg("Please provide Termius JSON export content to import.");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const result = await api.termiusParse(text);
+      if (result.candidates.length === 0 && result.snippets.length === 0) {
+        setErrorMsg(
+          "No hosts or command snippets found in the provided JSON data. Ensure you exported from Termius via Settings → Data Management → Export Data."
+        );
+        return;
+      }
+
+      setCandidates(result.candidates);
+      setSnippets(result.snippets);
+      if (displayName) setFileName(displayName);
+      if (sizeBytes !== undefined) setFileSizeBytes(sizeBytes);
+
+      // By default select all non-duplicate hosts
+      const initialSelected = new Set<string>();
+      result.candidates.forEach((c) => {
+        if (!c.is_duplicate) {
+          initialSelected.add(c.label);
+        }
+      });
+      setSelectedLabels(initialSelected);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`Failed to parse Termius JSON export: ${msg}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFile = async (file: File) => {
+    try {
+      const text = await readFileAsTextSmart(file);
+      await parseJsonData(text, file.name, file.size);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg);
+    }
+  };
+
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFile(file);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFile(file);
+    }
+  };
+
+  const handleResetSource = () => {
+    setCandidates([]);
+    setSnippets([]);
+    setFileName(null);
+    setFileSizeBytes(null);
+    setPasteContent("");
+    setSelectedLabels(new Set());
+    setErrorMsg(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   const toggleSelectAll = () => {
     if (selectedLabels.size === filteredCandidates.length && filteredCandidates.length > 0) {
@@ -164,7 +243,7 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
             <div>
               <h3 className="font-bold text-base">Import from Termius</h3>
               <p className="text-xs text-base-content/60">
-                Migrate hosts, folder groupings, and snippets from Termius JSON exports
+                Migrate hosts, folder groupings, and command snippets from Termius JSON exports
               </p>
             </div>
           </div>
@@ -190,7 +269,7 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
             <div className="w-12 h-12 rounded-full bg-success/15 text-success mx-auto flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
             </div>
-            <h4 className="font-semibold text-base">Termius Data Imported!</h4>
+            <h4 className="font-semibold text-base">Termius Data Successfully Imported!</h4>
             <div className="flex justify-center gap-4 text-xs pt-2">
               <span className="badge badge-primary gap-1 p-3">
                 {importResult.imported_hosts_count} Hosts
@@ -205,38 +284,124 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
           </div>
         ) : (
           <>
-            {/* File Selector */}
-            <div className="bg-base-200/50 p-3 rounded-xl border border-base-300 mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2 w-full sm:w-auto flex-1">
-                <span className="text-xs font-semibold whitespace-nowrap text-base-content/70">
-                  Termius File:
-                </span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  onChange={handleFileChange}
-                  className="file-input file-input-bordered file-input-xs w-full text-xs"
-                />
-              </div>
-
-              {candidates.length > 0 && (
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="badge badge-xs badge-primary text-[10px]">
-                    {candidates.length} hosts found
-                  </span>
-                  {snippets.length > 0 && (
-                    <span className="badge badge-xs badge-info text-[10px]">
-                      {snippets.length} snippets found
-                    </span>
-                  )}
+            {/* Input Selection Toolbar (Tabs) */}
+            {candidates.length === 0 ? (
+              <div className="space-y-3 mt-4 shrink-0">
+                <div className="flex items-center gap-2 border-b border-base-200 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => setInputMode("file")}
+                    className={`btn btn-xs gap-1.5 ${
+                      inputMode === "file"
+                        ? "btn-secondary text-secondary-content"
+                        : "btn-ghost text-base-content/70"
+                    }`}
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Upload JSON File</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputMode("paste")}
+                    className={`btn btn-xs gap-1.5 ${
+                      inputMode === "paste"
+                        ? "btn-secondary text-secondary-content"
+                        : "btn-ghost text-base-content/70"
+                    }`}
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    <span>Paste JSON Content</span>
+                  </button>
                 </div>
-              )}
-            </div>
 
+                {inputMode === "file" ? (
+                  /* Drag & Drop Zone */
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center space-y-3 ${
+                      isDragging
+                        ? "border-secondary bg-secondary/5 scale-[1.01]"
+                        : "border-base-300 hover:border-secondary/50 hover:bg-base-200/40"
+                    }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".json"
+                      onChange={handleFileInputChange}
+                      className="hidden"
+                    />
+                    <div className="w-12 h-12 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center">
+                      <FileJson className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-sm">Drop Termius JSON export here</h4>
+                      <p className="text-xs text-base-content/60 mt-1 max-w-sm">
+                        Export your data from Termius (Settings → Data Management → Export Data) and
+                        drag the JSON file here, or click to browse.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* Direct Text Paste Area */
+                  <div className="space-y-3">
+                    <textarea
+                      rows={7}
+                      placeholder='Paste Termius export JSON here (e.g. {"hosts": [{"label": "Server", "address": "1.2.3.4"}]})...'
+                      value={pasteContent}
+                      onChange={(e) => setPasteContent(e.target.value)}
+                      className="textarea textarea-bordered w-full text-xs font-mono select-text"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => parseJsonData(pasteContent, "Pasted Content")}
+                        disabled={isLoading || !pasteContent.trim()}
+                        className="btn btn-xs btn-secondary gap-1.5"
+                      >
+                        {isLoading && <span className="loading loading-spinner loading-xs" />}
+                        <span>Parse JSON</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Selected Source Pill */
+              <div className="bg-base-200/50 p-3 rounded-xl border border-base-300 mt-4 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-8 h-8 rounded-lg bg-secondary/10 text-secondary flex items-center justify-center shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div className="truncate">
+                    <div className="font-mono text-xs font-semibold truncate text-base-content/90">
+                      {fileName || "Termius Data"}
+                    </div>
+                    <div className="text-[10px] text-base-content/60">
+                      {fileSizeBytes ? `${(fileSizeBytes / 1024).toFixed(1)} KB • ` : ""}
+                      {candidates.length} hosts found
+                      {snippets.length > 0 ? ` • ${snippets.length} snippets` : ""}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleResetSource}
+                  className="btn btn-ghost btn-xs text-base-content/60 hover:text-error gap-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Change Source</span>
+                </button>
+              </div>
+            )}
+
+            {/* Candidates Table & Filters */}
             {candidates.length > 0 && (
               <>
-                {/* Search & Filter Toolbar */}
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 my-3 shrink-0">
                   <div className="relative w-full sm:w-64">
                     <input
@@ -276,7 +441,6 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
                   </div>
                 </div>
 
-                {/* Candidates Table */}
                 <div className="flex-1 overflow-y-auto border border-base-300 rounded-xl bg-base-100 min-h-[220px]">
                   {isLoading ? (
                     <div className="flex items-center justify-center h-48 text-xs text-base-content/60 gap-2">
@@ -325,7 +489,7 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
                               <td className="font-mono text-[11px] text-base-content/70">
                                 {c.hostname}
                                 {c.port !== 22 && (
-                                  <span className="text-primary font-bold">:{c.port}</span>
+                                  <span className="text-secondary font-bold">:{c.port}</span>
                                 )}
                               </td>
                               <td className="text-[11px] text-base-content/80">
@@ -362,17 +526,6 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
               </>
             )}
 
-            {!fileName && (
-              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-3">
-                <FileJson className="w-12 h-12 text-secondary/30" />
-                <h4 className="font-semibold text-sm">Select Termius JSON Export</h4>
-                <p className="text-xs text-base-content/60 max-w-sm">
-                  Export your data from Termius (Settings → Data Management → Export) and choose the
-                  exported JSON file above to preview hosts and snippets.
-                </p>
-              </div>
-            )}
-
             {/* Bottom Actions and Options */}
             <div className="pt-4 border-t border-base-200 mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
               {snippets.length > 0 ? (
@@ -389,7 +542,7 @@ export function TermiusImportModal({ isOpen, onClose }: TermiusImportModalProps)
                   </span>
                 </label>
               ) : (
-                <div></div>
+                <div />
               )}
 
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">

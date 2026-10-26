@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, type ChangeEvent } from "react";
+import { useState, useMemo, useRef, useEffect, type ChangeEvent, type DragEvent } from "react";
 import {
   Download,
   AlertCircle,
@@ -10,10 +10,17 @@ import {
   CopyCheck,
   HardDrive,
   Key,
+  UploadCloud,
+  FileText,
+  ClipboardPaste,
+  Copy,
+  Check,
+  Sparkles,
 } from "lucide-react";
 import { api } from "@/services/api";
 import { useHostStore } from "@/stores/useHostStore";
-import type { SshConfigHostCandidate, ImportResultSummary } from "@/types/importer";
+import { readFileAsTextSmart } from "@/utils/fileEncoding";
+import type { SshConfigHostCandidate, ImportResultSummary, PuttyDetectResult } from "@/types/importer";
 
 interface PuttyImportModalProps {
   readonly isOpen: boolean;
@@ -21,11 +28,20 @@ interface PuttyImportModalProps {
 }
 
 export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
+  const [inputMode, setInputMode] = useState<"file" | "paste">("file");
+  const [pasteContent, setPasteContent] = useState("");
   const [candidates, setCandidates] = useState<SshConfigHostCandidate[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [fileSizeBytes, setFileSizeBytes] = useState<number | null>(null);
   const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDuplicates, setFilterDuplicates] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isCopiedCommand, setIsCopiedCommand] = useState(false);
+
+  // Auto-detection state
+  const [detectResult, setDetectResult] = useState<PuttyDetectResult | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -34,46 +50,50 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  if (!isOpen) return null;
+  const WIN_REG_EXPORT_CMD = 'reg export "HKCU\\Software\\SimonTatham\\PuTTY\\Sessions" sessions.reg';
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setErrorMsg(null);
-    setFileName(file.name);
-    setIsLoading(true);
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        const result = await api.puttyParse(text);
-        setCandidates(result);
-
-        const initialSelected = new Set<string>();
-        result.forEach((c) => {
-          if (!c.is_duplicate) {
-            initialSelected.add(c.label);
+  // Auto-detect and reset state on modal open
+  useEffect(() => {
+    if (isOpen) {
+      setIsDetecting(true);
+      api
+        .puttyDetect()
+        .then((res) => {
+          setDetectResult(res);
+          // If system sessions were found and user hasn't loaded any sessions yet, auto-load them!
+          if (res.found && res.candidates.length > 0) {
+            setCandidates(res.candidates);
+            setFileName(`Local PuTTY (~/.putty/sessions)`);
+            const initialSelected = new Set<string>();
+            res.candidates.forEach((c) => {
+              if (!c.is_duplicate) {
+                initialSelected.add(c.label);
+              }
+            });
+            setSelectedLabels(initialSelected);
           }
+        })
+        .catch((err) => {
+          console.warn("Failed to auto-detect PuTTY sessions:", err);
+        })
+        .finally(() => {
+          setIsDetecting(false);
         });
-        setSelectedLabels(initialSelected);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setErrorMsg(`Failed to parse PuTTY .reg file: ${msg}`);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    } else {
+      setCandidates([]);
+      setFileName(null);
+      setFileSizeBytes(null);
+      setPasteContent("");
+      setSelectedLabels(new Set());
+      setSearchQuery("");
+      setErrorMsg(null);
+      setImportResult(null);
+      setDetectResult(null);
+      setIsDragging(false);
+    }
+  }, [isOpen]);
 
-    reader.onerror = () => {
-      setErrorMsg("Failed to read file.");
-      setIsLoading(false);
-    };
-
-    reader.readAsText(file);
-  };
-
+  // IMPORTANT: All hooks are called at the top level before any conditional return
   const filteredCandidates = useMemo(() => {
     return candidates.filter((c) => {
       if (filterDuplicates && c.is_duplicate) {
@@ -90,6 +110,109 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
       );
     });
   }, [candidates, searchQuery, filterDuplicates]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  const parseRegData = async (text: string, displayName?: string, sizeBytes?: number) => {
+    if (!text.trim()) {
+      setErrorMsg("Please provide PuTTY registry export or session content.");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const result = await api.puttyParse(text);
+      if (result.length === 0) {
+        setErrorMsg(
+          "No SSH sessions were discovered in the provided content. Please ensure this is a valid PuTTY registry export containing saved sessions."
+        );
+        return;
+      }
+
+      setCandidates(result);
+      if (displayName) setFileName(displayName);
+      if (sizeBytes !== undefined) setFileSizeBytes(sizeBytes);
+
+      const initialSelected = new Set<string>();
+      result.forEach((c) => {
+        if (!c.is_duplicate) {
+          initialSelected.add(c.label);
+        }
+      });
+      setSelectedLabels(initialSelected);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`Failed to parse PuTTY .reg file: ${msg}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFile = async (file: File) => {
+    try {
+      const text = await readFileAsTextSmart(file);
+      await parseRegData(text, file.name, file.size);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg);
+    }
+  };
+
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFile(file);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFile(file);
+    }
+  };
+
+  const handleResetSource = () => {
+    setCandidates([]);
+    setFileName(null);
+    setFileSizeBytes(null);
+    setPasteContent("");
+    setSelectedLabels(new Set());
+    setErrorMsg(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleCopyCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(WIN_REG_EXPORT_CMD);
+      setIsCopiedCommand(true);
+      setTimeout(() => setIsCopiedCommand(false), 2000);
+    } catch {
+      // Fallback
+    }
+  };
 
   const toggleSelectAll = () => {
     if (selectedLabels.size === filteredCandidates.length && filteredCandidates.length > 0) {
@@ -142,6 +265,8 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
     }
   };
 
+  const hasPpkKeys = candidates.some((c) => c.identity_file && c.identity_file.endsWith(".ppk"));
+
   return (
     <div className="modal modal-open z-50">
       <div className="modal-box max-w-4xl bg-base-100 border border-base-300 shadow-2xl p-6 max-h-[90vh] flex flex-col">
@@ -154,7 +279,7 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
             <div>
               <h3 className="font-bold text-base">Import PuTTY Sessions</h3>
               <p className="text-xs text-base-content/60">
-                Import saved sessions from Windows Registry export (.reg)
+                Import saved SSH sessions from Windows Registry export (.reg) or local PuTTY sessions
               </p>
             </div>
           </div>
@@ -180,7 +305,7 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
             <div className="w-12 h-12 rounded-full bg-success/15 text-success mx-auto flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
             </div>
-            <h4 className="font-semibold text-base">PuTTY Sessions Imported!</h4>
+            <h4 className="font-semibold text-base">PuTTY Sessions Successfully Imported!</h4>
             <div className="flex justify-center gap-4 text-xs pt-2">
               <span className="badge badge-accent gap-1 p-3">
                 {importResult.imported_hosts_count} Hosts
@@ -192,34 +317,204 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
           </div>
         ) : (
           <>
-            {/* File Selector */}
-            <div className="bg-base-200/50 p-3 rounded-xl border border-base-300 mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2 w-full sm:w-auto flex-1">
-                <span className="text-xs font-semibold whitespace-nowrap text-base-content/70">
-                  Registry File (.reg):
-                </span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".reg,.txt"
-                  onChange={handleFileChange}
-                  className="file-input file-input-bordered file-input-xs w-full text-xs"
-                />
+            {/* Auto-detected notification banner or detecting status */}
+            {isDetecting && candidates.length === 0 ? (
+              <div className="flex items-center gap-2 text-xs text-base-content/60 py-2 mt-2 px-1">
+                <span className="loading loading-spinner loading-xs text-accent" />
+                <span>Checking system for local PuTTY sessions...</span>
               </div>
-
-              {candidates.length > 0 && (
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="badge badge-xs badge-accent text-[10px]">
-                    {candidates.length} sessions found
+            ) : detectResult?.found && candidates.length === 0 ? (
+              <div className="alert alert-info text-xs py-2.5 mt-4 rounded-xl flex items-center justify-between shrink-0 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 shrink-0 text-info" />
+                  <span>
+                    Detected <strong>{detectResult.candidates.length}</strong> local PuTTY sessions in{" "}
+                    <code className="font-mono text-[11px] bg-base-300/60 px-1 py-0.5 rounded">
+                      ~/.putty/sessions
+                    </code>
                   </span>
                 </div>
-              )}
-            </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCandidates(detectResult.candidates);
+                    setFileName("Local ~/.putty/sessions");
+                    const initialSelected = new Set<string>();
+                    detectResult.candidates.forEach((c) => {
+                      if (!c.is_duplicate) {
+                        initialSelected.add(c.label);
+                      }
+                    });
+                    setSelectedLabels(initialSelected);
+                  }}
+                  className="btn btn-xs btn-primary gap-1"
+                >
+                  <span>Load Sessions</span>
+                </button>
+              </div>
+            ) : null}
 
+            {/* Input Selection Toolbar (Tabs) */}
+            {candidates.length === 0 ? (
+              <div className="space-y-4 mt-4 shrink-0">
+                <div className="flex items-center gap-2 border-b border-base-200 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => setInputMode("file")}
+                    className={`btn btn-xs gap-1.5 ${
+                      inputMode === "file"
+                        ? "btn-accent text-accent-content"
+                        : "btn-ghost text-base-content/70"
+                    }`}
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Upload .reg File</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputMode("paste")}
+                    className={`btn btn-xs gap-1.5 ${
+                      inputMode === "paste"
+                        ? "btn-accent text-accent-content"
+                        : "btn-ghost text-base-content/70"
+                    }`}
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    <span>Paste .reg Content</span>
+                  </button>
+                </div>
+
+                {inputMode === "file" ? (
+                  /* Drag & Drop Zone */
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center space-y-3 ${
+                      isDragging
+                        ? "border-accent bg-accent/5 scale-[1.01]"
+                        : "border-base-300 hover:border-accent/50 hover:bg-base-200/40"
+                    }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".reg,.txt"
+                      onChange={handleFileInputChange}
+                      className="hidden"
+                    />
+                    <div className="w-12 h-12 rounded-xl bg-accent/10 text-accent flex items-center justify-center">
+                      <HardDrive className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-sm">Drop PuTTY .reg file here</h4>
+                      <p className="text-xs text-base-content/60 mt-1 max-w-sm">
+                        Drag your Windows Registry export (.reg) or PuTTY session file here, or click
+                        to browse. UTF-16LE and UTF-8 encodings are automatically detected.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* Direct Text Paste Area */
+                  <div className="space-y-3">
+                    <textarea
+                      rows={7}
+                      placeholder="Paste Windows Registry export content here (Windows Registry Editor Version 5.00 [HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\...])..."
+                      value={pasteContent}
+                      onChange={(e) => setPasteContent(e.target.value)}
+                      className="textarea textarea-bordered w-full text-xs font-mono select-text"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => parseRegData(pasteContent, "Pasted Content")}
+                        disabled={isLoading || !pasteContent.trim()}
+                        className="btn btn-xs btn-accent gap-1.5"
+                      >
+                        {isLoading && <span className="loading loading-spinner loading-xs" />}
+                        <span>Parse Content</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Windows Export Guide Banner */}
+                <div className="bg-base-200/60 p-3 rounded-xl border border-base-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                  <div className="space-y-1">
+                    <span className="font-semibold text-base-content/80">
+                      Need to export sessions from Windows?
+                    </span>
+                    <p className="text-[11px] text-base-content/60">
+                      Run this in PowerShell or Command Prompt to export all saved PuTTY sessions:
+                    </p>
+                    <code className="text-[10px] font-mono bg-base-300/80 px-2 py-0.5 rounded text-accent block sm:inline-block">
+                      {WIN_REG_EXPORT_CMD}
+                    </code>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyCommand}
+                    className="btn btn-xs btn-outline gap-1.5 shrink-0 self-end sm:self-center"
+                  >
+                    {isCopiedCommand ? (
+                      <>
+                        <Check className="w-3 h-3 text-success" />
+                        <span className="text-success font-medium">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Command</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Selected Source Pill */
+              <div className="bg-base-200/50 p-3 rounded-xl border border-base-300 mt-4 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div className="truncate">
+                    <div className="font-mono text-xs font-semibold truncate text-base-content/90">
+                      {fileName || "PuTTY Registry Data"}
+                    </div>
+                    <div className="text-[10px] text-base-content/60">
+                      {fileSizeBytes ? `${(fileSizeBytes / 1024).toFixed(1)} KB • ` : ""}
+                      {candidates.length} SSH sessions found
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleResetSource}
+                  className="btn btn-ghost btn-xs text-base-content/60 hover:text-error gap-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Change Source</span>
+                </button>
+              </div>
+            )}
+
+            {/* Candidates Table & Filters */}
             {candidates.length > 0 && (
               <>
-                {/* Search & Filter Toolbar */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 my-3 shrink-0">
+                {/* PPK Notice if keys are detected */}
+                {hasPpkKeys && (
+                  <div className="bg-info/10 text-info border border-info/20 px-3 py-2 rounded-xl text-[11px] flex items-center gap-2 shrink-0 my-2">
+                    <Key className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      PuTTY PPK keys are linked to their original file path. If you connect from macOS or
+                      Linux, ensure your keys are exported to OpenSSH format or stored in the Key Vault.
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 my-2 shrink-0">
                   <div className="relative w-full sm:w-64">
                     <input
                       type="text"
@@ -258,12 +553,11 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
                   </div>
                 </div>
 
-                {/* Candidates Table */}
                 <div className="flex-1 overflow-y-auto border border-base-300 rounded-xl bg-base-100 min-h-[220px]">
                   {isLoading ? (
                     <div className="flex items-center justify-center h-48 text-xs text-base-content/60 gap-2">
                       <span className="loading loading-spinner loading-sm" />
-                      <span>Parsing PuTTY registry export...</span>
+                      <span>Parsing PuTTY sessions...</span>
                     </div>
                   ) : filteredCandidates.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-48 text-center p-6 space-y-2">
@@ -353,20 +647,6 @@ export function PuttyImportModal({ isOpen, onClose }: PuttyImportModalProps) {
                   )}
                 </div>
               </>
-            )}
-
-            {!fileName && (
-              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-3">
-                <HardDrive className="w-12 h-12 text-accent/30" />
-                <h4 className="font-semibold text-sm">Select PuTTY .reg Export</h4>
-                <p className="text-xs text-base-content/60 max-w-sm">
-                  Export your PuTTY sessions from Windows Registry using:
-                  <br />
-                  <code className="text-[10px] font-mono bg-base-300 px-1.5 py-0.5 rounded text-accent">
-                    reg export &quot;HKCU\Software\SimonTatham\PuTTY\Sessions&quot; sessions.reg
-                  </code>
-                </p>
-              </div>
             )}
 
             {/* Bottom Actions */}

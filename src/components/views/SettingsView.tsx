@@ -553,49 +553,88 @@ export function SettingsView() {
           <div className="divider my-1"></div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="p-4 rounded-xl border border-base-300 bg-base-100 flex flex-col justify-between space-y-3">
+            <div
+              onClick={() => setIsOpenSshModalOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setIsOpenSshModalOpen(true);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              className="p-4 rounded-xl border border-base-300 bg-base-100 hover:border-primary/50 hover:bg-base-200/40 transition-all cursor-pointer flex flex-col justify-between space-y-3 group"
+            >
               <div>
-                <span className="font-semibold text-xs font-mono">~/.ssh/config</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-xs font-mono">~/.ssh/config</span>
+                  <span className="badge badge-xs badge-ghost font-mono text-[9px]">system</span>
+                </div>
                 <p className="text-[11px] text-base-content/60 mt-1">
                   Secure read-only parse of your system SSH config and known_hosts.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setIsOpenSshModalOpen(true)}
-                className="btn btn-xs btn-outline btn-primary"
+                className="btn btn-xs btn-outline btn-primary pointer-events-none group-hover:btn-active transition-all"
               >
                 Import from OpenSSH
               </button>
             </div>
 
-            <div className="p-4 rounded-xl border border-base-300 bg-base-100 flex flex-col justify-between space-y-3">
+            <div
+              onClick={() => setIsTermiusModalOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setIsTermiusModalOpen(true);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              className="p-4 rounded-xl border border-base-300 bg-base-100 hover:border-secondary/50 hover:bg-base-200/40 transition-all cursor-pointer flex flex-col justify-between space-y-3 group"
+            >
               <div>
-                <span className="font-semibold text-xs">Termius JSON</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-xs">Termius JSON</span>
+                  <span className="badge badge-xs badge-ghost font-mono text-[9px]">.json</span>
+                </div>
                 <p className="text-[11px] text-base-content/60 mt-1">
                   Import exported Termius hosts, snippets, and connection groups.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setIsTermiusModalOpen(true)}
-                className="btn btn-xs btn-outline btn-secondary"
+                className="btn btn-xs btn-outline btn-secondary pointer-events-none group-hover:btn-active transition-all"
               >
                 Import Termius Export
               </button>
             </div>
 
-            <div className="p-4 rounded-xl border border-base-300 bg-base-100 flex flex-col justify-between space-y-3">
+            <div
+              onClick={() => setIsPuttyModalOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setIsPuttyModalOpen(true);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              className="p-4 rounded-xl border border-base-300 bg-base-100 hover:border-accent/50 hover:bg-base-200/40 transition-all cursor-pointer flex flex-col justify-between space-y-3 group"
+            >
               <div>
-                <span className="font-semibold text-xs">PuTTY Sessions</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-xs">PuTTY Sessions</span>
+                  <span className="badge badge-xs badge-ghost font-mono text-[9px]">.reg / sessions</span>
+                </div>
                 <p className="text-[11px] text-base-content/60 mt-1">
-                  Import saved sessions from Windows Registry or .reg export.
+                  Import saved sessions from Windows Registry or local PuTTY sessions.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setIsPuttyModalOpen(true)}
-                className="btn btn-xs btn-outline btn-accent"
+                className="btn btn-xs btn-outline btn-accent pointer-events-none group-hover:btn-active transition-all"
               >
                 Import PuTTY
               </button>

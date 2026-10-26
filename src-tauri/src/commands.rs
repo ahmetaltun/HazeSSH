@@ -9,10 +9,10 @@ use crate::db::Database;
 use crate::models::{
     BackupData, BackupEnvelope, BackupSummary, CreateGroupInput, CreateHostInput,
     CreateIdentityInput, CreateSnippetInput, CreateTunnelInput, Host, HostGroup, Identity,
-    ImportResultSummary, ImportSshHostsInput, ImportTermiusInput, SerialConnectOptions,
-    SerialPortInfo, ServerMetrics, Snippet, SshConfigHostCandidate, SshConfigParseResult,
-    TelnetConnectOptions, TermiusParseResult, Tunnel, UpdateHostInput, UpdateSnippetInput,
-    VaultStatus,
+    ImportResultSummary, ImportSshHostsInput, ImportTermiusInput, PuttyDetectResult,
+    SerialConnectOptions, SerialPortInfo, ServerMetrics, Snippet, SshConfigHostCandidate,
+    SshConfigParseResult, TelnetConnectOptions, TermiusParseResult, Tunnel, UpdateHostInput,
+    UpdateSnippetInput, VaultStatus,
 };
 use crate::monitor;
 use crate::serial::{self, SerialSessionManager};
@@ -1004,6 +1004,18 @@ pub fn termius_import(
             &active_key,
         )
         .map_err(|e| format!("Failed to import Termius configurations: {}", e))
+}
+
+#[tauri::command]
+pub fn putty_detect(
+    state: State<'_, AppState>,
+) -> Result<PuttyDetectResult, String> {
+    let existing_hosts = state
+        .db
+        .list_hosts()
+        .map_err(|e| format!("Failed to load existing hosts: {}", e))?;
+
+    third_party_importer::detect_putty_sessions(&existing_hosts)
 }
 
 #[tauri::command]

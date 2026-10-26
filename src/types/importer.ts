@@ -60,3 +60,11 @@ export type ImportTermiusInput = {
   snippets: CreateSnippetInput[];
   import_keys_as_identities: boolean;
 };
+
+export const PuttyDetectResultSchema = z.object({
+  sessions_dir: z.string(),
+  found: z.boolean(),
+  candidates: z.array(SshConfigHostCandidateSchema),
+});
+
+export type PuttyDetectResult = z.infer<typeof PuttyDetectResultSchema>;

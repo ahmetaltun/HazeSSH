@@ -117,6 +117,7 @@ pub fn run() {
             commands::ssh_config_import,
             commands::termius_parse,
             commands::termius_import,
+            commands::putty_detect,
             commands::putty_parse,
             commands::putty_import,
             commands::host_fetch_metrics,

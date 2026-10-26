@@ -4,6 +4,7 @@ import { Topbar } from "@/components/layout/Topbar";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { CommandPaletteModal } from "@/components/layout/CommandPaletteModal";
 import { AboutModal } from "@/components/layout/AboutModal";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { MultiplexerArea } from "@/components/multiplexer/MultiplexerArea";
 import { HostsView } from "@/components/views/HostsView";
 import { useLayoutStore } from "@/stores/useLayoutStore";
@@ -243,46 +244,58 @@ export function AppShell() {
   const renderActiveManagementViews = () => (
     <>
       <div className={`w-full h-full flex flex-col ${currentView === "hosts" ? "" : "hidden"}`}>
-        <HostsView />
+        <ErrorBoundary fallbackTitle="Hosts view encountered an error">
+          <HostsView />
+        </ErrorBoundary>
       </div>
 
       {visitedViews.has("sftp") && (
         <div className={`w-full h-full flex flex-col ${currentView === "sftp" ? "" : "hidden"}`}>
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <SFTPView />
-          </Suspense>
+          <ErrorBoundary fallbackTitle="SFTP explorer encountered an error">
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <SFTPView />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       )}
 
       {visitedViews.has("tunnels") && (
         <div className={`w-full h-full flex flex-col ${currentView === "tunnels" ? "" : "hidden"}`}>
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <TunnelsView />
-          </Suspense>
+          <ErrorBoundary fallbackTitle="Port forwarding view encountered an error">
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <TunnelsView />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       )}
 
       {visitedViews.has("snippets") && (
         <div className={`w-full h-full flex flex-col ${currentView === "snippets" ? "" : "hidden"}`}>
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <SnippetsView />
-          </Suspense>
+          <ErrorBoundary fallbackTitle="Snippets view encountered an error">
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <SnippetsView />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       )}
 
       {visitedViews.has("history") && (
         <div className={`w-full h-full flex flex-col ${currentView === "history" ? "" : "hidden"}`}>
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <HistoryView />
-          </Suspense>
+          <ErrorBoundary fallbackTitle="Session history encountered an error">
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <HistoryView />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       )}
 
       {visitedViews.has("settings") && (
         <div className={`w-full h-full flex flex-col ${currentView === "settings" ? "" : "hidden"}`}>
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <SettingsView />
-          </Suspense>
+          <ErrorBoundary fallbackTitle="Settings & Preferences encountered an error">
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <SettingsView />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       )}
     </>

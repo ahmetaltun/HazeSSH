@@ -240,6 +240,13 @@ pub struct ImportTermiusInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PuttyDetectResult {
+    pub sessions_dir: String,
+    pub found: bool,
+    pub candidates: Vec<SshConfigHostCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerMetrics {
     pub host_id: String,
     pub os_name: Option<String>,

@@ -1,7 +1,12 @@
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
-use crate::models::{CreateSnippetInput, Host, SshConfigHostCandidate, TermiusParseResult};
+use crate::models::{
+    CreateSnippetInput, Host, PuttyDetectResult, SshConfigHostCandidate, TermiusParseResult,
+};
+use crate::ssh_config_parser::get_user_home;
 
 /// Decodes standard URL percent-encoding (e.g., %20 -> space).
 pub fn decode_percent_encoded(input: &str) -> String {
@@ -30,7 +35,8 @@ pub fn parse_termius_json(
     json_content: &str,
     existing_hosts: &[Host],
 ) -> Result<TermiusParseResult, String> {
-    let root: Value = serde_json::from_str(json_content)
+    let clean_json = json_content.trim_start_matches('\u{feff}');
+    let root: Value = serde_json::from_str(clean_json)
         .map_err(|e| format!("Invalid JSON file: {}", e))?;
 
     let mut candidates: Vec<SshConfigHostCandidate> = Vec::new();
@@ -77,8 +83,11 @@ pub fn parse_termius_json(
 
         let port = obj
             .get("port")
-            .and_then(|p| p.as_u64())
-            .map(|p| p as u16)
+            .and_then(|p| {
+                p.as_u64().map(|n| n as u16).or_else(|| {
+                    p.as_str().and_then(|s| s.trim().parse::<u16>().ok())
+                })
+            })
             .unwrap_or(22);
 
         let username = get_first_str(obj, &["username", "user"]);
@@ -198,7 +207,7 @@ pub fn parse_termius_json(
     })
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct PuttySessionDraft {
     session_name: String,
     hostname: Option<String>,
@@ -208,35 +217,76 @@ struct PuttySessionDraft {
     protocol: Option<String>,
 }
 
-/// Parses a Windows Registry PuTTY .reg file containing saved sessions.
-pub fn parse_putty_reg(
-    reg_content: &str,
-    existing_hosts: &[Host],
-) -> Result<Vec<SshConfigHostCandidate>, String> {
-    let mut candidates: Vec<SshConfigHostCandidate> = Vec::new();
-    let mut current_session: Option<PuttySessionDraft> = None;
-
-    let flush_session = |session: PuttySessionDraft,
-                         existing: &[Host],
-                         candidates: &mut Vec<SshConfigHostCandidate>| {
-        let raw_name = session.session_name.trim();
-        // Skip default or empty settings
-        if raw_name.eq_ignore_ascii_case("Default Settings") || raw_name.is_empty() {
+impl PuttySessionDraft {
+    fn parse_line(&mut self, line: &str) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with(';') || trimmed.starts_with('#') {
             return;
         }
 
-        let hostname = match session.hostname {
+        if let Some((key_part, val_part)) = trimmed.split_once('=') {
+            let key = key_part.trim().trim_matches('"');
+            let raw_val = val_part.trim();
+
+            match key {
+                "HostName" => {
+                    let clean = raw_val.trim_matches('"').replace("\\\\", "\\");
+                    if !clean.is_empty() {
+                        self.hostname = Some(clean);
+                    }
+                }
+                "PortNumber" => {
+                    if let Some(hex_part) = raw_val.strip_prefix("dword:") {
+                        if let Ok(parsed_hex) = u32::from_str_radix(hex_part, 16) {
+                            self.port = Some(parsed_hex as u16);
+                        }
+                    } else if let Ok(parsed_dec) = raw_val.trim_matches('"').parse::<u16>() {
+                        self.port = Some(parsed_dec);
+                    }
+                }
+                "UserName" => {
+                    let clean = raw_val.trim_matches('"').trim();
+                    if !clean.is_empty() {
+                        self.username = Some(clean.to_string());
+                    }
+                }
+                "PublicKeyFile" => {
+                    let clean = raw_val.trim_matches('"').replace("\\\\", "\\");
+                    if !clean.is_empty() {
+                        self.key_file = Some(clean);
+                    }
+                }
+                "Protocol" => {
+                    let clean = raw_val.trim_matches('"').trim();
+                    if !clean.is_empty() {
+                        self.protocol = Some(clean.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn to_candidate(self, existing: &[Host]) -> Option<SshConfigHostCandidate> {
+        let raw_name = self.session_name.trim();
+        if raw_name.eq_ignore_ascii_case("Default Settings") || raw_name.is_empty() {
+            return None;
+        }
+
+        let hostname = match self.hostname {
             Some(h) if !h.trim().is_empty() => h.trim().to_string(),
-            _ => return, // No hostname configured
+            _ => return None,
         };
 
-        // Filter out purely serial or telnet sessions if protocol is explicitly non-ssh
-        if let Some(ref proto) = session.protocol
-            && proto.eq_ignore_ascii_case("serial") {
-                return;
+        // Strictly focus on SSH sessions: ignore telnet, serial, rlogin, raw, etc.
+        if let Some(ref proto) = self.protocol {
+            let p = proto.trim().to_lowercase();
+            if !p.is_empty() && p != "ssh" {
+                return None;
             }
+        }
 
-        let port = session.port.unwrap_or(22);
+        let port = self.port.unwrap_or(22);
         let label = raw_name.to_string();
 
         let is_duplicate = existing.iter().any(|h| {
@@ -246,7 +296,6 @@ pub fn parse_putty_reg(
             same_host && same_port
         });
 
-        // Group hint: if name contains " / " or " - ", use prefix as group
         let group_name = if let Some((grp, _)) = label.split_once('/') {
             Some(grp.trim().to_string())
         } else if let Some((grp, _)) = label.split_once(" - ") {
@@ -255,20 +304,30 @@ pub fn parse_putty_reg(
             Some("PuTTY Sessions".to_string())
         };
 
-        candidates.push(SshConfigHostCandidate {
+        Some(SshConfigHostCandidate {
             label,
             hostname,
             port,
-            username: session.username,
-            identity_file: session.key_file,
+            username: self.username,
+            identity_file: self.key_file,
             proxy_jump: None,
             group_name,
             is_duplicate,
             is_known_host: false,
-        });
-    };
+        })
+    }
+}
 
-    for line in reg_content.lines() {
+/// Parses a Windows Registry PuTTY .reg file containing saved sessions.
+pub fn parse_putty_reg(
+    reg_content: &str,
+    existing_hosts: &[Host],
+) -> Result<Vec<SshConfigHostCandidate>, String> {
+    let clean_reg = reg_content.trim_start_matches('\u{feff}');
+    let mut candidates: Vec<SshConfigHostCandidate> = Vec::new();
+    let mut current_session: Option<PuttySessionDraft> = None;
+
+    for line in clean_reg.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with(';') || trimmed.starts_with('#') {
             continue;
@@ -277,7 +336,9 @@ pub fn parse_putty_reg(
         // Section header e.g. [HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Production%20Web]
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             if let Some(prev) = current_session.take() {
-                flush_session(prev, existing_hosts, &mut candidates);
+                if let Some(candidate) = prev.to_candidate(existing_hosts) {
+                    candidates.push(candidate);
+                }
             }
 
             let header = &trimmed[1..trimmed.len() - 1];
@@ -296,55 +357,99 @@ pub fn parse_putty_reg(
         }
 
         // Inside a session section, parse key-value pairs
-        if let Some(ref mut session) = current_session
-            && let Some((key_part, val_part)) = trimmed.split_once('=') {
-                let key = key_part.trim().trim_matches('"');
-                let raw_val = val_part.trim();
-
-                match key {
-                    "HostName" => {
-                        let clean = raw_val.trim_matches('"').replace("\\\\", "\\");
-                        if !clean.is_empty() {
-                            session.hostname = Some(clean);
-                        }
-                    }
-                    "PortNumber" => {
-                        if let Some(hex_part) = raw_val.strip_prefix("dword:") {
-                            if let Ok(parsed_hex) = u32::from_str_radix(hex_part, 16) {
-                                session.port = Some(parsed_hex as u16);
-                            }
-                        } else if let Ok(parsed_dec) = raw_val.trim_matches('"').parse::<u16>() {
-                            session.port = Some(parsed_dec);
-                        }
-                    }
-                    "UserName" => {
-                        let clean = raw_val.trim_matches('"').trim();
-                        if !clean.is_empty() {
-                            session.username = Some(clean.to_string());
-                        }
-                    }
-                    "PublicKeyFile" => {
-                        let clean = raw_val.trim_matches('"').replace("\\\\", "\\");
-                        if !clean.is_empty() {
-                            session.key_file = Some(clean);
-                        }
-                    }
-                    "Protocol" => {
-                        let clean = raw_val.trim_matches('"').trim();
-                        if !clean.is_empty() {
-                            session.protocol = Some(clean.to_string());
-                        }
-                    }
-                    _ => {}
-                }
-            }
+        if let Some(ref mut session) = current_session {
+            session.parse_line(trimmed);
+        }
     }
 
     if let Some(last) = current_session.take() {
-        flush_session(last, existing_hosts, &mut candidates);
+        if let Some(candidate) = last.to_candidate(existing_hosts) {
+            candidates.push(candidate);
+        }
     }
 
     Ok(candidates)
+}
+
+/// Automatically detects and parses PuTTY sessions saved on Unix / macOS (~/.putty/sessions).
+pub fn detect_putty_sessions(
+    existing_hosts: &[Host],
+) -> Result<PuttyDetectResult, String> {
+    let home = get_user_home();
+    let sessions_dir = PathBuf::from(home).join(".putty").join("sessions");
+    let display_path = sessions_dir.to_string_lossy().to_string();
+
+    if !sessions_dir.exists() || !sessions_dir.is_dir() {
+        return Ok(PuttyDetectResult {
+            sessions_dir: display_path,
+            found: false,
+            candidates: Vec::new(),
+        });
+    }
+
+    let entries = match fs::read_dir(&sessions_dir) {
+        Ok(e) => e,
+        Err(_) => {
+            return Ok(PuttyDetectResult {
+                sessions_dir: display_path,
+                found: false,
+                candidates: Vec::new(),
+            });
+        }
+    };
+
+    let mut candidates: Vec<SshConfigHostCandidate> = Vec::new();
+
+    for entry in entries.flatten() {
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        let session_name = decode_percent_encoded(&name_str);
+        if session_name.eq_ignore_ascii_case("Default Settings") || session_name.trim().is_empty() {
+            continue;
+        }
+
+        let content = match fs::read_to_string(entry.path()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let mut draft = PuttySessionDraft {
+            session_name,
+            hostname: None,
+            port: None,
+            username: None,
+            key_file: None,
+            protocol: None,
+        };
+
+        for line in content.lines() {
+            draft.parse_line(line);
+        }
+
+        if let Some(candidate) = draft.to_candidate(existing_hosts) {
+            candidates.push(candidate);
+        }
+    }
+
+    let found = !candidates.is_empty();
+
+    Ok(PuttyDetectResult {
+        sessions_dir: display_path,
+        found,
+        candidates,
+    })
 }
 
 #[cfg(test)]
@@ -430,5 +535,35 @@ mod tests {
         let s = &result.snippets[0];
         assert_eq!(s.title, "Docker Cleanup");
         assert_eq!(s.script, "docker system prune -af");
+    }
+
+    #[test]
+    fn test_parse_termius_string_port_and_bom() {
+        let termius_json_with_bom = "\u{feff}{\"hosts\": [{\"label\": \"String Port Host\", \"address\": \"srv.test\", \"port\": \"8022\"}]}";
+        let result = parse_termius_json(termius_json_with_bom, &[]).expect("termius parsing with string port");
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].port, 8022);
+    }
+
+    #[test]
+    fn test_putty_strict_ssh_filter() {
+        let putty_reg_content = r#"Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\SSH%20Server]
+"HostName"="ssh.example.com"
+"PortNumber"=dword:00000016
+"Protocol"="ssh"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Serial%20Switch]
+"HostName"="COM3"
+"Protocol"="serial"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Telnet%20Router]
+"HostName"="router.local"
+"Protocol"="telnet"
+"#;
+        let candidates = parse_putty_reg(putty_reg_content, &[]).expect("putty parsing");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].label, "SSH Server");
     }
 }

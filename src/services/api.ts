@@ -22,6 +22,7 @@ import type {
   TermiusParseResult,
   ImportTermiusInput,
   SshConfigHostCandidate,
+  PuttyDetectResult,
 } from "@/types/importer";
 import type { ServerMetrics } from "@/types/monitor";
 import type { SerialPortInfo, SerialConnectOptions } from "@/types/serial";
@@ -297,6 +298,10 @@ export const api = {
   },
 
   // --- PuTTY Importer ---
+  puttyDetect: async (): Promise<PuttyDetectResult> => {
+    return await invoke<PuttyDetectResult>("putty_detect");
+  },
+
   puttyParse: async (regContent: string): Promise<SshConfigHostCandidate[]> => {
     return await invoke<SshConfigHostCandidate[]>("putty_parse", { regContent });
   },
