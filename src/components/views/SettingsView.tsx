@@ -8,13 +8,9 @@ import {
   KeyRound,
   Terminal,
   RotateCcw,
-  Laptop,
-  Keyboard,
 } from "lucide-react";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
-import { useLayoutStore } from "@/stores/useLayoutStore";
-import { formatShortcut } from "@/utils/platform";
 import { useTerminalSettingsStore, POPULAR_TERMINAL_FONTS } from "@/stores/useTerminalSettingsStore";
 import { TERMINAL_THEME_OPTIONS } from "@/services/terminalThemes";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
@@ -29,7 +25,6 @@ import { PuttyImportModal } from "@/components/settings/PuttyImportModal";
 export function SettingsView() {
   const { hasMasterPassword, isLocked, lock } = useVaultStore();
   const { identities } = useHostStore();
-  const { setShortcutsModalOpen } = useLayoutStore();
   const {
     fontFamily,
     fontSize,
@@ -472,76 +467,6 @@ export function SettingsView() {
                   }}
                 />
               </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Desktop App Integration & Hotkeys Section */}
-        <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                <Laptop className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm">Desktop Experience & Hotkeys</h3>
-                <p className="text-xs text-base-content/60">
-                  Window controls, custom titlebar, OS keyboard shortcuts, and gestures
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShortcutsModalOpen(true)}
-              className="btn btn-xs btn-primary gap-1.5"
-            >
-              <Keyboard className="w-3.5 h-3.5" />
-              <span>View All Shortcuts ({formatShortcut("⌘/")})</span>
-            </button>
-          </div>
-
-          <div className="divider my-1"></div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
-            <div className="p-3.5 rounded-xl border border-base-300 bg-base-100 space-y-1">
-              <div className="flex items-center justify-between font-semibold">
-                <span>Unified Native Titlebar</span>
-                <span className="badge badge-xs badge-success">Active</span>
-              </div>
-              <p className="text-[11px] text-base-content/60">
-                Draggable top window region, native traffic lights on macOS, and responsive maximize/restore on double-click.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl border border-base-300 bg-base-100 space-y-1">
-              <div className="flex items-center justify-between font-semibold">
-                <span>Web Quirk Suppression</span>
-                <span className="badge badge-xs badge-success">Protected</span>
-              </div>
-              <p className="text-[11px] text-base-content/60">
-                Accidental reload (⌘R / F5), browser right-click menus, and accidental drop navigation are intercepted to protect live SSH sessions.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl border border-base-300 bg-base-100 space-y-1">
-              <div className="flex items-center justify-between font-semibold">
-                <span>Desktop Context Menus</span>
-                <span className="badge badge-xs badge-primary">Enabled</span>
-              </div>
-              <p className="text-[11px] text-base-content/60">
-                Right-click tabs for duplicate/split/close, right-click hosts for quick actions, and right-click terminal for copy/paste.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl border border-base-300 bg-base-100 space-y-1">
-              <div className="flex items-center justify-between font-semibold">
-                <span>OS File Drag & Drop</span>
-                <span className="badge badge-xs badge-primary">Enabled</span>
-              </div>
-              <p className="text-[11px] text-base-content/60">
-                Drag files directly from Finder / File Explorer into any terminal to paste path or upload via SFTP automatically.
-              </p>
             </div>
           </div>
         </section>

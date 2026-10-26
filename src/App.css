@@ -24,6 +24,7 @@ body,
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  cursor: default;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -31,6 +32,7 @@ body,
 /* Draggable desktop window regions */
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
+  cursor: default;
 }
 
 /* Interactive elements inside draggable regions must be non-draggable */
@@ -54,16 +56,52 @@ svg {
   user-drag: none;
 }
 
-/* Allow text selection strictly inside text inputs, code editors, and terminals */
-input,
+/* Allow text selection strictly inside editable fields and selectable surfaces */
+input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
 textarea,
 [contenteditable="true"],
-.select-text,
-.xterm,
-pre,
-code {
+.select-text {
   user-select: text !important;
   -webkit-user-select: text !important;
+  cursor: text;
+}
+
+/* Quick-copyable fields (e.g. host full addresses, export file paths) */
+.select-all {
+  user-select: all !important;
+  -webkit-user-select: all !important;
+  cursor: text;
+}
+
+/* Preformatted code blocks */
+pre,
+code {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Prevent nested text or code inside clickable controls from displaying an I-beam */
+button,
+button *,
+.btn,
+.btn *,
+[role="button"],
+[role="button"] *,
+a,
+a *,
+.cursor-pointer,
+.cursor-pointer * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Uniform disabled states across desktop controls */
+:disabled,
+[disabled],
+.btn:disabled,
+.btn[disabled],
+.cursor-not-allowed {
+  cursor: not-allowed !important;
 }
 
 /* ==========================================================================
