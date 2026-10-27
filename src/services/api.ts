@@ -25,7 +25,7 @@ import type {
   PuttyDetectResult,
 } from "@/types/importer";
 import type { ServerMetrics } from "@/types/monitor";
-import type { ServerToolboxOverview } from "@/types/toolbox";
+import type { ServerToolboxOverview, ToolboxTelemetry } from "@/types/toolbox";
 import type { SerialPortInfo, SerialConnectOptions } from "@/types/serial";
 import type { TelnetConnectOptions } from "@/types/telnet";
 
@@ -458,6 +458,10 @@ export const api = {
   // --- Extended Agentless Server Toolbox ---
   hostFetchToolboxData: async (hostId: string): Promise<ServerToolboxOverview> => {
     return await invoke<ServerToolboxOverview>("host_fetch_toolbox_data", { hostId });
+  },
+
+  hostFetchToolboxTelemetry: async (hostId: string): Promise<ToolboxTelemetry> => {
+    return await invoke<ToolboxTelemetry>("host_fetch_toolbox_telemetry", { hostId });
   },
 
   hostContainerAction: async (

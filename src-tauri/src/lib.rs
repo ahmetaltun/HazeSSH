@@ -57,6 +57,7 @@ pub fn run() {
                 serial_manager: Arc::new(serial::SerialSessionManager::new()),
                 telnet_manager: Arc::new(telnet::TelnetSessionManager::new()),
                 sftp_manager: Arc::new(sftp::SftpManager::new()),
+                toolbox_manager: Arc::new(toolbox::ToolboxManager::new()),
             });
 
             // Fallback safety timeout: ensure window is revealed even if frontend script crashes
@@ -139,6 +140,7 @@ pub fn run() {
             commands::putty_import,
             commands::host_fetch_metrics,
             commands::host_fetch_toolbox_data,
+            commands::host_fetch_toolbox_telemetry,
             commands::host_container_action,
             commands::host_container_logs,
             commands::host_service_action,

@@ -108,6 +108,7 @@ export function ServerToolboxModal() {
   const hostState = activeHostId ? dataByHostId[activeHostId] : undefined;
   const overview = hostState?.overview;
   const isLoading = hostState?.isLoading ?? false;
+  const isTelemetryLoading = hostState?.isTelemetryLoading ?? false;
   const error = hostState?.error;
 
   // Search & Filters
@@ -360,8 +361,8 @@ export function ServerToolboxModal() {
               className="btn btn-ghost btn-sm gap-1.5 font-mono text-xs"
               title="Refresh server inspection telemetry"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-primary" : ""}`} />
-              <span>{isLoading ? "Probing..." : "Refresh"}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading || isTelemetryLoading ? "animate-spin text-primary" : ""}`} />
+              <span>{isLoading ? "Probing..." : isTelemetryLoading ? "Updating..." : "Refresh"}</span>
             </button>
             <button
               type="button"
@@ -711,8 +712,17 @@ export function ServerToolboxModal() {
                                     ) : null}
 
                                     {!container.cpu_percent && !container.memory_usage && (
-                                      <span className="text-[11px] text-base-content/40 italic">
-                                        {isRunning ? "Awaiting telemetry..." : "Container is offline"}
+                                      <span className="text-[11px] text-base-content/40 italic flex items-center gap-1.5">
+                                        {isTelemetryLoading && isRunning ? (
+                                          <>
+                                            <RefreshCw className="w-3 h-3 animate-spin text-primary/60 shrink-0" />
+                                            <span>Sampling CPU & RAM...</span>
+                                          </>
+                                        ) : isRunning ? (
+                                          "Awaiting telemetry..."
+                                        ) : (
+                                          "Container is offline"
+                                        )}
                                       </span>
                                     )}
                                   </div>

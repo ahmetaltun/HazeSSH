@@ -67,9 +67,22 @@ export interface ServerToolboxOverview {
   error?: string;
 }
 
+export interface ContainerStatsMetric {
+  cpu_percent: string;
+  memory_usage: string;
+  memory_percent: string;
+}
+
+export interface ToolboxTelemetry {
+  host_id: string;
+  container_stats: Record<string, ContainerStatsMetric>;
+  docker_disk_usage?: DockerDiskUsage;
+}
+
 export interface HostToolboxState {
   overview?: ServerToolboxOverview;
   isLoading: boolean;
+  isTelemetryLoading?: boolean;
   error?: string;
   lastUpdated?: number;
 }

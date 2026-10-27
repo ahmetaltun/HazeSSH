@@ -34,6 +34,7 @@ pub struct AppState {
     pub serial_manager: Arc<SerialSessionManager>,
     pub telnet_manager: Arc<TelnetSessionManager>,
     pub sftp_manager: Arc<sftp::SftpManager>,
+    pub toolbox_manager: Arc<crate::toolbox::ToolboxManager>,
 }
 
 impl AppState {
@@ -1513,6 +1514,14 @@ pub async fn host_fetch_toolbox_data(
     state: State<'_, AppState>,
 ) -> Result<ServerToolboxOverview, String> {
     toolbox::fetch_server_toolbox_overview(&host_id, &state).await
+}
+
+#[tauri::command]
+pub async fn host_fetch_toolbox_telemetry(
+    host_id: String,
+    state: State<'_, AppState>,
+) -> Result<toolbox::ToolboxTelemetry, String> {
+    toolbox::fetch_server_toolbox_telemetry(&host_id, &state).await
 }
 
 #[tauri::command]

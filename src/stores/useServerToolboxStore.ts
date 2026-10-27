@@ -17,6 +17,7 @@ interface ServerToolboxStore {
   readonly closeToolbox: () => void;
   readonly setActiveTab: (tab: ToolboxTab) => void;
   readonly fetchToolboxData: (hostId: string) => Promise<ServerToolboxOverview | null>;
+  readonly fetchToolboxTelemetry: (hostId: string) => Promise<void>;
   readonly containerAction: (
     hostId: string,
     containerId: string,
@@ -97,11 +98,18 @@ export const useServerToolboxStore = create<ServerToolboxStore>((set, get) => ({
           [hostId]: {
             overview,
             isLoading: false,
+            isTelemetryLoading: overview.docker_installed,
             lastUpdated: Date.now(),
             error: overview.error,
           },
         },
       }));
+
+      // If Docker is installed, asynchronously load heavy telemetry in background without blocking UI
+      if (overview.docker_installed) {
+        void get().fetchToolboxTelemetry(hostId);
+      }
+
       return overview;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -111,12 +119,63 @@ export const useServerToolboxStore = create<ServerToolboxStore>((set, get) => ({
           [hostId]: {
             ...state.dataByHostId[hostId],
             isLoading: false,
+            isTelemetryLoading: false,
             lastUpdated: Date.now(),
             error: msg,
           },
         },
       }));
       return null;
+    }
+  },
+
+  fetchToolboxTelemetry: async (hostId: string) => {
+    try {
+      const telemetry = await api.hostFetchToolboxTelemetry(hostId);
+      set((state) => {
+        const current = state.dataByHostId[hostId];
+        if (!current?.overview) return state;
+
+        // Merge container live stats (CPU% and RAM)
+        const updatedContainers = current.overview.containers.map((c) => {
+          const shortId = c.id.slice(0, 12);
+          const stat = telemetry.container_stats[shortId];
+          if (stat) {
+            return {
+              ...c,
+              cpu_percent: stat.cpu_percent,
+              memory_usage: stat.memory_usage,
+              memory_percent: stat.memory_percent,
+            };
+          }
+          return c;
+        });
+
+        return {
+          dataByHostId: {
+            ...state.dataByHostId,
+            [hostId]: {
+              ...current,
+              isTelemetryLoading: false,
+              overview: {
+                ...current.overview,
+                containers: updatedContainers,
+                docker_disk_usage: telemetry.docker_disk_usage ?? current.overview.docker_disk_usage,
+              },
+            },
+          },
+        };
+      });
+    } catch {
+      set((state) => ({
+        dataByHostId: {
+          ...state.dataByHostId,
+          [hostId]: {
+            ...state.dataByHostId[hostId],
+            isTelemetryLoading: false,
+          },
+        },
+      }));
     }
   },
 
