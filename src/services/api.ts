@@ -174,6 +174,36 @@ export const api = {
     return await invoke<void>("ssh_disconnect", { sessionId });
   },
 
+  // --- Local PTY Shell ---
+  ptySpawn: async (params: {
+    cols: number;
+    rows: number;
+    workingDir?: string;
+    onEvent: (event: SshEvent) => void;
+  }): Promise<string> => {
+    const channel = new Channel<SshEvent>();
+    channel.onmessage = params.onEvent;
+
+    return await invoke<string>("pty_spawn", {
+      cols: params.cols,
+      rows: params.rows,
+      workingDir: params.workingDir,
+      onEvent: channel,
+    });
+  },
+
+  ptyWrite: async (sessionId: string, data: number[]): Promise<void> => {
+    return await invoke<void>("pty_write", { sessionId, data });
+  },
+
+  ptyResize: async (sessionId: string, cols: number, rows: number): Promise<void> => {
+    return await invoke<void>("pty_resize", { sessionId, cols, rows });
+  },
+
+  ptyKill: async (sessionId: string): Promise<void> => {
+    return await invoke<void>("pty_kill", { sessionId });
+  },
+
   // --- SFTP File Operations ---
   sftpListRemote: async (hostId: string, remotePath: string): Promise<FileEntry[]> => {
     return await invoke<FileEntry[]>("sftp_list_remote", { hostId, remotePath });

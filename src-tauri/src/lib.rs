@@ -9,6 +9,7 @@ pub mod crypto;
 pub mod db;
 pub mod models;
 pub mod monitor;
+pub mod pty;
 pub mod serial;
 pub mod sftp;
 pub mod ssh;
@@ -50,6 +51,7 @@ pub fn run() {
                 db: Arc::new(database),
                 active_key: Mutex::new(None),
                 ssh_manager: Arc::new(SshManager::new()),
+                pty_manager: Arc::new(pty::PtyManager::new()),
                 tunnel_manager: Arc::new(TunnelManager::new()),
                 serial_manager: Arc::new(serial::SerialSessionManager::new()),
                 telnet_manager: Arc::new(telnet::TelnetSessionManager::new()),
@@ -97,6 +99,10 @@ pub fn run() {
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::pty_spawn,
+            commands::pty_write,
+            commands::pty_resize,
+            commands::pty_kill,
             commands::sftp_list_remote,
             commands::sftp_read_file,
             commands::sftp_read_binary,

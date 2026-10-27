@@ -162,13 +162,18 @@ export const useMultiplexerStore = create<MultiplexerState>((set, get) => ({
     const paneId = `pane_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const tabId = `tab_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
+    const isExplicitRemote = Boolean(
+      initialPaneData?.hostId || initialPaneData?.hostname || initialPaneData?.serialOptions || initialPaneData?.telnetOptions
+    );
+
     const newPane: TerminalPane = {
       id: paneId,
-      title: initialPaneData?.title || initialPaneData?.hostname || "Local Terminal",
+      title: initialPaneData?.title || initialPaneData?.hostname || (isExplicitRemote ? "Terminal" : "Local Shell"),
+      connectionType: initialPaneData?.connectionType || (isExplicitRemote ? "ssh" : "local"),
       hostId: initialPaneData?.hostId,
       hostname: initialPaneData?.hostname,
       username: initialPaneData?.username,
-      status: initialPaneData?.status || "idle",
+      status: initialPaneData?.status || "connecting",
       createdAt: Date.now(),
     };
 

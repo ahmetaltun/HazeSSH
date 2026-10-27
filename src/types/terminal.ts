@@ -6,11 +6,12 @@ export type SplitDirection = "horizontal" | "vertical";
 export interface TerminalPane {
   readonly id: string;
   readonly title: string;
-  readonly connectionType?: "ssh" | "serial" | "telnet";
+  readonly connectionType?: "ssh" | "serial" | "telnet" | "local";
   readonly hostId?: string;
   readonly hostname?: string;
   readonly port?: number;
   readonly username?: string;
+  readonly workingDir?: string;
   readonly serialOptions?: SerialConnectOptions;
   readonly telnetOptions?: TelnetConnectOptions;
   readonly status: "idle" | "connecting" | "connected" | "disconnected" | "error";
@@ -22,7 +23,7 @@ export interface TerminalPane {
     readonly port?: number;
     readonly username?: string;
     readonly title?: string;
-    readonly connectionType?: "ssh" | "serial" | "telnet";
+    readonly connectionType?: "ssh" | "serial" | "telnet" | "local";
   };
 }
 

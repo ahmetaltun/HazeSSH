@@ -30,7 +30,11 @@ export function PaneContainer({
 
   const isExcludedFromBroadcast = isPaneExcluded(pane.id);
   const isConfigured = Boolean(
-    pane.hostId || pane.hostname || pane.serialOptions || pane.telnetOptions
+    pane.hostId ||
+      pane.hostname ||
+      pane.serialOptions ||
+      pane.telnetOptions ||
+      pane.connectionType === "local"
   );
 
   const getStatusBadge = () => {

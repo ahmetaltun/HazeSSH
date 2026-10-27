@@ -15,9 +15,10 @@ use crate::models::{
     UpdateSnippetInput, VaultStatus,
 };
 use crate::monitor;
+use crate::pty::{PtyEvent, PtyManager};
 use crate::serial::{self, SerialSessionManager};
 use crate::sftp::{self, FileEntry};
-use crate::ssh::{SshEvent, SshManager};
+use crate::ssh::{JumpHostConfig, SshEvent, SshManager};
 use crate::ssh_config_parser;
 use crate::telnet::TelnetSessionManager;
 use crate::third_party_importer;
@@ -27,6 +28,7 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub active_key: Mutex<Option<[u8; 32]>>,
     pub ssh_manager: Arc<SshManager>,
+    pub pty_manager: Arc<PtyManager>,
     pub tunnel_manager: Arc<TunnelManager>,
     pub serial_manager: Arc<SerialSessionManager>,
     pub telnet_manager: Arc<TelnetSessionManager>,
@@ -511,12 +513,13 @@ pub async fn ssh_connect(
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
 
-    let (target_host, target_port, target_user, target_pass, target_key, target_passphrase) =
+    let (target_host, target_port, target_user, target_pass, target_key, target_passphrase, auth_type, jump_host) =
         if let Some(hid) = host_id {
             let hosts = state.db.list_hosts().map_err(|e| e.to_string())?;
             let host = hosts
-                .into_iter()
+                .iter()
                 .find(|h| h.id == hid)
+                .cloned()
                 .ok_or_else(|| format!("Host not found: {}", hid))?;
 
             let mut pass = None;
@@ -534,13 +537,48 @@ pub async fn ssh_connect(
                 }
             }
 
+            // Resolve jump host if configured
+            let jump_host = if let Some(ref jid) = host.jump_host_id {
+                let jh = hosts
+                    .iter()
+                    .find(|h| h.id == *jid)
+                    .ok_or_else(|| format!("Configured Jump Host '{}' not found", jid))?;
+
+                let mut jh_pass = None;
+                let mut jh_key = None;
+                let mut jh_passphrase = None;
+
+                if let Some(ref j_iid) = jh.identity_id {
+                    let (secret, dec_pass) = state.get_decrypted_identity(j_iid)?;
+                    jh_passphrase = dec_pass;
+
+                    if secret.contains("PRIVATE KEY") {
+                        jh_key = Some(secret);
+                    } else {
+                        jh_pass = Some(secret);
+                    }
+                }
+
+                Some(JumpHostConfig {
+                    hostname: jh.hostname.clone(),
+                    port: jh.port,
+                    username: jh.username.clone().unwrap_or_else(|| "root".into()),
+                    password: jh_pass,
+                    private_key: jh_key,
+                    passphrase: jh_passphrase,
+                    auth_type: Some(jh.auth_type.clone()),
+                })
+            } else {
+                None
+            };
+
             let u = host.username.or(username).unwrap_or_else(|| "root".into());
-            (host.hostname, host.port, u, pass, key, passphrase)
+            (host.hostname, host.port, u, pass, key, passphrase, Some(host.auth_type), jump_host)
         } else {
             let h = hostname.ok_or_else(|| "Hostname is required".to_string())?;
             let p = port.unwrap_or(22);
             let u = username.unwrap_or_else(|| "root".into());
-            (h, p, u, password, None, None)
+            (h, p, u, password, None, None, None, None)
         };
 
     state
@@ -553,6 +591,8 @@ pub async fn ssh_connect(
             target_pass,
             target_key,
             target_passphrase,
+            auth_type,
+            jump_host,
             cols,
             rows,
             on_event,
@@ -561,6 +601,58 @@ pub async fn ssh_connect(
         .map_err(|e| e.to_string())?;
 
     Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn pty_spawn(
+    cols: u16,
+    rows: u16,
+    working_dir: Option<String>,
+    on_event: Channel<PtyEvent>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let session_id = Uuid::new_v4().to_string();
+    state
+        .pty_manager
+        .start_session(session_id.clone(), cols, rows, working_dir, on_event)
+        .map_err(|e| e.to_string())?;
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn pty_write(
+    session_id: String,
+    data: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .pty_manager
+        .write_data(&session_id, data)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn pty_resize(
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .pty_manager
+        .resize_pty(&session_id, cols, rows)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn pty_kill(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .pty_manager
+        .kill_session(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

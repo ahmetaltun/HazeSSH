@@ -39,6 +39,7 @@ russh-sftp = "2.0"
 async-trait = "0.1"
 tokio-serial = "5.4"
 serialport = "4.7"
+portable-pty = "0.8"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

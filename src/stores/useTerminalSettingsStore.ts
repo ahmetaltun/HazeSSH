@@ -1,4 +1,9 @@
 import { create } from "zustand";
+import {
+  type HighlightRule,
+  type HighlightStyleMode,
+  DEFAULT_HIGHLIGHT_RULES,
+} from "@/services/keywordHighlightService";
 
 export type CursorStyle = "block" | "underline" | "bar";
 
@@ -53,6 +58,10 @@ interface TerminalSettingsState {
   readonly copyOnSelect: boolean;
   readonly gpuAcceleration: GpuAccelerationMode;
   readonly terminalTheme: string;
+  readonly keywordHighlightEnabled: boolean;
+  readonly highlightStyle: HighlightStyleMode;
+  readonly highlightBoxOpacity: number;
+  readonly highlightRules: readonly HighlightRule[];
 
   readonly setFontFamily: (fontFamily: string) => void;
   readonly setFontSize: (fontSize: number) => void;
@@ -63,6 +72,13 @@ interface TerminalSettingsState {
   readonly setCopyOnSelect: (copyOnSelect: boolean) => void;
   readonly setGpuAcceleration: (gpuAcceleration: GpuAccelerationMode) => void;
   readonly setTerminalTheme: (terminalTheme: string) => void;
+  readonly setKeywordHighlightEnabled: (enabled: boolean) => void;
+  readonly setHighlightStyle: (style: HighlightStyleMode) => void;
+  readonly setHighlightBoxOpacity: (opacity: number) => void;
+  readonly setHighlightRules: (rules: readonly HighlightRule[]) => void;
+  readonly toggleHighlightRule: (id: string) => void;
+  readonly addHighlightRule: (rule: HighlightRule) => void;
+  readonly deleteHighlightRule: (id: string) => void;
   readonly resetToDefaults: () => void;
 }
 
@@ -78,6 +94,10 @@ const DEFAULT_SETTINGS = {
   copyOnSelect: false,
   gpuAcceleration: "auto" as GpuAccelerationMode,
   terminalTheme: "auto",
+  keywordHighlightEnabled: true,
+  highlightStyle: "underline" as HighlightStyleMode,
+  highlightBoxOpacity: 0.10,
+  highlightRules: DEFAULT_HIGHLIGHT_RULES,
 };
 
 function loadSavedSettings() {
@@ -106,6 +126,10 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
         copyOnSelect: get().copyOnSelect,
         gpuAcceleration: get().gpuAcceleration,
         terminalTheme: get().terminalTheme,
+        keywordHighlightEnabled: get().keywordHighlightEnabled,
+        highlightStyle: get().highlightStyle,
+        highlightBoxOpacity: get().highlightBoxOpacity,
+        highlightRules: get().highlightRules,
         ...partial,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -160,6 +184,46 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
     setTerminalTheme: (terminalTheme) => {
       persist({ terminalTheme });
       set({ terminalTheme });
+    },
+
+    setKeywordHighlightEnabled: (keywordHighlightEnabled) => {
+      persist({ keywordHighlightEnabled });
+      set({ keywordHighlightEnabled });
+    },
+
+    setHighlightStyle: (highlightStyle) => {
+      persist({ highlightStyle });
+      set({ highlightStyle });
+    },
+
+    setHighlightBoxOpacity: (highlightBoxOpacity) => {
+      persist({ highlightBoxOpacity });
+      set({ highlightBoxOpacity });
+    },
+
+    setHighlightRules: (highlightRules) => {
+      persist({ highlightRules });
+      set({ highlightRules });
+    },
+
+    toggleHighlightRule: (id) => {
+      const nextRules = get().highlightRules.map((r) =>
+        r.id === id ? { ...r, enabled: !r.enabled } : r
+      );
+      persist({ highlightRules: nextRules });
+      set({ highlightRules: nextRules });
+    },
+
+    addHighlightRule: (rule) => {
+      const nextRules = [...get().highlightRules, rule];
+      persist({ highlightRules: nextRules });
+      set({ highlightRules: nextRules });
+    },
+
+    deleteHighlightRule: (id) => {
+      const nextRules = get().highlightRules.filter((r) => r.id !== id);
+      persist({ highlightRules: nextRules });
+      set({ highlightRules: nextRules });
     },
 
     resetToDefaults: () => {

@@ -52,7 +52,9 @@ export function XTermTerminal({
     const sessionId = session?.sessionId;
     if (sessionId) {
       const bytes = Array.from(textEncoder.encode(toSend));
-      if (pane.connectionType === "serial") {
+      if (pane.connectionType === "local") {
+        void api.ptyWrite(sessionId, bytes);
+      } else if (pane.connectionType === "serial") {
         void api.serialWrite(sessionId, bytes);
       } else if (pane.connectionType === "telnet") {
         void api.telnetWrite(sessionId, bytes);

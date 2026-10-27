@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use russh::client;
 use russh::{ChannelMsg, Disconnect};
+use russh_keys::agent::client::AgentClient;
 use russh_keys::key;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -43,7 +44,18 @@ pub enum SshEvent {
     Error(String),
 }
 
-struct ClientHandler;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JumpHostConfig {
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    pub password: Option<String>,
+    pub private_key: Option<String>,
+    pub passphrase: Option<String>,
+    pub auth_type: Option<String>,
+}
+
+pub struct ClientHandler;
 
 #[async_trait]
 impl client::Handler for ClientHandler {
@@ -68,6 +80,71 @@ pub struct SshManager {
     sessions: Arc<Mutex<HashMap<String, ActiveSession>>>,
 }
 
+async fn authenticate_client(
+    session: &mut client::Handle<ClientHandler>,
+    username: &str,
+    password: Option<&str>,
+    private_key: Option<&str>,
+    passphrase: Option<&str>,
+    auth_type: Option<&str>,
+) -> bool {
+    // 1. Try SSH Agent if requested
+    if auth_type == Some("agent")
+        && let Ok(mut agent) = AgentClient::connect_env().await
+        && let Ok(keys) = agent.request_identities().await
+    {
+        let mut current_agent = agent;
+        for k in keys {
+            let (next_agent, auth_res) = session.authenticate_future(username, k, current_agent).await;
+            current_agent = next_agent;
+            if let Ok(true) = auth_res {
+                return true;
+            }
+        }
+    }
+
+    // 2. Try Public Key Authentication
+    if let Some(priv_key_str) = private_key {
+        match russh_keys::decode_secret_key(priv_key_str, passphrase) {
+            Ok(key_pair) => {
+                let key_arc = Arc::new(key_pair);
+                if let Ok(true) = session.authenticate_publickey(username, key_arc).await {
+                    return true;
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to parse private key: {:?}", e);
+            }
+        }
+    }
+
+    // 3. Try Password Authentication
+    if let Some(pwd) = password
+        && let Ok(true) = session.authenticate_password(username, pwd).await
+    {
+        return true;
+    }
+
+    // 4. Automatic Agent Fallback if no credentials were provided
+    if auth_type != Some("password")
+        && private_key.is_none()
+        && password.is_none()
+        && let Ok(mut agent) = AgentClient::connect_env().await
+        && let Ok(keys) = agent.request_identities().await
+    {
+        let mut current_agent = agent;
+        for k in keys {
+            let (next_agent, auth_res) = session.authenticate_future(username, k, current_agent).await;
+            current_agent = next_agent;
+            if let Ok(true) = auth_res {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 impl SshManager {
     pub fn new() -> Self {
         Self {
@@ -84,6 +161,8 @@ impl SshManager {
         password: Option<String>,
         private_key: Option<String>,
         passphrase: Option<String>,
+        auth_type: Option<String>,
+        jump_host: Option<JumpHostConfig>,
         cols: u32,
         rows: u32,
         on_event: Channel<SshEvent>,
@@ -108,34 +187,130 @@ impl SshManager {
         let sid = session_id.clone();
 
         tokio::spawn(async move {
-            let _ = on_event.send(SshEvent::StatusChange {
-                status: "connecting".into(),
-                message: Some(format!("Connecting to {}:{}...", hostname, port)),
-            });
-
             let mut config = client::Config::default();
             config.keepalive_interval = Some(Duration::from_secs(30));
             let config = Arc::new(config);
 
-            let connect_future = async {
-                let stream = tokio::net::TcpStream::connect((hostname.as_str(), port)).await
-                    .map_err(russh::Error::from)?;
-                let _ = stream.set_nodelay(true);
-                client::connect_stream(config, stream, ClientHandler).await
-            };
-            let mut session = match tokio::time::timeout(Duration::from_secs(15), connect_future).await {
-                Ok(Ok(s)) => s,
-                Ok(Err(e)) => {
-                    let _ = on_event.send(SshEvent::Error(format!("Connection failed: {}", e)));
+            let mut session = if let Some(jh) = jump_host {
+                // Connect via Bastion Jump Host (ProxyJump)
+                let _ = on_event.send(SshEvent::StatusChange {
+                    status: "connecting".into(),
+                    message: Some(format!("Connecting to Bastion Jump Host {}:{}...", jh.hostname, jh.port)),
+                });
+
+                let bastion_connect_future = async {
+                    let stream = tokio::net::TcpStream::connect((jh.hostname.as_str(), jh.port))
+                        .await
+                        .map_err(russh::Error::from)?;
+                    let _ = stream.set_nodelay(true);
+                    client::connect_stream(config.clone(), stream, ClientHandler).await
+                };
+
+                let mut bastion_session = match tokio::time::timeout(Duration::from_secs(15), bastion_connect_future).await {
+                    Ok(Ok(s)) => s,
+                    Ok(Err(e)) => {
+                        let _ = on_event.send(SshEvent::Error(format!("Bastion jump host connection failed: {}", e)));
+                        let mut guard = sessions_map.lock().unwrap();
+                        guard.remove(&sid);
+                        return;
+                    }
+                    Err(_) => {
+                        let _ = on_event.send(SshEvent::Error("Bastion jump host timed out after 15 seconds".into()));
+                        let mut guard = sessions_map.lock().unwrap();
+                        guard.remove(&sid);
+                        return;
+                    }
+                };
+
+                let _ = on_event.send(SshEvent::StatusChange {
+                    status: "authenticating".into(),
+                    message: Some(format!("Authenticating jump host as '{}'...", jh.username)),
+                });
+
+                let bastion_auth = authenticate_client(
+                    &mut bastion_session,
+                    &jh.username,
+                    jh.password.as_deref(),
+                    jh.private_key.as_deref(),
+                    jh.passphrase.as_deref(),
+                    jh.auth_type.as_deref(),
+                ).await;
+
+                if !bastion_auth {
+                    let _ = on_event.send(SshEvent::Error(format!(
+                        "Authentication failed on Bastion jump host for user '{}'.",
+                        jh.username
+                    )));
                     let mut guard = sessions_map.lock().unwrap();
                     guard.remove(&sid);
                     return;
                 }
-                Err(_) => {
-                    let _ = on_event.send(SshEvent::Error("Connection timed out after 15 seconds".into()));
-                    let mut guard = sessions_map.lock().unwrap();
-                    guard.remove(&sid);
-                    return;
+
+                let _ = on_event.send(SshEvent::StatusChange {
+                    status: "connecting".into(),
+                    message: Some(format!("Opening ProxyJump direct tunnel through {} to {}:{}...", jh.hostname, hostname, port)),
+                });
+
+                let channel = match bastion_session
+                    .channel_open_direct_tcpip(&hostname, port as u32, "127.0.0.1", 0)
+                    .await
+                {
+                    Ok(ch) => ch,
+                    Err(e) => {
+                        let _ = on_event.send(SshEvent::Error(format!("Failed to open direct-tcpip channel through jump host: {}", e)));
+                        let mut guard = sessions_map.lock().unwrap();
+                        guard.remove(&sid);
+                        return;
+                    }
+                };
+
+                let proxied_stream = channel.into_stream();
+
+                let target_connect_future = client::connect_stream(config.clone(), proxied_stream, ClientHandler);
+                match tokio::time::timeout(Duration::from_secs(15), target_connect_future).await {
+                    Ok(Ok(s)) => s,
+                    Ok(Err(e)) => {
+                        let _ = on_event.send(SshEvent::Error(format!("Target SSH connection failed through tunnel: {}", e)));
+                        let mut guard = sessions_map.lock().unwrap();
+                        guard.remove(&sid);
+                        return;
+                    }
+                    Err(_) => {
+                        let _ = on_event.send(SshEvent::Error("Target connection timed out after 15 seconds".into()));
+                        let mut guard = sessions_map.lock().unwrap();
+                        guard.remove(&sid);
+                        return;
+                    }
+                }
+            } else {
+                // Direct connection
+                let _ = on_event.send(SshEvent::StatusChange {
+                    status: "connecting".into(),
+                    message: Some(format!("Connecting to {}:{}...", hostname, port)),
+                });
+
+                let connect_future = async {
+                    let stream = tokio::net::TcpStream::connect((hostname.as_str(), port))
+                        .await
+                        .map_err(russh::Error::from)?;
+                    let _ = stream.set_nodelay(true);
+                    client::connect_stream(config, stream, ClientHandler).await
+                };
+
+                match tokio::time::timeout(Duration::from_secs(15), connect_future).await {
+                    Ok(Ok(s)) => s,
+                    Ok(Err(e)) => {
+                        let _ = on_event.send(SshEvent::Error(format!("Connection failed: {}", e)));
+                        let mut guard = sessions_map.lock().unwrap();
+                        guard.remove(&sid);
+                        return;
+                    }
+                    Err(_) => {
+                        let _ = on_event.send(SshEvent::Error("Connection timed out after 15 seconds".into()));
+                        let mut guard = sessions_map.lock().unwrap();
+                        guard.remove(&sid);
+                        return;
+                    }
                 }
             };
 
@@ -144,45 +319,19 @@ impl SshManager {
                 message: Some(format!("Authenticating as '{}'...", username)),
             });
 
-            // Authentication flow
-            let mut auth_success = false;
-
-            if let Some(ref priv_key_str) = private_key {
-                match russh_keys::decode_secret_key(priv_key_str, passphrase.as_deref()) {
-                    Ok(key_pair) => {
-                        let key_arc = Arc::new(key_pair);
-                        match session.authenticate_publickey(&username, key_arc).await {
-                            Ok(success) if success => {
-                                auth_success = true;
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Public key auth failed: {:?}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("Failed to parse private key: {:?}", e);
-                    }
-                }
-            }
-
-            if !auth_success && password.is_some()
-                && let Some(ref pwd) = password {
-                    match session.authenticate_password(&username, pwd).await {
-                        Ok(success) if success => {
-                            auth_success = true;
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            println!("Password auth failed: {:?}", e);
-                        }
-                    }
-                }
+            // Target Authentication
+            let auth_success = authenticate_client(
+                &mut session,
+                &username,
+                password.as_deref(),
+                private_key.as_deref(),
+                passphrase.as_deref(),
+                auth_type.as_deref(),
+            ).await;
 
             if !auth_success {
                 let _ = on_event.send(SshEvent::Error(format!(
-                    "Authentication failed for user '{}'. Please verify credentials.",
+                    "Authentication failed for user '{}'. Please verify credentials or SSH agent.",
                     username
                 )));
                 let mut guard = sessions_map.lock().unwrap();
@@ -316,5 +465,35 @@ impl SshManager {
 impl Default for SshManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_jump_host_config_structure() {
+        let jh = JumpHostConfig {
+            hostname: "bastion.example.com".into(),
+            port: 2222,
+            username: "jumpuser".into(),
+            password: Some("secret".into()),
+            private_key: None,
+            passphrase: None,
+            auth_type: Some("identity".into()),
+        };
+        assert_eq!(jh.hostname, "bastion.example.com");
+        assert_eq!(jh.port, 2222);
+        assert_eq!(jh.username, "jumpuser");
+        assert_eq!(jh.auth_type.as_deref(), Some("identity"));
+    }
+
+    #[test]
+    fn test_ssh_manager_not_found_errors() {
+        let manager = SshManager::new();
+        assert!(manager.write_data("non_existent", vec![1, 2, 3]).is_err());
+        assert!(manager.resize_pty("non_existent", 80, 24).is_err());
+        assert!(manager.disconnect_session("non_existent").is_ok());
     }
 }

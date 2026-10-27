@@ -5,6 +5,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { attachTerminalRenderer, type TerminalRendererHandle } from "@/components/terminal/terminalRenderer";
 import { api } from "@/services/api";
 import { resolveTerminalTheme } from "@/services/terminalThemes";
+import { TerminalHighlighter } from "@/services/keywordHighlightService";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useTerminalSettingsStore } from "@/stores/useTerminalSettingsStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
@@ -25,6 +26,7 @@ export interface ActiveTerminalSession {
   readonly fitAddon: FitAddon;
   readonly webLinksAddon: WebLinksAddon;
   readonly searchAddon: SearchAddon;
+  readonly highlighter: TerminalHighlighter;
   rendererHandle: TerminalRendererHandle | null;
   readonly wrapperEl: HTMLDivElement;
   sessionId: string | null;
@@ -91,12 +93,22 @@ class TerminalSessionManager {
     // 4. Renderer handle
     const rendererHandle = attachTerminalRenderer(term, initialSettings.gpuAcceleration);
 
+    // 5. Keyword Regex Highlighter
+    const highlighter = new TerminalHighlighter(
+      term,
+      initialSettings.highlightRules,
+      initialSettings.keywordHighlightEnabled,
+      initialSettings.highlightStyle,
+      initialSettings.highlightBoxOpacity
+    );
+
     const session: ActiveTerminalSession = {
       paneId: pane.id,
       term,
       fitAddon,
       webLinksAddon,
       searchAddon,
+      highlighter,
       rendererHandle,
       wrapperEl,
       sessionId: null,
@@ -107,14 +119,33 @@ class TerminalSessionManager {
       disposables: [],
     };
 
-    // 5. Handle user input typing
+    // Listen to line feeds to highlight keywords in real time
+    const lineFeedDisposable = term.onLineFeed(() => {
+      highlighter.scanLine(term.buffer.active.baseY + term.buffer.active.cursorY);
+    });
+
+    const scrollDisposable = term.onScroll(() => {
+      highlighter.rescanVisibleBuffer();
+    });
+
+    session.disposables.push(() => {
+      lineFeedDisposable.dispose();
+      scrollDisposable.dispose();
+      highlighter.dispose();
+    });
+
+    // 6. Handle user input typing
     const dataDisposable = term.onData((data) => {
       if (session.isDisposed) return;
       const sessionId = session.sessionId;
       if (!sessionId) return;
       const bytes = Array.from(textEncoder.encode(data));
 
-      if (pane.connectionType === "serial") {
+      if (pane.connectionType === "local") {
+        api.ptyWrite(sessionId, bytes).catch((err) => {
+          console.error(`[Terminal ${pane.id}] Failed to send PTY input:`, err);
+        });
+      } else if (pane.connectionType === "serial") {
         api.serialWrite(sessionId, bytes).catch((err) => {
           console.error(`[Terminal ${pane.id}] Failed to send serial input:`, err);
         });
@@ -154,7 +185,7 @@ class TerminalSessionManager {
 
     // 6. Connect to backend if host or options configured
     const hasConnectionTarget = Boolean(
-      pane.hostId || pane.hostname || pane.serialOptions || pane.telnetOptions
+      pane.hostId || pane.hostname || pane.serialOptions || pane.telnetOptions || pane.connectionType === "local" || (!pane.hostId && !pane.hostname)
     );
 
     if (hasConnectionTarget) {
@@ -267,7 +298,28 @@ class TerminalSessionManager {
     try {
       let sessionId: string;
 
-      if (pane.connectionType === "serial") {
+      if (
+        pane.connectionType === "local" ||
+        (!pane.hostId && !pane.hostname && pane.connectionType !== "serial" && pane.connectionType !== "telnet")
+      ) {
+        try {
+          session.fitAddon.fit();
+        } catch {
+          // May not be mounted in DOM yet
+        }
+
+        const cols = term.cols || 80;
+        const rows = term.rows || 24;
+
+        term.writeln("\x1b[90m[Haze Terminal] Spawning local shell session...\x1b[0m\r\n");
+
+        sessionId = await api.ptySpawn({
+          cols,
+          rows,
+          workingDir: pane.workingDir,
+          onEvent: handleTerminalEvent,
+        });
+      } else if (pane.connectionType === "serial") {
         term.writeln(
           `\x1b[90m[Haze Serial] Opening hardware port ${
             pane.serialOptions?.port_name || pane.title
@@ -331,7 +383,9 @@ class TerminalSessionManager {
 
       if (session.isDisposed) {
         // Disconnected before connect finished
-        if (pane.connectionType === "serial") {
+        if (pane.connectionType === "local") {
+          void api.ptyKill(sessionId);
+        } else if (pane.connectionType === "serial") {
           void api.serialDisconnect(sessionId);
         } else if (pane.connectionType === "telnet") {
           void api.telnetDisconnect(sessionId);
@@ -363,7 +417,9 @@ class TerminalSessionManager {
         sendCommand: async (command: string) => {
           const toSend = command.endsWith("\n") ? command : `${command}\n`;
           const bytes = Array.from(textEncoder.encode(toSend));
-          if (pane.connectionType === "serial") {
+          if (pane.connectionType === "local") {
+            await api.ptyWrite(sessionId, bytes);
+          } else if (pane.connectionType === "serial") {
             await api.serialWrite(sessionId, bytes);
           } else if (pane.connectionType === "telnet") {
             await api.telnetWrite(sessionId, bytes);
@@ -372,7 +428,9 @@ class TerminalSessionManager {
           }
         },
         writeBytes: async (bytes: number[]) => {
-          if (pane.connectionType === "serial") {
+          if (pane.connectionType === "local") {
+            await api.ptyWrite(sessionId, bytes);
+          } else if (pane.connectionType === "serial") {
             await api.serialWrite(sessionId, bytes);
           } else if (pane.connectionType === "telnet") {
             await api.telnetWrite(sessionId, bytes);
@@ -432,11 +490,19 @@ class TerminalSessionManager {
         if (session.lastResizedCols !== cols || session.lastResizedRows !== rows) {
           session.lastResizedCols = cols;
           session.lastResizedRows = rows;
-          api.sshResize(sessionId, cols, rows).catch((err) => {
-            console.warn(`[Terminal ${paneId}] sshResize failed:`, err);
-            session.lastResizedCols = undefined;
-            session.lastResizedRows = undefined;
-          });
+          if (session.pane.connectionType === "local") {
+            api.ptyResize(sessionId, cols, rows).catch((err) => {
+              console.warn(`[Terminal ${paneId}] ptyResize failed:`, err);
+              session.lastResizedCols = undefined;
+              session.lastResizedRows = undefined;
+            });
+          } else {
+            api.sshResize(sessionId, cols, rows).catch((err) => {
+              console.warn(`[Terminal ${paneId}] sshResize failed:`, err);
+              session.lastResizedCols = undefined;
+              session.lastResizedRows = undefined;
+            });
+          }
         }
       }
     } catch {
@@ -497,7 +563,9 @@ class TerminalSessionManager {
 
     const sessionId = session.sessionId;
     if (sessionId) {
-      if (session.pane.connectionType === "serial") {
+      if (session.pane.connectionType === "local") {
+        await api.ptyKill(sessionId).catch(() => {});
+      } else if (session.pane.connectionType === "serial") {
         await api.serialDisconnect(sessionId).catch(() => {});
       } else if (session.pane.connectionType === "telnet") {
         await api.telnetDisconnect(sessionId).catch(() => {});
@@ -508,6 +576,7 @@ class TerminalSessionManager {
 
     useTerminalRegistryStore.getState().unregisterSession(paneId);
 
+    session.highlighter.dispose();
     session.rendererHandle?.dispose();
     session.rendererHandle = null;
     session.term.dispose();
@@ -535,6 +604,9 @@ class TerminalSessionManager {
         session.term.options.cursorStyle = s.cursorStyle;
         session.term.options.cursorBlink = s.cursorBlink;
         session.term.options.scrollback = s.scrollback;
+        session.highlighter.setStyleOptions(s.highlightStyle, s.highlightBoxOpacity);
+        session.highlighter.setEnabled(s.keywordHighlightEnabled);
+        session.highlighter.updateRules(s.highlightRules);
         try {
           session.fitAddon.fit();
         } catch {
@@ -569,5 +641,6 @@ useThemeStore.subscribe((state) => {
 
 useTerminalSettingsStore.subscribe((state) => {
   terminalSessionManager.syncTheme(state.terminalTheme);
+  terminalSessionManager.syncSettings();
 });
 

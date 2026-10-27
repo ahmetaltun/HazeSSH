@@ -7,6 +7,7 @@ import {
   ArrowRight,
   X,
   Shield,
+  Terminal,
 } from "lucide-react";
 import type { TerminalPane } from "@/types/terminal";
 import type { Host } from "@/types/host";
@@ -180,6 +181,40 @@ export function PaneHostSelector({ pane, tabId }: PaneHostSelectorProps) {
       </div>
 
       <div className="flex flex-col gap-4 py-4">
+        {/* Launch Local Shell Card */}
+        <div className="p-3 rounded-lg border border-accent/30 bg-accent/5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="p-2 rounded-md bg-accent/20 text-accent">
+              <Terminal className="w-4 h-4" />
+            </div>
+            <div className="overflow-hidden">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-xs text-base-content truncate">
+                  Local Terminal Shell
+                </span>
+                <span className="badge badge-accent badge-xs">Local PTY</span>
+              </div>
+              <p className="text-xs font-mono text-base-content/70 truncate mt-0.5">
+                Launch your system default shell (zsh, bash, powershell)
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              updatePane(pane.id, {
+                title: "Local Shell",
+                connectionType: "local",
+                status: "connecting",
+              });
+            }}
+            className="btn btn-accent btn-xs gap-1.5 shrink-0"
+          >
+            <span>Spawn Shell</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
+
         {/* Duplicate Current Host Card */}
         {pane.sourceHost && (pane.sourceHost.hostname || pane.sourceHost.hostId) && (
           <div className="p-3 rounded-lg border border-primary/30 bg-primary/5 flex items-center justify-between gap-3">

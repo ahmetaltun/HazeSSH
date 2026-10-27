@@ -103,25 +103,72 @@ async fn connect_sftp(
 ) -> Result<(SftpSession, client::Handle<SftpClientHandler>), String> {
     let hosts = state.db.list_hosts().map_err(|e| e.to_string())?;
     let host = hosts
-        .into_iter()
+        .iter()
         .find(|h| h.id == host_id)
+        .cloned()
         .ok_or_else(|| format!("Host '{}' not found", host_id))?;
 
     let mut config = client::Config::default();
     config.keepalive_interval = Some(Duration::from_secs(30));
     let config = Arc::new(config);
 
-    let connect_future = async {
-        let stream = tokio::net::TcpStream::connect((host.hostname.as_str(), host.port))
+    let mut session = if let Some(ref jid) = host.jump_host_id {
+        let jh = hosts
+            .iter()
+            .find(|h| h.id == *jid)
+            .ok_or_else(|| format!("Configured Jump Host '{}' not found", jid))?;
+
+        let jh_connect_future = async {
+            let stream = tokio::net::TcpStream::connect((jh.hostname.as_str(), jh.port))
+                .await
+                .map_err(russh::Error::from)?;
+            let _ = stream.set_nodelay(true);
+            client::connect_stream(config.clone(), stream, SftpClientHandler).await
+        };
+        let mut jh_session = tokio::time::timeout(Duration::from_secs(12), jh_connect_future)
             .await
-            .map_err(russh::Error::from)?;
-        let _ = stream.set_nodelay(true);
-        client::connect_stream(config, stream, SftpClientHandler).await
+            .map_err(|_| "Bastion jump host connection timed out after 12 seconds".to_string())?
+            .map_err(|e| format!("Failed to connect to jump host: {}", e))?;
+
+        let jh_user = jh.username.clone().unwrap_or_else(|| "root".into());
+        let mut jh_auth = false;
+        if let Some(ref j_iid) = jh.identity_id {
+            let (secret, pass) = state.get_decrypted_identity(j_iid)?;
+            if secret.contains("PRIVATE KEY") {
+                if let Ok(key_pair) = russh_keys::decode_secret_key(&secret, pass.as_deref())
+                    && let Ok(success) = jh_session.authenticate_publickey(&jh_user, Arc::new(key_pair)).await {
+                        jh_auth = success;
+                    }
+            } else if let Ok(success) = jh_session.authenticate_password(&jh_user, &secret).await {
+                jh_auth = success;
+            }
+        }
+        if !jh_auth {
+            return Err(format!("Authentication failed on Bastion jump host for user '{}'", jh_user));
+        }
+
+        let channel = jh_session
+            .channel_open_direct_tcpip(&host.hostname, host.port as u32, "127.0.0.1", 0)
+            .await
+            .map_err(|e| format!("Failed to open direct-tcpip channel through jump host: {}", e))?;
+        let stream = channel.into_stream();
+        tokio::time::timeout(Duration::from_secs(12), client::connect_stream(config.clone(), stream, SftpClientHandler))
+            .await
+            .map_err(|_| "Target SFTP connection timed out after 12 seconds".to_string())?
+            .map_err(|e| format!("Failed to connect to target via jump host: {}", e))?
+    } else {
+        let connect_future = async {
+            let stream = tokio::net::TcpStream::connect((host.hostname.as_str(), host.port))
+                .await
+                .map_err(russh::Error::from)?;
+            let _ = stream.set_nodelay(true);
+            client::connect_stream(config, stream, SftpClientHandler).await
+        };
+        tokio::time::timeout(Duration::from_secs(12), connect_future)
+            .await
+            .map_err(|_| "Connection timed out after 12 seconds".to_string())?
+            .map_err(|e| format!("Failed to connect to host: {}", e))?
     };
-    let mut session = tokio::time::timeout(Duration::from_secs(12), connect_future)
-        .await
-        .map_err(|_| "Connection timed out after 12 seconds".to_string())?
-        .map_err(|e| format!("Failed to connect to host: {}", e))?;
 
     let username = host.username.unwrap_or_else(|| "root".into());
     let mut auth_success = false;

@@ -8,10 +8,14 @@ import {
   KeyRound,
   Terminal,
   RotateCcw,
+  Highlighter,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { useTerminalSettingsStore, POPULAR_TERMINAL_FONTS } from "@/stores/useTerminalSettingsStore";
+import { applyOpacity } from "@/services/keywordHighlightService";
 import { TERMINAL_THEME_OPTIONS } from "@/services/terminalThemes";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
 import { VaultModal } from "@/components/vault/VaultModal";
@@ -34,6 +38,10 @@ export function SettingsView() {
     scrollback,
     gpuAcceleration,
     terminalTheme,
+    keywordHighlightEnabled,
+    highlightStyle,
+    highlightBoxOpacity,
+    highlightRules,
     setFontFamily,
     setFontSize,
     setLineHeight,
@@ -42,8 +50,19 @@ export function SettingsView() {
     setScrollback,
     setGpuAcceleration,
     setTerminalTheme,
+    setKeywordHighlightEnabled,
+    setHighlightStyle,
+    setHighlightBoxOpacity,
+    toggleHighlightRule,
+    addHighlightRule,
+    deleteHighlightRule,
     resetToDefaults,
   } = useTerminalSettingsStore();
+
+  const [newRuleName, setNewRuleName] = useState("");
+  const [newRulePattern, setNewRulePattern] = useState("");
+  const [newRuleColor, setNewRuleColor] = useState("#ef4444");
+  const [isAddingRule, setIsAddingRule] = useState(false);
 
   const [modalMode, setModalMode] = useState<"unlock" | "setup" | "disable" | null>(null);
   const [isIdentityManagerOpen, setIsIdentityManagerOpen] = useState(false);
@@ -469,6 +488,303 @@ export function SettingsView() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* Real-Time Keyword & Regex Highlighting Section */}
+        <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-warning/10 text-warning flex items-center justify-center">
+                <Highlighter className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-sm">Real-Time Keyword & Regex Highlighting</h3>
+                  <span className="badge badge-xs badge-warning font-mono">SecureCRT Mode</span>
+                </div>
+                <p className="text-xs text-base-content/60">
+                  Scans terminal output in real time and highlights critical words, errors, IP addresses, and regexes.
+                </p>
+              </div>
+            </div>
+
+            <input
+              type="checkbox"
+              checked={keywordHighlightEnabled}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setKeywordHighlightEnabled(next);
+                terminalSessionManager.syncSettings();
+              }}
+              className="toggle toggle-warning toggle-sm"
+              title="Toggle real-time terminal keyword highlighting"
+            />
+          </div>
+
+          <div className="divider my-1"></div>
+
+          {keywordHighlightEnabled ? (
+            <div className="space-y-4">
+              {/* Highlight Rendering Style Selector & Opacity Controls */}
+              <div className="p-3.5 rounded-xl bg-base-100 border border-base-300 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-semibold text-base-content">Highlight Style</span>
+                    <p className="text-[11px] text-base-content/60">
+                      Choose how matches are rendered on top of terminal text.
+                    </p>
+                  </div>
+                  <div className="join">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHighlightStyle("underline");
+                        terminalSessionManager.syncSettings();
+                      }}
+                      className={`join-item btn btn-xs ${
+                        highlightStyle === "underline"
+                          ? "btn-warning"
+                          : "btn-ghost border border-base-300 text-base-content/70"
+                      }`}
+                      title="Underline only: Text glyphs remain 100% visible and unblocked"
+                    >
+                      Underline Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHighlightStyle("badge");
+                        terminalSessionManager.syncSettings();
+                      }}
+                      className={`join-item btn btn-xs ${
+                        highlightStyle === "badge"
+                          ? "btn-warning"
+                          : "btn-ghost border border-base-300 text-base-content/70"
+                      }`}
+                      title="Subtle Badge: Soft translucent tinted box with delicate border"
+                    >
+                      Subtle Badge
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHighlightStyle("outline");
+                        terminalSessionManager.syncSettings();
+                      }}
+                      className={`join-item btn btn-xs ${
+                        highlightStyle === "outline"
+                          ? "btn-warning"
+                          : "btn-ghost border border-base-300 text-base-content/70"
+                      }`}
+                      title="Outline: Colored border with transparent interior"
+                    >
+                      Outline Box
+                    </button>
+                  </div>
+                </div>
+
+                {/* Opacity slider for Subtle Badge */}
+                {highlightStyle === "badge" && (
+                  <div className="pt-2 border-t border-base-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-medium text-base-content/80">Badge Box Opacity</span>
+                      <p className="text-[11px] text-base-content/50">
+                        Adjust background color fill intensity (5% – 30%).
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="0.05"
+                        max="0.30"
+                        step="0.01"
+                        value={highlightBoxOpacity}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setHighlightBoxOpacity(val);
+                          terminalSessionManager.syncSettings();
+                        }}
+                        className="range range-xs range-warning w-36"
+                      />
+                      <span className="font-mono text-xs w-10 text-right text-base-content/70">
+                        {Math.round(highlightBoxOpacity * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Active Rules Section Header */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-base-content/80">
+                  Active Highlighting Rules ({highlightRules.filter((r) => r.enabled).length}/{highlightRules.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAddingRule(!isAddingRule)}
+                  className="btn btn-xs btn-outline btn-warning gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Custom Rule</span>
+                </button>
+              </div>
+
+              {isAddingRule && (
+                <div className="p-3.5 rounded-xl bg-base-300/80 border border-base-300 space-y-3">
+                  <span className="text-xs font-semibold text-base-content">Create New Highlight Pattern</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input
+                      type="text"
+                      placeholder="Rule Name (e.g. Postgres Fatal)"
+                      value={newRuleName}
+                      onChange={(e) => setNewRuleName(e.target.value)}
+                      className="input input-xs input-bordered w-full text-xs"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Pattern (e.g. \bFATAL\b or DB_CONN_ERR)"
+                      value={newRulePattern}
+                      onChange={(e) => setNewRulePattern(e.target.value)}
+                      className="input input-xs input-bordered w-full font-mono text-xs"
+                    />
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={newRuleColor}
+                        onChange={(e) => setNewRuleColor(e.target.value)}
+                        className="select select-xs select-bordered flex-1 text-xs"
+                      >
+                        <option value="#ef4444">Red (Error)</option>
+                        <option value="#f59e0b">Amber (Warning)</option>
+                        <option value="#10b981">Green (Success)</option>
+                        <option value="#06b6d4">Cyan (Network)</option>
+                        <option value="#8b5cf6">Purple (Notice)</option>
+                        <option value="#ec4899">Pink (Debug)</option>
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!newRuleName.trim() || !newRulePattern.trim()}
+                        onClick={() => {
+                          const hexToRgba = (hex: string, alpha: number) => {
+                            const clean = hex.replace("#", "");
+                            const r = parseInt(clean.substring(0, 2), 16) || 0;
+                            const g = parseInt(clean.substring(2, 4), 16) || 0;
+                            const b = parseInt(clean.substring(4, 6), 16) || 0;
+                            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+                          };
+
+                          addHighlightRule({
+                            id: `rule-custom-${Date.now()}`,
+                            name: newRuleName.trim(),
+                            pattern: newRulePattern.trim(),
+                            isRegex: true,
+                            caseSensitive: false,
+                            style: {
+                              backgroundColor: hexToRgba(newRuleColor, 0.10),
+                              borderColor: newRuleColor,
+                              fontWeight: "bold",
+                            },
+                            enabled: true,
+                            category: "custom",
+                          });
+                          setNewRuleName("");
+                          setNewRulePattern("");
+                          setIsAddingRule(false);
+                          terminalSessionManager.syncSettings();
+                        }}
+                        className="btn btn-xs btn-primary shrink-0"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {highlightRules.map((rule) => {
+                  const accentColor = rule.style.borderColor || rule.style.backgroundColor || "#ef4444";
+                  let sampleStyle: React.CSSProperties;
+
+                  if (highlightStyle === "underline") {
+                    sampleStyle = {
+                      borderBottom: `2px solid ${accentColor}`,
+                      borderRadius: "0px",
+                      color: "inherit",
+                      fontWeight: rule.style.fontWeight || "normal",
+                    };
+                  } else if (highlightStyle === "outline") {
+                    sampleStyle = {
+                      border: `1px solid ${accentColor}`,
+                      borderRadius: "3px",
+                      color: "inherit",
+                      fontWeight: rule.style.fontWeight || "normal",
+                    };
+                  } else {
+                    sampleStyle = {
+                      backgroundColor: applyOpacity(rule.style.backgroundColor, highlightBoxOpacity),
+                      border: `1px solid ${applyOpacity(accentColor, Math.min(0.45, highlightBoxOpacity * 2.5))}`,
+                      borderRadius: "3px",
+                      color: "inherit",
+                      fontWeight: rule.style.fontWeight || "normal",
+                    };
+                  }
+
+                  return (
+                    <div
+                      key={rule.id}
+                      className="p-2.5 rounded-xl border border-base-300 bg-base-100 flex items-center justify-between gap-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-2.5 overflow-hidden">
+                        <input
+                          type="checkbox"
+                          checked={rule.enabled}
+                          onChange={() => {
+                            toggleHighlightRule(rule.id);
+                            terminalSessionManager.syncSettings();
+                          }}
+                          className="checkbox checkbox-xs checkbox-warning"
+                        />
+                        <div className="overflow-hidden">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-xs text-base-content truncate">
+                              {rule.name}
+                            </span>
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 font-mono truncate transition-all"
+                              style={sampleStyle}
+                            >
+                              SAMPLE
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-mono text-base-content/60 truncate mt-0.5" title={rule.pattern}>
+                            {rule.pattern}
+                          </p>
+                        </div>
+                      </div>
+
+                      {rule.category === "custom" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            deleteHighlightRule(rule.id);
+                            terminalSessionManager.syncSettings();
+                          }}
+                          className="btn btn-ghost btn-xs btn-square text-error/70 hover:text-error"
+                          title="Delete custom highlight rule"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-base-100 rounded-xl text-center text-xs text-base-content/60">
+              Keyword highlighting is currently disabled. Toggle the switch to activate real-time token highlighting.
+            </div>
+          )}
         </section>
 
         {/* Data Importers Section */}
