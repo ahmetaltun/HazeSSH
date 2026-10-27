@@ -120,6 +120,18 @@ async fn execute_curl_request(
     Ok((status_code, body_response))
 }
 
+fn ensure_success_status(provider_label: &str, status: u16, body: &str) -> Result<(), String> {
+    if !(200..400).contains(&status) {
+        let details = if body.trim().is_empty() {
+            format!("(Empty response body, status code {})", status)
+        } else {
+            body.trim().to_string()
+        };
+        return Err(format!("{} returned HTTP {}: {}", provider_label, status, details));
+    }
+    Ok(())
+}
+
 /// Dispatches completion request to OpenAI, Ollama, LM Studio, Anthropic, OpenRouter, Nvidia NIM, or DeepSeek
 pub async fn chat_completion(input: AiCompletionInput) -> Result<AiCompletionOutput, String> {
     let start_time = Instant::now();
@@ -260,17 +272,7 @@ pub async fn chat_completion(input: AiCompletionInput) -> Result<AiCompletionOut
 
     let latency_ms = start_time.elapsed().as_millis() as u64;
 
-    if status < 200 || status >= 400 {
-        return Err(format!(
-            "AI Provider returned HTTP {}: {}",
-            status,
-            if body.trim().is_empty() {
-                format!("(Empty response body, status code {})", status)
-            } else {
-                body.trim().to_string()
-            }
-        ));
-    }
+    ensure_success_status("AI Provider", status, &body)?;
 
     if body.trim().is_empty() {
         return Err("AI Provider returned an empty completion response body.".to_string());
@@ -412,17 +414,7 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
             .await
             .map_err(|e| format!("Failed to reach Anthropic at {}: {}", target_url, e))?;
 
-        if status < 200 || status >= 400 {
-            return Err(format!(
-                "Anthropic returned HTTP {}: {}",
-                status,
-                if body.trim().is_empty() {
-                    format!("(Empty response body, status code {})", status)
-                } else {
-                    body.trim().to_string()
-                }
-            ));
-        }
+        ensure_success_status("Anthropic", status, &body)?;
 
         let json_val: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| format!("Invalid JSON from Anthropic /v1/models: {}", e))?;
@@ -471,17 +463,7 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
         .await
         .map_err(|e| format!("Failed to fetch models from {}: {}", target_url, e))?;
 
-    if status < 200 || status >= 400 {
-        return Err(format!(
-            "Provider returned HTTP {}: {}",
-            status,
-            if body.trim().is_empty() {
-                format!("(Empty response body, status code {})", status)
-            } else {
-                body.trim().to_string()
-            }
-        ));
-    }
+    ensure_success_status("Provider", status, &body)?;
 
     let json_val: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("Invalid JSON from models endpoint: {}", e))?;
@@ -508,4 +490,35 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
     models.sort_by_key(|m| m.name.to_lowercase());
 
     Ok(models)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ensure_success_status_ok() {
+        assert!(ensure_success_status("TestProvider", 200, "{\"ok\":true}").is_ok());
+        assert!(ensure_success_status("TestProvider", 204, "").is_ok());
+        assert!(ensure_success_status("TestProvider", 301, "").is_ok());
+        assert!(ensure_success_status("TestProvider", 399, "").is_ok());
+    }
+
+    #[test]
+    fn test_ensure_success_status_err() {
+        let err_low = ensure_success_status("TestProvider", 199, "upgrade required")
+            .unwrap_err();
+        assert_eq!(err_low, "TestProvider returned HTTP 199: upgrade required");
+
+        let err_bad_req = ensure_success_status("Anthropic", 400, "invalid prompt")
+            .unwrap_err();
+        assert_eq!(err_bad_req, "Anthropic returned HTTP 400: invalid prompt");
+
+        let err_empty_body = ensure_success_status("AI Provider", 500, "   ")
+            .unwrap_err();
+        assert_eq!(
+            err_empty_body,
+            "AI Provider returned HTTP 500: (Empty response body, status code 500)"
+        );
+    }
 }
