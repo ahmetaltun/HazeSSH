@@ -8,15 +8,18 @@ import {
   Circle,
   Square,
   Boxes,
+  Sparkles,
 } from "lucide-react";
 import type { TerminalPane } from "@/types/terminal";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { useRecordingStore } from "@/stores/useRecordingStore";
 import { useServerToolboxStore } from "@/stores/useServerToolboxStore";
+import { useAiCopilotStore } from "@/stores/useAiCopilotStore";
 import { XTermTerminal } from "@/components/terminal/XTermTerminal";
 import { PaneHostSelector } from "@/components/terminal/PaneHostSelector";
 import { TransferProgressOverlay } from "@/components/terminal/TransferProgressOverlay";
+import { AiInlinePrompt } from "@/components/terminal/AiInlinePrompt";
 
 interface PaneContainerProps {
   readonly pane: TerminalPane;
@@ -210,6 +213,21 @@ export function PaneContainer({
             </button>
           )}
 
+          {isConfigured && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActivePane(tabId, pane.id);
+                useAiCopilotStore.getState().togglePrompt(pane.id);
+              }}
+              className="btn btn-ghost btn-xs btn-square p-0.5 text-base-content/60 hover:text-primary hover:bg-base-300"
+              title="AI Shell Copilot (⌘I / Ctrl+I)"
+            >
+              <Sparkles className="w-3 h-3 text-primary" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={(e) => {
@@ -258,6 +276,7 @@ export function PaneContainer({
               isTabActive={isTabActive}
             />
             <TransferProgressOverlay paneId={pane.id} />
+            <AiInlinePrompt pane={pane} isFocused={isFocused} />
           </>
         ) : (
           <PaneHostSelector pane={pane} tabId={tabId} />

@@ -4,6 +4,7 @@
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+pub mod ai;
 pub mod commands;
 pub mod crypto;
 pub mod db;
@@ -14,6 +15,7 @@ pub mod serial;
 pub mod sftp;
 pub mod ssh;
 pub mod ssh_config_parser;
+pub mod sync;
 pub mod telnet;
 pub mod third_party_importer;
 pub mod toolbox;
@@ -167,6 +169,12 @@ pub fn run() {
             commands::fs_read_binary_chunk,
             commands::fs_write_binary_chunk,
             commands::fs_get_file_size,
+            commands::ai_chat_completion,
+            commands::ai_fetch_models,
+            commands::sync_git_file_get,
+            commands::sync_git_file_put,
+            commands::sync_webdav_request,
+            commands::sync_local_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

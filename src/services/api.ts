@@ -28,6 +28,22 @@ import type { ServerMetrics } from "@/types/monitor";
 import type { ServerToolboxOverview, ToolboxTelemetry } from "@/types/toolbox";
 import type { SerialPortInfo, SerialConnectOptions } from "@/types/serial";
 import type { TelnetConnectOptions } from "@/types/telnet";
+import type {
+  AiCompletionInput,
+  AiCompletionOutput,
+  AiFetchModelsInput,
+  AiModelInfo,
+} from "@/types/ai";
+import type {
+  GitFileGetInput,
+  GitFileGetOutput,
+  GitFilePutInput,
+  GitFilePutOutput,
+  WebDavRequestInput,
+  WebDavRequestOutput,
+  LocalFolderSyncInput,
+  LocalFolderSyncOutput,
+} from "@/types/sync";
 
 export const api = {
   // --- Vault ---
@@ -502,5 +518,31 @@ export const api = {
 
   hostDockerPrune: async (hostId: string): Promise<string> => {
     return await invoke<string>("host_docker_prune", { hostId });
+  },
+
+  // --- Privacy-First AI Copilot ---
+  aiChatCompletion: async (input: AiCompletionInput): Promise<AiCompletionOutput> => {
+    return await invoke<AiCompletionOutput>("ai_chat_completion", { input });
+  },
+
+  aiFetchModels: async (input: AiFetchModelsInput): Promise<AiModelInfo[]> => {
+    return await invoke<AiModelInfo[]>("ai_fetch_models", { input });
+  },
+
+  // --- Decentralized Cloudless E2EE Sync ---
+  syncGitFileGet: async (input: GitFileGetInput): Promise<GitFileGetOutput> => {
+    return await invoke<GitFileGetOutput>("sync_git_file_get", { input });
+  },
+
+  syncGitFilePut: async (input: GitFilePutInput): Promise<GitFilePutOutput> => {
+    return await invoke<GitFilePutOutput>("sync_git_file_put", { input });
+  },
+
+  syncWebDavRequest: async (input: WebDavRequestInput): Promise<WebDavRequestOutput> => {
+    return await invoke<WebDavRequestOutput>("sync_webdav_request", { input });
+  },
+
+  syncLocalFolder: async (input: LocalFolderSyncInput): Promise<LocalFolderSyncOutput> => {
+    return await invoke<LocalFolderSyncOutput>("sync_local_folder", { input });
   },
 };

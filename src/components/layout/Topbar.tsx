@@ -22,6 +22,7 @@ import { SerialConnectModal } from "@/components/terminal/SerialConnectModal";
 import { TelnetConnectModal } from "@/components/terminal/TelnetConnectModal";
 import { WindowControls } from "@/components/layout/WindowControls";
 import { ShortcutsModal } from "@/components/layout/ShortcutsModal";
+import { SyncStatusBadge } from "@/components/sync/SyncStatusBadge";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { isMacOS, formatShortcut } from "@/utils/platform";
 
@@ -279,6 +280,9 @@ export function Topbar() {
             <Plus className="w-3.5 h-3.5 text-primary" />
             <span className="text-[11px] font-medium hidden sm:inline">New Session</span>
           </button>
+
+          {/* Decentralized Sync Status Badge */}
+          <SyncStatusBadge />
 
           {/* Shortcuts Cheat Sheet Trigger */}
           <button

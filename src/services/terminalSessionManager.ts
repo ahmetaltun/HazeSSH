@@ -18,6 +18,7 @@ import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useTriggerStore } from "@/stores/useTriggerStore";
+import { useAiCopilotStore } from "@/stores/useAiCopilotStore";
 import { resolveHostVariables } from "@/services/snippetInterpolation";
 import type { TerminalPane, SplitNode } from "@/types/terminal";
 import type { SshEvent } from "@/types/ssh";
@@ -58,6 +59,22 @@ class TerminalSessionManager {
     return this.sessions.has(paneId);
   }
 
+  public getRecentBuffer(paneId: string, lineCount = 35): string {
+    const session = this.sessions.get(paneId);
+    if (!session) return "";
+    const buf = session.term.buffer.active;
+    const lines: string[] = [];
+    const endY = buf.baseY + buf.cursorY;
+    const startY = Math.max(0, endY - lineCount);
+    for (let y = startY; y <= endY; y++) {
+      const line = buf.getLine(y);
+      if (line) {
+        lines.push(line.translateToString(true));
+      }
+    }
+    return lines.join("\n");
+  }
+
   public getOrCreateSession(pane: TerminalPane): ActiveTerminalSession {
     const existing = this.sessions.get(pane.id);
     if (existing && !existing.isDisposed) {
@@ -89,6 +106,29 @@ class TerminalSessionManager {
 
     const searchAddon = new SearchAddon();
     term.loadAddon(searchAddon);
+
+    // Attach custom key event handler to intercept Cmd+I / Ctrl+I for AI Copilot
+    term.attachCustomKeyEventHandler((event) => {
+      const isMetaOrCtrl = event.metaKey || event.ctrlKey;
+      const isKeyI = event.key.toLowerCase() === "i" || event.code === "KeyI";
+
+      if (isMetaOrCtrl && !event.altKey && !event.shiftKey && isKeyI) {
+        if (event.type === "keydown") {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+
+          const activeTab = useMultiplexerStore.getState().getActiveTab();
+          if (activeTab) {
+            useMultiplexerStore.getState().setActivePane(activeTab.id, pane.id);
+          }
+          useTerminalRegistryStore.getState().setActivePaneId(pane.id);
+          useAiCopilotStore.getState().togglePrompt(pane.id);
+        }
+        return false;
+      }
+      return true;
+    });
 
     // 3. Wrapper DOM Element
     const wrapperEl = document.createElement("div");

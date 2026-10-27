@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Copy,
   ClipboardPaste,
@@ -10,12 +10,16 @@ import {
   Circle,
   Square,
   Download,
+  Sparkles,
+  HelpCircle,
 } from "lucide-react";
 import { api } from "@/services/api";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useRecordingStore } from "@/stores/useRecordingStore";
+import { useAiCopilotStore } from "@/stores/useAiCopilotStore";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
 import { formatShortcut } from "@/utils/platform";
+import { AiErrorExplanationModal } from "@/components/terminal/AiErrorExplanationModal";
 import type { TerminalPane } from "@/types/terminal";
 
 interface TerminalContextMenuProps {
@@ -34,6 +38,10 @@ export function TerminalContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const { splitActivePane } = useMultiplexerStore();
   const { isPaneRecording, startRecording, saveRecording, exportRecordingDialog } = useRecordingStore();
+  const { isEnabled: isAiEnabled, togglePrompt } = useAiCopilotStore();
+
+  const [explainModalOpen, setExplainModalOpen] = useState(false);
+  const [errorTextToExplain, setErrorTextToExplain] = useState("");
 
   const session = terminalSessionManager.getSession(pane.id);
   const hasSelection = Boolean(session?.term.hasSelection());
@@ -186,6 +194,62 @@ export function TerminalContextMenu({
         </kbd>
       </button>
 
+      {/* AI Shell Copilot Actions */}
+      {isAiEnabled && (
+        <>
+          <div className="h-px bg-base-300 my-1" />
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              togglePrompt(pane.id);
+            }}
+            className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-primary/10 text-left cursor-pointer transition-colors"
+          >
+            <span className="flex items-center gap-2 text-primary font-medium">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Ask AI Copilot</span>
+            </span>
+            <kbd className="kbd kbd-xs font-mono text-[9px] text-primary/70">
+              {formatShortcut("⌘I", "Ctrl+I")}
+            </kbd>
+          </button>
+
+          {hasSelection && (
+            <button
+              type="button"
+              onClick={() => {
+                const selectedText = session?.term.getSelection() || "";
+                setErrorTextToExplain(selectedText);
+                setExplainModalOpen(true);
+              }}
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-base-200 text-left cursor-pointer transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <HelpCircle className="w-3.5 h-3.5 text-info" />
+                <span>Explain Selection with AI</span>
+              </span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              const buffer = terminalSessionManager.getRecentBuffer(pane.id, 25);
+              setErrorTextToExplain(buffer || "No recent output detected.");
+              setExplainModalOpen(true);
+            }}
+            className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-base-200 text-left cursor-pointer transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <HelpCircle className="w-3.5 h-3.5 text-warning" />
+              <span>Diagnose Terminal Output</span>
+            </span>
+          </button>
+        </>
+      )}
+
       <div className="h-px bg-base-300 my-1" />
 
       {/* Clear Buffer */}
@@ -297,6 +361,18 @@ export function TerminalContextMenu({
           <span>Reset Terminal</span>
         </span>
       </button>
+
+      {explainModalOpen && (
+        <AiErrorExplanationModal
+          isOpen={true}
+          onClose={() => {
+            setExplainModalOpen(false);
+            onClose();
+          }}
+          pane={pane}
+          errorOutput={errorTextToExplain}
+        />
+      )}
     </div>
   );
 }

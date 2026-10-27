@@ -4,8 +4,10 @@ use tauri::State;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
+use crate::ai::{self, AiCompletionInput, AiCompletionOutput, AiFetchModelsInput, AiModelInfo};
 use crate::crypto;
 use crate::db::Database;
+use crate::sync::{self, GitFileGetInput, GitFileGetOutput, GitFilePutInput, GitFilePutOutput, LocalFolderSyncInput, LocalFolderSyncOutput, WebDavRequestInput, WebDavRequestOutput};
 use crate::models::{
     BackupData, BackupEnvelope, BackupSummary, CreateGroupInput, CreateHostInput,
     CreateIdentityInput, CreateSnippetInput, CreateTunnelInput, Host, HostGroup, Identity,
@@ -1906,6 +1908,41 @@ pub fn open_directory_in_os(path: Option<String>) -> Result<(), String> {
 
     Ok(())
 }
+
+// --- Privacy-First AI Copilot Commands ---
+
+#[tauri::command]
+pub async fn ai_chat_completion(input: AiCompletionInput) -> Result<AiCompletionOutput, String> {
+    ai::chat_completion(input).await
+}
+
+#[tauri::command]
+pub async fn ai_fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>, String> {
+    ai::fetch_models(input).await
+}
+
+// --- Decentralized Cloudless E2EE Sync Commands ---
+
+#[tauri::command]
+pub async fn sync_git_file_get(input: GitFileGetInput) -> Result<GitFileGetOutput, String> {
+    sync::git_file_get(input).await
+}
+
+#[tauri::command]
+pub async fn sync_git_file_put(input: GitFilePutInput) -> Result<GitFilePutOutput, String> {
+    sync::git_file_put(input).await
+}
+
+#[tauri::command]
+pub async fn sync_webdav_request(input: WebDavRequestInput) -> Result<WebDavRequestOutput, String> {
+    sync::webdav_request(input).await
+}
+
+#[tauri::command]
+pub fn sync_local_folder(input: LocalFolderSyncInput) -> Result<LocalFolderSyncOutput, String> {
+    sync::local_folder_sync(input)
+}
+
 
 
 

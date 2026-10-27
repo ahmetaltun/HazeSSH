@@ -19,6 +19,8 @@ import {
   Sidebar,
   Maximize2,
   Minus,
+  Sparkles,
+  Cloud,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useLayoutStore } from "@/stores/useLayoutStore";
@@ -28,6 +30,8 @@ import { useSnippetStore } from "@/stores/useSnippetStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useThemeStore, AVAILABLE_THEMES } from "@/stores/useThemeStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
+import { useAiCopilotStore } from "@/stores/useAiCopilotStore";
+import { decentralizedSyncService } from "@/services/decentralizedSyncService";
 import { formatShortcut } from "@/utils/platform";
 import type { NavigationView } from "@/types/navigation";
 
@@ -155,6 +159,31 @@ export function CommandPaletteModal() {
           if (tab) {
             closePane(tab.id, tab.activePaneId);
           }
+        },
+      },
+      {
+        id: "action_ai_copilot_prompt",
+        title: "AI Shell Copilot: Ask Prompt",
+        subtitle: "Generate shell command using AI (Ollama, OpenRouter, etc.)",
+        category: "Actions",
+        icon: Sparkles,
+        badge: formatShortcut("⌘I", "Ctrl+I"),
+        onSelect: () => {
+          const tab = getActiveTab();
+          if (tab) {
+            useAiCopilotStore.getState().openPrompt(tab.activePaneId);
+          }
+        },
+      },
+      {
+        id: "action_sync_vault_now",
+        title: "Decentralized Sync: Sync Vault Now",
+        subtitle: "Push encrypted vault updates to Git repository or WebDAV",
+        category: "Actions",
+        icon: Cloud,
+        badge: formatShortcut("⌘⌥S", "Ctrl+Alt+S"),
+        onSelect: () => {
+          void decentralizedSyncService.pushVault();
         },
       },
       {

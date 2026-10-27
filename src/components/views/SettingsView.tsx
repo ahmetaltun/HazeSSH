@@ -36,6 +36,8 @@ import { RestoreBackupModal } from "@/components/settings/RestoreBackupModal";
 import { OpenSshImportModal } from "@/components/settings/OpenSshImportModal";
 import { TermiusImportModal } from "@/components/settings/TermiusImportModal";
 import { PuttyImportModal } from "@/components/settings/PuttyImportModal";
+import { AiSettingsSection } from "@/components/settings/AiSettingsSection";
+import { SyncSettingsSection } from "@/components/settings/SyncSettingsSection";
 
 export function SettingsView() {
   const { hasMasterPassword, isLocked, lock } = useVaultStore();
@@ -1331,6 +1333,16 @@ export function SettingsView() {
               Automated triggers are currently disabled. Toggle the switch to activate stream monitoring.
             </div>
           )}
+        </section>
+
+        {/* Privacy-First AI Copilot Section */}
+        <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-4">
+          <AiSettingsSection />
+        </section>
+
+        {/* Decentralized Cloudless E2EE Sync Section */}
+        <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-4">
+          <SyncSettingsSection />
         </section>
 
         {/* Data Importers Section */}

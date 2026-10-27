@@ -16,6 +16,10 @@ import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
+import { useAiCopilotStore } from "@/stores/useAiCopilotStore";
+import { useSyncStore } from "@/stores/useSyncStore";
+import { decentralizedSyncService } from "@/services/decentralizedSyncService";
+import { SyncConflictModal } from "@/components/sync/SyncConflictModal";
 import { initDesktopInterceptors } from "@/utils/desktopInterceptors";
 import { formatShortcut } from "@/utils/platform";
 import type { NavigationView } from "@/types/navigation";
@@ -89,6 +93,14 @@ export function AppShell() {
     fetchStatus();
     fetchAll();
 
+    // Background Decentralized Sync on app launch if enabled
+    const syncState = useSyncStore.getState();
+    if (syncState.autoSyncEnabled && syncState.syncPassphrase) {
+      decentralizedSyncService.pullVault().catch((err) => {
+        console.warn("[Haze Sync] Background startup pull skipped:", err);
+      });
+    }
+
     // Reveal native window smoothly only after the first frame has rasterized
     const revealWindow = () => {
       requestAnimationFrame(() => {
@@ -114,6 +126,7 @@ export function AppShell() {
 
     // 2. Desktop Keyboard Navigation
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       const isMetaOrCtrl = e.metaKey || e.ctrlKey;
 
       // ⌘K or ⌘⇧P : Command Palette
@@ -178,6 +191,25 @@ export function AppShell() {
           e.preventDefault();
           closePane(activeTab.id, activeTab.activePaneId);
         }
+        return;
+      }
+
+      // ⌘I / Ctrl+I : AI Shell Copilot Prompt
+      const isKeyI = e.key.toLowerCase() === "i" || e.code === "KeyI";
+      if (isMetaOrCtrl && !e.altKey && !e.shiftKey && isKeyI) {
+        const activeTab = getActiveTab();
+        if (activeTab) {
+          e.preventDefault();
+          e.stopPropagation();
+          useAiCopilotStore.getState().togglePrompt(activeTab.activePaneId);
+        }
+        return;
+      }
+
+      // ⌘⌥S / Ctrl+Alt+S : Decentralized Sync Now
+      if (isMetaOrCtrl && e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void decentralizedSyncService.pushVault();
         return;
       }
 
@@ -408,6 +440,9 @@ export function AppShell() {
 
       {/* Global Remote Systems Hub / Server Inspection Toolbox Modal */}
       <ServerToolboxModal />
+
+      {/* Global Decentralized Sync Conflict Resolution Modal */}
+      <SyncConflictModal />
     </div>
   );
 }

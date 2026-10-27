@@ -47,12 +47,14 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
         { description: "Toggle Sidebar Collapse", mac: "⌘B", win: "Ctrl+B" },
         { description: "Switch to View 1–6", mac: "⌘1–6", win: "Ctrl+1–6" },
         { description: "Keyboard Shortcuts Help", mac: "⌘/", win: "Ctrl+/" },
+        { description: "Decentralized Sync Now", mac: "⌘⌥S", win: "Ctrl+Alt+S" },
       ],
     },
     {
       title: "Terminal & Sessions",
       icon: <Terminal className="w-4 h-4 text-warning" />,
       shortcuts: [
+        { description: "AI Shell Copilot (Inline Prompt)", mac: "⌘I", win: "Ctrl+I" },
         { description: "New Terminal Tab", mac: "⌘T", win: "Ctrl+T" },
         { description: "Close Active Pane", mac: "⌘W", win: "Ctrl+W" },
         { description: "Close Entire Tab", mac: "⌘⇧W", win: "Ctrl+Shift+W" },
