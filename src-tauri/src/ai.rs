@@ -382,7 +382,7 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
                 }
             }
         }
-        models.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        models.sort_by_key(|m| m.name.to_lowercase());
         return Ok(models);
     }
 
@@ -445,7 +445,7 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
                 }
             }
         }
-        models.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        models.sort_by_key(|m| m.name.to_lowercase());
         return Ok(models);
     }
 
@@ -505,7 +505,7 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
         }
     }
 
-    models.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    models.sort_by_key(|m| m.name.to_lowercase());
 
     Ok(models)
 }
