@@ -183,6 +183,8 @@ export const useServerToolboxStore = create<ServerToolboxStore>((set, get) => ({
     set({ isActionLoading: true, actionError: null });
     try {
       await api.hostContainerAction(hostId, containerId, action);
+      // Allow container daemon to transition state before re-probing
+      await new Promise((resolve) => setTimeout(resolve, 300));
       await get().fetchToolboxData(hostId);
       set({ isActionLoading: false });
       return true;
@@ -205,6 +207,8 @@ export const useServerToolboxStore = create<ServerToolboxStore>((set, get) => ({
     set({ isActionLoading: true, actionError: null });
     try {
       await api.hostServiceAction(hostId, unit, action);
+      // Allow systemd to update unit status in memory before re-querying list-units
+      await new Promise((resolve) => setTimeout(resolve, 250));
       await get().fetchToolboxData(hostId);
       set({ isActionLoading: false });
       return true;
@@ -227,6 +231,8 @@ export const useServerToolboxStore = create<ServerToolboxStore>((set, get) => ({
     set({ isActionLoading: true, actionError: null });
     try {
       await api.hostKillProcess(hostId, pid);
+      // Allow the Linux kernel procfs to reap the killed process before querying ps
+      await new Promise((resolve) => setTimeout(resolve, 250));
       await get().fetchToolboxData(hostId);
       set({ isActionLoading: false });
       return true;
@@ -241,6 +247,7 @@ export const useServerToolboxStore = create<ServerToolboxStore>((set, get) => ({
     set({ isActionLoading: true, actionError: null });
     try {
       const res = await api.hostDockerPrune(hostId);
+      await new Promise((resolve) => setTimeout(resolve, 250));
       await get().fetchToolboxData(hostId);
       set({ isActionLoading: false });
       return res;

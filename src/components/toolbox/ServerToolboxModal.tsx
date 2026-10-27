@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Boxes,
   Cpu,
@@ -12,6 +12,7 @@ import {
   RotateCw,
   Terminal,
   AlertCircle,
+  AlertTriangle,
   Search,
   Copy,
   Check,
@@ -35,6 +36,17 @@ interface ParsedPort {
   containerPort: string;
   protocol: string;
   raw: string;
+}
+
+interface PendingDangerousAction {
+  title: string;
+  targetName: string;
+  targetBadge?: string;
+  description: string;
+  impactWarning: string;
+  confirmLabel: string;
+  confirmVariant: "error" | "warning" | "primary";
+  onConfirm: () => Promise<void>;
 }
 
 function parseContainerPorts(raw?: string): ParsedPort[] {
@@ -162,26 +174,136 @@ export function ServerToolboxModal() {
     setIsLogsLoading(false);
   };
 
-  // Service Lifecycle Actions
-  const handleServiceAction = async (unit: string, action: "start" | "stop" | "restart") => {
+  // Dangerous Action Confirmation State
+  const [pendingAction, setPendingAction] = useState<PendingDangerousAction | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (pendingAction && !isConfirming) {
+          setPendingAction(null);
+        } else if (logViewerTitle) {
+          setLogViewerTitle(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [pendingAction, isConfirming, logViewerTitle]);
+
+  // Container Lifecycle Actions
+  const handleStartContainer = async (container: ContainerItem) => {
     if (!activeHostId) return;
-    const ok = await serviceAction(activeHostId, unit, action);
+    const ok = await containerAction(activeHostId, container.id, "start");
     if (ok) {
-      const verb = action === "stop" ? "stopped" : action === "start" ? "started" : "restarted";
-      showToast(`Service ${unit} ${verb} successfully`);
+      showToast(`Container "${container.names}" started`);
     }
   };
 
-  const handleKillService = async (unit: string) => {
+  const handlePromptStopContainer = (container: ContainerItem) => {
+    setPendingAction({
+      title: "Stop Container",
+      targetName: container.names,
+      targetBadge: container.id.slice(0, 12),
+      description: `Stop container "${container.names}" (${container.image})?`,
+      impactWarning: "The container process will receive SIGTERM followed by SIGKILL if it does not gracefully exit. Hosted apps will go offline.",
+      confirmLabel: "Stop Container",
+      confirmVariant: "warning",
+      onConfirm: async () => {
+        if (!activeHostId) return;
+        const ok = await containerAction(activeHostId, container.id, "stop");
+        if (ok) {
+          showToast(`Container "${container.names}" stopped`);
+        }
+      },
+    });
+  };
+
+  const handlePromptRestartContainer = (container: ContainerItem) => {
+    setPendingAction({
+      title: "Restart Container",
+      targetName: container.names,
+      targetBadge: container.id.slice(0, 12),
+      description: `Restart container "${container.names}"?`,
+      impactWarning: "Existing network connections to this container will temporarily drop while it restarts.",
+      confirmLabel: "Restart Container",
+      confirmVariant: "warning",
+      onConfirm: async () => {
+        if (!activeHostId) return;
+        const ok = await containerAction(activeHostId, container.id, "restart");
+        if (ok) {
+          showToast(`Container "${container.names}" restarted`);
+        }
+      },
+    });
+  };
+
+  // Service Lifecycle Actions
+  const handleStartService = async (service: ServiceItem) => {
     if (!activeHostId) return;
-    const confirmed = window.confirm(
-      `Force terminate systemd service "${unit}"?\n\nThis immediately sends SIGKILL to all processes in the unit's cgroup.`
-    );
-    if (!confirmed) return;
-    const ok = await serviceAction(activeHostId, unit, "kill");
+    const ok = await serviceAction(activeHostId, service.unit, "start");
     if (ok) {
-      showToast(`Service ${unit} terminated with SIGKILL`);
+      showToast(`Service ${service.unit} started`);
     }
+  };
+
+  const handlePromptStopService = (service: ServiceItem) => {
+    setPendingAction({
+      title: "Stop Service",
+      targetName: service.unit,
+      targetBadge: "systemd",
+      description: `Stop systemd service unit "${service.unit}"?`,
+      impactWarning: "The background daemon will be stopped. Dependent system components and listening sockets will go offline.",
+      confirmLabel: "Stop Service",
+      confirmVariant: "warning",
+      onConfirm: async () => {
+        if (!activeHostId) return;
+        const ok = await serviceAction(activeHostId, service.unit, "stop");
+        if (ok) {
+          showToast(`Service ${service.unit} stopped`);
+        }
+      },
+    });
+  };
+
+  const handlePromptRestartService = (service: ServiceItem) => {
+    setPendingAction({
+      title: "Restart Service",
+      targetName: service.unit,
+      targetBadge: "systemd",
+      description: `Restart systemd service "${service.unit}"?`,
+      impactWarning: "The service will reload its configuration and restart its main process. In-flight requests will be interrupted.",
+      confirmLabel: "Restart Service",
+      confirmVariant: "warning",
+      onConfirm: async () => {
+        if (!activeHostId) return;
+        const ok = await serviceAction(activeHostId, service.unit, "restart");
+        if (ok) {
+          showToast(`Service ${service.unit} restarted`);
+        }
+      },
+    });
+  };
+
+  const handlePromptKillService = (service: ServiceItem) => {
+    setPendingAction({
+      title: "Force Kill Service",
+      targetName: service.unit,
+      targetBadge: "systemd",
+      description: `Forcefully terminate systemd service "${service.unit}"?`,
+      impactWarning: "Sends SIGKILL immediately to all processes within the unit's control group (cgroup). Any unsaved in-flight state will be lost.",
+      confirmLabel: "Force Kill (SIGKILL)",
+      confirmVariant: "error",
+      onConfirm: async () => {
+        if (!activeHostId) return;
+        const ok = await serviceAction(activeHostId, service.unit, "kill");
+        if (ok) {
+          showToast(`Service ${service.unit} terminated with SIGKILL`);
+        }
+      },
+    });
   };
 
   const handleCopyLogs = async () => {
@@ -214,6 +336,7 @@ export function ServerToolboxModal() {
   // 1-Click Port Forwarding
   const handleForwardPort = async (port: OpenPortItem) => {
     if (!activeHost) return;
+    useServerToolboxStore.setState({ actionError: null });
     try {
       const tunnel = await useTunnelStore.getState().createTunnel({
         host_id: activeHost.id,
@@ -233,24 +356,53 @@ export function ServerToolboxModal() {
     }
   };
 
-  // Kill Process
-  const handleKillProcess = async (pid: number, name?: string) => {
-    if (!activeHostId) return;
-    const confirmed = window.confirm(`Terminate process PID ${pid} (${name || "process"}) on remote host?`);
-    if (!confirmed) return;
-    const ok = await killProcess(activeHostId, pid);
-    if (ok) {
-      showToast(`Process ${pid} terminated`);
-    }
+  // Kill Process (Top Processes & Open Ports)
+  const handlePromptKillProcess = (pid: number, name?: string) => {
+    setPendingAction({
+      title: "Terminate Process",
+      targetName: `PID ${pid}${name ? ` (${name})` : ""}`,
+      targetBadge: "kill -9",
+      description: `Forcefully terminate process ${pid} on remote host?`,
+      impactWarning: "Sends SIGKILL (signal 9) immediately. The operating system kernel will terminate the process and reclaim memory and file handles.",
+      confirmLabel: "Terminate Process",
+      confirmVariant: "error",
+      onConfirm: async () => {
+        if (!activeHostId) return;
+        const ok = await killProcess(activeHostId, pid);
+        if (ok) {
+          showToast(`Process ${pid} terminated`);
+        }
+      },
+    });
   };
 
   // Docker Prune
-  const handleDockerPrune = async () => {
-    if (!activeHostId) return;
-    const confirmed = window.confirm("Run 'docker system prune -f' to clean all unused containers, networks, and build caches?");
-    if (!confirmed) return;
-    const res = await dockerPrune(activeHostId);
-    showToast(res.slice(0, 100));
+  const handlePromptDockerPrune = () => {
+    setPendingAction({
+      title: "Docker System Prune",
+      targetName: "All Unused Engine Objects",
+      targetBadge: "Destructive",
+      description: "Clean up all unused Docker / Podman resources?",
+      impactWarning: "Permanently removes all stopped containers, dangling images, unused networks, and local build cache. This cannot be undone.",
+      confirmLabel: "Prune All Unused",
+      confirmVariant: "error",
+      onConfirm: async () => {
+        if (!activeHostId) return;
+        const res = await dockerPrune(activeHostId);
+        showToast(res.slice(0, 100));
+      },
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingAction) return;
+    setIsConfirming(true);
+    try {
+      await pendingAction.onConfirm();
+      setPendingAction(null);
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
   // Filtered Containers
@@ -644,7 +796,7 @@ export function ServerToolboxModal() {
                                       <>
                                         <button
                                           type="button"
-                                          onClick={() => void containerAction(activeHostId, container.id, "restart")}
+                                          onClick={() => handlePromptRestartContainer(container)}
                                           disabled={isActionLoading}
                                           className="btn btn-ghost btn-xs gap-1 font-mono text-[11px]"
                                           title="Restart container"
@@ -654,7 +806,7 @@ export function ServerToolboxModal() {
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => void containerAction(activeHostId, container.id, "stop")}
+                                          onClick={() => handlePromptStopContainer(container)}
                                           disabled={isActionLoading}
                                           className="btn btn-ghost btn-xs text-error gap-1 font-mono text-[11px]"
                                           title="Stop container"
@@ -666,7 +818,7 @@ export function ServerToolboxModal() {
                                     ) : (
                                       <button
                                         type="button"
-                                        onClick={() => void containerAction(activeHostId, container.id, "start")}
+                                        onClick={() => void handleStartContainer(container)}
                                         disabled={isActionLoading}
                                         className="btn btn-ghost btn-xs text-success gap-1 font-mono text-[11px]"
                                         title="Start container"
@@ -984,7 +1136,7 @@ export function ServerToolboxModal() {
                                           {isActive ? (
                                             <button
                                               type="button"
-                                              onClick={() => void handleServiceAction(service.unit, "stop")}
+                                              onClick={() => handlePromptStopService(service)}
                                               disabled={isActionLoading}
                                               className="btn btn-ghost btn-xs btn-square text-warning hover:bg-warning/20"
                                               title={`systemctl stop ${service.unit}`}
@@ -994,7 +1146,7 @@ export function ServerToolboxModal() {
                                           ) : (
                                             <button
                                               type="button"
-                                              onClick={() => void handleServiceAction(service.unit, "start")}
+                                              onClick={() => void handleStartService(service)}
                                               disabled={isActionLoading}
                                               className="btn btn-ghost btn-xs btn-square text-success hover:bg-success/20"
                                               title={`systemctl start ${service.unit}`}
@@ -1005,7 +1157,7 @@ export function ServerToolboxModal() {
 
                                           <button
                                             type="button"
-                                            onClick={() => void handleServiceAction(service.unit, "restart")}
+                                            onClick={() => handlePromptRestartService(service)}
                                             disabled={isActionLoading}
                                             className="btn btn-ghost btn-xs btn-square hover:bg-base-300 text-base-content/70 hover:text-base-content"
                                             title={`systemctl restart ${service.unit}`}
@@ -1015,7 +1167,7 @@ export function ServerToolboxModal() {
 
                                           <button
                                             type="button"
-                                            onClick={() => void handleKillService(service.unit)}
+                                            onClick={() => handlePromptKillService(service)}
                                             disabled={isActionLoading}
                                             className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/20"
                                             title={`Force kill service with SIGKILL (${service.unit})`}
@@ -1095,7 +1247,7 @@ export function ServerToolboxModal() {
                                   {isActive ? (
                                     <button
                                       type="button"
-                                      onClick={() => void handleServiceAction(service.unit, "stop")}
+                                      onClick={() => handlePromptStopService(service)}
                                       disabled={isActionLoading}
                                       className="btn btn-ghost btn-xs btn-square text-warning hover:bg-warning/20"
                                       title={`systemctl stop ${service.unit}`}
@@ -1105,7 +1257,7 @@ export function ServerToolboxModal() {
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => void handleServiceAction(service.unit, "start")}
+                                      onClick={() => void handleStartService(service)}
                                       disabled={isActionLoading}
                                       className="btn btn-ghost btn-xs btn-square text-success hover:bg-success/20"
                                       title={`systemctl start ${service.unit}`}
@@ -1116,7 +1268,7 @@ export function ServerToolboxModal() {
 
                                   <button
                                     type="button"
-                                    onClick={() => void handleServiceAction(service.unit, "restart")}
+                                    onClick={() => handlePromptRestartService(service)}
                                     disabled={isActionLoading}
                                     className="btn btn-ghost btn-xs btn-square hover:bg-base-300 text-base-content/70 hover:text-base-content"
                                     title={`systemctl restart ${service.unit}`}
@@ -1126,7 +1278,7 @@ export function ServerToolboxModal() {
 
                                   <button
                                     type="button"
-                                    onClick={() => void handleKillService(service.unit)}
+                                    onClick={() => handlePromptKillService(service)}
                                     disabled={isActionLoading}
                                     className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/20"
                                     title={`Force kill service with SIGKILL (${service.unit})`}
@@ -1257,7 +1409,8 @@ export function ServerToolboxModal() {
                                     {port.pid && (
                                       <button
                                         type="button"
-                                        onClick={() => void handleKillProcess(port.pid!, port.process)}
+                                        onClick={() => handlePromptKillProcess(port.pid!, port.process)}
+                                        disabled={isActionLoading}
                                         className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10"
                                         title={`Kill process PID ${port.pid}`}
                                       >
@@ -1365,7 +1518,8 @@ export function ServerToolboxModal() {
                                 <td className="text-right">
                                   <button
                                     type="button"
-                                    onClick={() => void handleKillProcess(proc.pid, proc.command.split(" ")[0])}
+                                    onClick={() => handlePromptKillProcess(proc.pid, proc.command.split(" ")[0])}
+                                    disabled={isActionLoading}
                                     className="btn btn-ghost btn-xs text-error gap-1 text-[10px] hover:bg-error/10"
                                     title={`Kill PID ${proc.pid}`}
                                   >
@@ -1450,7 +1604,8 @@ export function ServerToolboxModal() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => void handleDockerPrune()}
+                          onClick={() => handlePromptDockerPrune()}
+                          disabled={isActionLoading}
                           className="btn btn-ghost btn-xs text-error gap-1 font-mono text-[10px] hover:bg-error/10"
                           title="Prune unused docker images, volumes, and caches"
                         >
@@ -1547,6 +1702,81 @@ export function ServerToolboxModal() {
               ) : (
                 <div className="text-gray-500 italic">No logs found.</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Embedded Sub-Modal: Dangerous Action Confirmation Dialog */}
+      {pendingAction && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/80 backdrop-blur-2xs p-4 animate-in fade-in duration-150">
+          <div className="bg-base-100 border border-base-300 w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4 font-mono select-none">
+            {/* Header with Severity Icon */}
+            <div className="flex items-start gap-3">
+              <div
+                className={`p-2.5 rounded-xl shrink-0 ${
+                  pendingAction.confirmVariant === "error"
+                    ? "bg-error/15 text-error"
+                    : pendingAction.confirmVariant === "warning"
+                    ? "bg-warning/15 text-warning"
+                    : "bg-primary/15 text-primary"
+                }`}
+              >
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 min-w-0 flex-1">
+                <h3 className="text-base font-bold text-base-content font-sans">
+                  {pendingAction.title}
+                </h3>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono text-sm font-bold text-primary break-all">
+                    {pendingAction.targetName}
+                  </span>
+                  {pendingAction.targetBadge && (
+                    <span className="badge badge-neutral badge-xs font-mono">
+                      {pendingAction.targetBadge}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Description & Impact Warning */}
+            <div className="text-xs text-base-content/80 space-y-2.5">
+              <p>{pendingAction.description}</p>
+              {pendingAction.impactWarning && (
+                <div className="p-3 bg-base-200/60 border border-base-300 rounded-lg text-base-content/70 text-[11px] flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+                  <span>{pendingAction.impactWarning}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-base-200/80">
+              <button
+                type="button"
+                onClick={() => setPendingAction(null)}
+                disabled={isConfirming}
+                className="btn btn-ghost btn-sm text-xs font-mono"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAction}
+                disabled={isConfirming}
+                className={`btn btn-sm text-xs font-mono gap-1.5 ${
+                  pendingAction.confirmVariant === "error"
+                    ? "btn-error"
+                    : pendingAction.confirmVariant === "warning"
+                    ? "btn-warning"
+                    : "btn-primary"
+                }`}
+              >
+                {isConfirming && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{pendingAction.confirmLabel}</span>
+              </button>
             </div>
           </div>
         </div>

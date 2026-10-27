@@ -187,13 +187,13 @@ async fn connect_toolbox_ssh(
     Ok(session)
 }
 
-/// Helper to execute a remote command returning stdout, utilizing the connection pool.
-async fn run_remote_ssh_command(
+/// Helper to execute a remote command returning (stdout, exit_code), utilizing the connection pool.
+async fn run_remote_ssh_command_full(
     host_id: &str,
     state: &AppState,
     cmd: &str,
     timeout_secs: u64,
-) -> Result<String, String> {
+) -> Result<(String, u32), String> {
     // 1. Obtain pooled session
     let entry_arc = state.toolbox_manager.get_session(host_id, state).await?;
     let entry = entry_arc.lock().await;
@@ -218,14 +218,19 @@ async fn run_remote_ssh_command(
         .await
         .map_err(|e| format!("Failed to execute command on host {}: {}", host_id, e))?;
 
-    let mut stdout_buffer = Vec::new();
+    let mut output_buffer = Vec::new();
+    let mut exit_code: u32 = 0;
     let collect_future = async {
         while let Some(msg) = channel.wait().await {
             match msg {
                 ChannelMsg::Data { ref data } => {
-                    stdout_buffer.extend_from_slice(data);
+                    output_buffer.extend_from_slice(data);
                 }
-                ChannelMsg::ExitStatus { .. } => {
+                ChannelMsg::ExtendedData { ref data, .. } => {
+                    output_buffer.extend_from_slice(data);
+                }
+                ChannelMsg::ExitStatus { exit_status } => {
+                    exit_code = exit_status;
                     break;
                 }
                 ChannelMsg::Close => {
@@ -237,7 +242,18 @@ async fn run_remote_ssh_command(
     };
 
     let _ = tokio::time::timeout(Duration::from_secs(timeout_secs), collect_future).await;
-    Ok(String::from_utf8_lossy(&stdout_buffer).to_string())
+    Ok((String::from_utf8_lossy(&output_buffer).to_string(), exit_code))
+}
+
+/// Helper to execute a remote command returning stdout, utilizing the connection pool.
+async fn run_remote_ssh_command(
+    host_id: &str,
+    state: &AppState,
+    cmd: &str,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    let (output, _) = run_remote_ssh_command_full(host_id, state, cmd, timeout_secs).await?;
+    Ok(output)
 }
 
 /// Executes the fast core inspection probe over SSH and parses telemetry (<200ms)
@@ -277,11 +293,24 @@ pub async fn execute_container_action(
     }
 
     let cmd = format!(
-        "(docker {} {} 2>&1 || podman {} {} 2>&1)",
-        action, clean_id, action, clean_id
+        "if docker {0} {1} >/dev/null 2>&1 || sudo -n docker {0} {1} >/dev/null 2>&1 || podman {0} {1} >/dev/null 2>&1 || sudo -n podman {0} {1} >/dev/null 2>&1; then echo 'SUCCESS'; else err=$(docker {0} {1} 2>&1 || sudo -n docker {0} {1} 2>&1 || podman {0} {1} 2>&1 || sudo -n podman {0} {1} 2>&1); echo \"FAILED: $err\"; exit 1; fi",
+        action, clean_id
     );
 
-    run_remote_ssh_command(host_id, state, &cmd, 15).await
+    let (output, exit_code) = run_remote_ssh_command_full(host_id, state, &cmd, 25).await?;
+    let trimmed = output.trim();
+    if exit_code != 0 || trimmed.starts_with("FAILED:") || trimmed.to_lowercase().contains("error response") {
+        let reason = if trimmed.starts_with("FAILED:") {
+            trimmed.trim_start_matches("FAILED:").trim()
+        } else if trimmed.is_empty() {
+            "Permission denied or container engine daemon unreachable"
+        } else {
+            trimmed
+        };
+        return Err(format!("Failed to {} container {}: {}", action, clean_id, reason));
+    }
+
+    Ok(format!("Container {} successfully {}ed", clean_id, action))
 }
 
 /// Fetches recent logs from a container
@@ -297,8 +326,8 @@ pub async fn fetch_container_logs(
     }
     let lines = tail_lines.clamp(10, 1000);
     let cmd = format!(
-        "(docker logs --tail {} {} 2>&1 || podman logs --tail {} {} 2>&1)",
-        lines, clean_id, lines, clean_id
+        "(docker logs --tail {} {} 2>&1 || sudo -n docker logs --tail {} {} 2>&1 || podman logs --tail {} {} 2>&1 || sudo -n podman logs --tail {} {} 2>&1)",
+        lines, clean_id, lines, clean_id, lines, clean_id, lines, clean_id
     );
 
     run_remote_ssh_command(host_id, state, &cmd, 10).await
@@ -328,17 +357,35 @@ pub async fn execute_service_action(
 
     let cmd = if action == "kill" {
         format!(
-            "(systemctl kill -s SIGKILL {} 2>&1 || sudo -n systemctl kill -s SIGKILL {} 2>&1 || systemctl kill {} 2>&1 || sudo -n systemctl kill {} 2>&1)",
-            clean_unit, clean_unit, clean_unit, clean_unit
+            "if systemctl kill -s SIGKILL {0} >/dev/null 2>&1 || sudo -n systemctl kill -s SIGKILL {0} >/dev/null 2>&1; then echo 'SUCCESS'; else err=$(systemctl kill -s SIGKILL {0} 2>&1 || sudo -n systemctl kill -s SIGKILL {0} 2>&1); echo \"FAILED: $err\"; exit 1; fi",
+            clean_unit
         )
     } else {
         format!(
-            "(systemctl {} {} 2>&1 || sudo -n systemctl {} {} 2>&1)",
-            action, clean_unit, action, clean_unit
+            "if systemctl {0} {1} >/dev/null 2>&1 || sudo -n systemctl {0} {1} >/dev/null 2>&1; then echo 'SUCCESS'; else err=$(systemctl {0} {1} 2>&1 || sudo -n systemctl {0} {1} 2>&1); echo \"FAILED: $err\"; exit 1; fi",
+            action, clean_unit
         )
     };
 
-    run_remote_ssh_command(host_id, state, &cmd, 15).await
+    let (output, exit_code) = run_remote_ssh_command_full(host_id, state, &cmd, 20).await?;
+    let trimmed = output.trim();
+    if exit_code != 0
+        || trimmed.starts_with("FAILED:")
+        || trimmed.contains("Interactive authentication required")
+        || trimmed.contains("Access denied")
+        || trimmed.contains("Failed to")
+    {
+        let reason = if trimmed.starts_with("FAILED:") {
+            trimmed.trim_start_matches("FAILED:").trim()
+        } else if trimmed.is_empty() {
+            "Permission denied (requires root/sudo) or service not found"
+        } else {
+            trimmed
+        };
+        return Err(format!("Failed to {} service {}: {}", action, clean_unit, reason));
+    }
+
+    Ok(format!("Service {} action '{}' completed successfully", clean_unit, action))
 }
 
 /// Fetches journalctl logs for a systemd service unit
@@ -368,15 +415,28 @@ pub async fn execute_kill_process(
     state: &AppState,
 ) -> Result<String, String> {
     if pid <= 1 {
-        return Err("Cannot kill system init PID 1".into());
+        return Err("Refusing to terminate system init process (PID 1)".into());
     }
 
     let cmd = format!(
-        "(kill -15 {} 2>&1 || kill -9 {} 2>&1 || sudo -n kill -9 {} 2>&1)",
-        pid, pid, pid
+        "if kill -9 {0} 2>/dev/null || sudo -n kill -9 {0} 2>/dev/null; then echo 'SUCCESS'; else err=$(kill -9 {0} 2>&1 || sudo -n kill -9 {0} 2>&1); echo \"FAILED: $err\"; exit 1; fi",
+        pid
     );
 
-    run_remote_ssh_command(host_id, state, &cmd, 10).await
+    let (output, exit_code) = run_remote_ssh_command_full(host_id, state, &cmd, 10).await?;
+    let trimmed = output.trim();
+    if exit_code != 0 || trimmed.starts_with("FAILED:") || trimmed.contains("Operation not permitted") {
+        let reason = if trimmed.starts_with("FAILED:") {
+            trimmed.trim_start_matches("FAILED:").trim()
+        } else if trimmed.is_empty() {
+            "Operation not permitted (requires root/sudo) or process not found"
+        } else {
+            trimmed
+        };
+        return Err(format!("Failed to terminate process {}: {}", pid, reason));
+    }
+
+    Ok(format!("Process {} terminated", pid))
 }
 
 /// Prunes unused docker build cache, volumes, and stopped containers
@@ -384,8 +444,13 @@ pub async fn execute_docker_prune(
     host_id: &str,
     state: &AppState,
 ) -> Result<String, String> {
-    let cmd = "(docker system prune -f 2>&1 || podman system prune -f 2>&1)";
-    run_remote_ssh_command(host_id, state, cmd, 30).await
+    let cmd = "if docker system prune -f 2>&1 || sudo -n docker system prune -f 2>&1 || podman system prune -f 2>&1 || sudo -n podman system prune -f 2>&1; then echo ''; else exit 1; fi";
+    let (output, exit_code) = run_remote_ssh_command_full(host_id, state, cmd, 45).await?;
+    let trimmed = output.trim();
+    if exit_code != 0 || trimmed.contains("permission denied") || trimmed.contains("Cannot connect") {
+        return Err(format!("Docker prune failed: {}", if trimmed.is_empty() { "Permission denied or engine unreachable" } else { trimmed }));
+    }
+    Ok(if trimmed.is_empty() { "Prune completed successfully. No unused items found." } else { trimmed }.to_string())
 }
 
 /// Parses the tagged probe output into a structured `ServerToolboxOverview`
