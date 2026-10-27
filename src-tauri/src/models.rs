@@ -315,6 +315,9 @@ pub struct ContainerItem {
     pub state: String,
     pub ports: String,
     pub engine: String,
+    pub cpu_percent: Option<String>,
+    pub memory_usage: Option<String>,
+    pub memory_percent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,11 +341,41 @@ pub struct OpenPortItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessItem {
+    pub pid: u32,
+    pub user: String,
+    pub cpu_percent: f32,
+    pub memory_percent: f32,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageMountItem {
+    pub filesystem: String,
+    pub total_size: String,
+    pub used_size: String,
+    pub available_size: String,
+    pub usage_percent: f32,
+    pub mount_point: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DockerDiskUsage {
+    pub images_size: Option<String>,
+    pub containers_size: Option<String>,
+    pub volumes_size: Option<String>,
+    pub build_cache_size: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerToolboxOverview {
     pub host_id: String,
     pub containers: Vec<ContainerItem>,
     pub services: Vec<ServiceItem>,
     pub ports: Vec<OpenPortItem>,
+    pub processes: Vec<ProcessItem>,
+    pub storage: Vec<StorageMountItem>,
+    pub docker_disk_usage: Option<DockerDiskUsage>,
     pub docker_installed: bool,
     pub systemd_installed: bool,
     pub timestamp: i64,

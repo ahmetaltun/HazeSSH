@@ -6,6 +6,9 @@ export interface ContainerItem {
   state: string;
   ports: string;
   engine: string;
+  cpu_percent?: string;
+  memory_usage?: string;
+  memory_percent?: string;
 }
 
 export interface ServiceItem {
@@ -26,11 +29,38 @@ export interface OpenPortItem {
   pid?: number;
 }
 
+export interface ProcessItem {
+  pid: number;
+  user: string;
+  cpu_percent: number;
+  memory_percent: number;
+  command: string;
+}
+
+export interface StorageMountItem {
+  filesystem: string;
+  total_size: string;
+  used_size: string;
+  available_size: string;
+  usage_percent: number;
+  mount_point: string;
+}
+
+export interface DockerDiskUsage {
+  images_size?: string;
+  containers_size?: string;
+  volumes_size?: string;
+  build_cache_size?: string;
+}
+
 export interface ServerToolboxOverview {
   host_id: string;
   containers: ContainerItem[];
   services: ServiceItem[];
   ports: OpenPortItem[];
+  processes: ProcessItem[];
+  storage: StorageMountItem[];
+  docker_disk_usage?: DockerDiskUsage;
   docker_installed: boolean;
   systemd_installed: boolean;
   timestamp: number;

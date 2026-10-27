@@ -1546,6 +1546,33 @@ pub async fn host_service_action(
 }
 
 #[tauri::command]
+pub async fn host_service_logs(
+    host_id: String,
+    service_unit: String,
+    tail_lines: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    toolbox::fetch_service_logs(&host_id, &service_unit, tail_lines.unwrap_or(100), &state).await
+}
+
+#[tauri::command]
+pub async fn host_kill_process(
+    host_id: String,
+    pid: u32,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    toolbox::execute_kill_process(&host_id, pid, &state).await
+}
+
+#[tauri::command]
+pub async fn host_docker_prune(
+    host_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    toolbox::execute_docker_prune(&host_id, &state).await
+}
+
+#[tauri::command]
 pub fn serial_list_ports() -> Result<Vec<SerialPortInfo>, String> {
     serial::list_serial_ports()
 }

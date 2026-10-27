@@ -7,7 +7,10 @@ use russh::ChannelMsg;
 use russh_keys::key;
 
 use crate::commands::AppState;
-use crate::models::{ContainerItem, OpenPortItem, ServerToolboxOverview, ServiceItem};
+use crate::models::{
+    ContainerItem, DockerDiskUsage, OpenPortItem, ProcessItem, ServerToolboxOverview,
+    ServiceItem, StorageMountItem,
+};
 
 pub const TOOLBOX_PROBE_COMMAND: &str = r#"
 echo '===HAZE_TOOLBOX_START==='
@@ -15,12 +18,20 @@ echo '---DOCKER_CHECK---'
 which docker 2>/dev/null || which podman 2>/dev/null || echo 'none'
 echo '---CONTAINERS---'
 (docker ps -a --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.State}}\t{{.Ports}}\tdocker' 2>/dev/null || podman ps -a --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.State}}\t{{.Ports}}\tpodman' 2>/dev/null)
+echo '---CONTAINER_STATS---'
+(docker stats --no-stream --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}' 2>/dev/null || podman stats --no-stream --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}' 2>/dev/null)
 echo '---SYSTEMD_CHECK---'
 which systemctl 2>/dev/null || echo 'none'
 echo '---SERVICES---'
 systemctl list-units --type=service --all --no-pager --plain --no-legend 2>/dev/null
 echo '---PORTS---'
 (ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null)
+echo '---PROCESSES---'
+ps -eo pid,user,%cpu,%mem,args --sort=-%cpu 2>/dev/null | head -n 40
+echo '---STORAGE---'
+df -h -P 2>/dev/null
+echo '---DOCKER_DF---'
+docker system df 2>/dev/null
 echo '===HAZE_TOOLBOX_END==='
 "#;
 
@@ -120,7 +131,7 @@ pub async fn fetch_server_toolbox_overview(
     host_id: &str,
     state: &AppState,
 ) -> Result<ServerToolboxOverview, String> {
-    let raw_output = run_remote_ssh_command(host_id, state, TOOLBOX_PROBE_COMMAND, 10).await?;
+    let raw_output = run_remote_ssh_command(host_id, state, TOOLBOX_PROBE_COMMAND, 12).await?;
     let overview = parse_toolbox_output(host_id, &raw_output);
     Ok(overview)
 }
@@ -136,7 +147,6 @@ pub async fn execute_container_action(
         return Err(format!("Invalid container action '{}'. Allowed: start, stop, restart", action));
     }
 
-    // Sanitize container ID
     let clean_id: String = container_id.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
     if clean_id.is_empty() {
         return Err("Invalid container ID format".into());
@@ -170,29 +180,88 @@ pub async fn fetch_container_logs(
     run_remote_ssh_command(host_id, state, &cmd, 10).await
 }
 
-/// Executes a systemd service action (start, stop, restart)
+/// Executes a systemd service action (start, stop, restart, kill)
 pub async fn execute_service_action(
     host_id: &str,
     service_unit: &str,
     action: &str,
     state: &AppState,
 ) -> Result<String, String> {
-    if !["start", "stop", "restart"].contains(&action) {
-        return Err(format!("Invalid service action '{}'. Allowed: start, stop, restart", action));
+    if !["start", "stop", "restart", "kill"].contains(&action) {
+        return Err(format!(
+            "Invalid service action '{}'. Allowed: start, stop, restart, kill",
+            action
+        ));
     }
 
-    // Sanitize unit name (e.g. nginx.service)
-    let clean_unit: String = service_unit.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.' || *c == '@').collect();
+    let clean_unit: String = service_unit
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.' || *c == '@')
+        .collect();
     if clean_unit.is_empty() {
         return Err("Invalid service unit name".into());
     }
 
-    let cmd = format!(
-        "(systemctl {} {} 2>&1 || sudo -n systemctl {} {} 2>&1)",
-        action, clean_unit, action, clean_unit
-    );
+    let cmd = if action == "kill" {
+        format!(
+            "(systemctl kill -s SIGKILL {} 2>&1 || sudo -n systemctl kill -s SIGKILL {} 2>&1 || systemctl kill {} 2>&1 || sudo -n systemctl kill {} 2>&1)",
+            clean_unit, clean_unit, clean_unit, clean_unit
+        )
+    } else {
+        format!(
+            "(systemctl {} {} 2>&1 || sudo -n systemctl {} {} 2>&1)",
+            action, clean_unit, action, clean_unit
+        )
+    };
 
     run_remote_ssh_command(host_id, state, &cmd, 15).await
+}
+
+/// Fetches journalctl logs for a systemd service unit
+pub async fn fetch_service_logs(
+    host_id: &str,
+    service_unit: &str,
+    tail_lines: u32,
+    state: &AppState,
+) -> Result<String, String> {
+    let clean_unit: String = service_unit.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.' || *c == '@').collect();
+    if clean_unit.is_empty() {
+        return Err("Invalid service unit name".into());
+    }
+    let lines = tail_lines.clamp(10, 1000);
+    let cmd = format!(
+        "(journalctl -u {} -n {} --no-pager 2>&1 || sudo -n journalctl -u {} -n {} --no-pager 2>&1)",
+        clean_unit, lines, clean_unit, lines
+    );
+
+    run_remote_ssh_command(host_id, state, &cmd, 10).await
+}
+
+/// Kills a process by PID
+pub async fn execute_kill_process(
+    host_id: &str,
+    pid: u32,
+    state: &AppState,
+) -> Result<String, String> {
+    if pid <= 1 {
+        return Err("Cannot kill system init PID 1".into());
+    }
+
+    let cmd = format!(
+        "(kill -15 {} 2>&1 || kill -9 {} 2>&1 || sudo -n kill -9 {} 2>&1)",
+        pid, pid, pid
+    );
+
+    run_remote_ssh_command(host_id, state, &cmd, 10).await
+}
+
+/// Prunes unused docker build cache, volumes, and stopped containers
+pub async fn execute_docker_prune(
+    host_id: &str,
+    state: &AppState,
+) -> Result<String, String> {
+    let cmd = "(docker system prune -f 2>&1 || podman system prune -f 2>&1)";
+    run_remote_ssh_command(host_id, state, cmd, 30).await
 }
 
 /// Parses the tagged probe output into a structured `ServerToolboxOverview`
@@ -229,7 +298,22 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
         })
         .unwrap_or(false);
 
-    // 2. Containers
+    // 2. Container stats map (ID prefix -> (cpu_percent, memory_usage, memory_percent))
+    let mut stats_map: HashMap<String, (String, String, String)> = HashMap::new();
+    if let Some(stats_content) = sections.get("CONTAINER_STATS") {
+        for line in stats_content.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 4 {
+                let id_prefix = parts[0].trim().chars().take(12).collect::<String>();
+                let cpu = parts[1].trim().to_string();
+                let mem_usage = parts[2].trim().to_string();
+                let mem_pct = parts[3].trim().to_string();
+                stats_map.insert(id_prefix, (cpu, mem_usage, mem_pct));
+            }
+        }
+    }
+
+    // 3. Containers
     let mut containers = Vec::new();
     if let Some(content) = sections.get("CONTAINERS") {
         for line in content.lines() {
@@ -239,20 +323,27 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
             }
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() >= 6 {
+                let full_id = parts[0].trim().to_string();
+                let short_id: String = full_id.chars().take(12).collect();
+                let stats = stats_map.get(&short_id);
+
                 containers.push(ContainerItem {
-                    id: parts[0].trim().to_string(),
+                    id: full_id,
                     names: parts[1].trim().to_string(),
                     image: parts[2].trim().to_string(),
                     status: parts[3].trim().to_string(),
                     state: parts[4].trim().to_lowercase(),
                     ports: parts[5].trim().to_string(),
                     engine: parts.get(6).unwrap_or(&"docker").trim().to_string(),
+                    cpu_percent: stats.map(|s| s.0.clone()),
+                    memory_usage: stats.map(|s| s.1.clone()),
+                    memory_percent: stats.map(|s| s.2.clone()),
                 });
             }
         }
     }
 
-    // 3. Systemd check
+    // 4. Systemd check
     let systemd_installed = sections
         .get("SYSTEMD_CHECK")
         .map(|s| {
@@ -261,7 +352,7 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
         })
         .unwrap_or(false);
 
-    // 4. Services
+    // 5. Services
     let mut services = Vec::new();
     if let Some(content) = sections.get("SERVICES") {
         for line in content.lines() {
@@ -269,7 +360,6 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
             if line.is_empty() || line.starts_with("UNIT") {
                 continue;
             }
-            // Standard columns: UNIT LOAD ACTIVE SUB DESCRIPTION...
             let tokens: Vec<&str> = line.split_whitespace().collect();
             if tokens.len() >= 4 {
                 let unit = tokens[0].trim_start_matches(['●', '*', ' ']).to_string();
@@ -296,7 +386,7 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
         }
     }
 
-    // 5. Open Ports
+    // 6. Open Ports
     let mut ports = Vec::new();
     if let Some(content) = sections.get("PORTS") {
         for line in content.lines() {
@@ -305,8 +395,6 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
                 continue;
             }
             let tokens: Vec<&str> = line.split_whitespace().collect();
-            // `ss -tulpn` typical line:
-            // [0: Netid, 1: State, 2: Recv-Q, 3: Send-Q, 4: Local Address:Port, 5: Peer Address:Port, 6..: Process]
             if tokens.len() >= 5 {
                 let proto = tokens[0].to_lowercase();
                 if !proto.starts_with("tcp") && !proto.starts_with("udp") {
@@ -316,7 +404,6 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
                 let (state, local_idx, proc_start_idx) = if tokens[1] == "LISTEN" || tokens[1] == "UNCONN" {
                     (tokens[1].to_string(), 4, 6)
                 } else if tokens.len() >= 6 && (tokens[5] == "LISTEN" || tokens[5] == "UNCONN") {
-                    // netstat format: proto, recv-q, send-q, local, foreign, state, pid/prog
                     (tokens[5].to_string(), 3, 6)
                 } else {
                     (tokens[1].to_string(), 4, 6)
@@ -352,14 +439,108 @@ pub fn parse_toolbox_output(host_id: &str, raw: &str) -> ServerToolboxOverview {
         }
     }
 
-    // Deduplicate ports by (protocol, local_address, local_port)
     ports.sort_by_key(|p| p.local_port);
+
+    // 7. Processes
+    let mut processes = Vec::new();
+    if let Some(content) = sections.get("PROCESSES") {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("PID") {
+                continue;
+            }
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if tokens.len() >= 5
+                && let Ok(pid) = tokens[0].parse::<u32>()
+            {
+                let user = tokens[1].to_string();
+                let cpu_percent = tokens[2].parse::<f32>().unwrap_or(0.0);
+                let memory_percent = tokens[3].parse::<f32>().unwrap_or(0.0);
+                let command = tokens[4..].join(" ");
+
+                processes.push(ProcessItem {
+                    pid,
+                    user,
+                    cpu_percent,
+                    memory_percent,
+                    command,
+                });
+            }
+        }
+    }
+
+    // 8. Storage & Mounts (df -h -P)
+    let mut storage = Vec::new();
+    if let Some(content) = sections.get("STORAGE") {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("Filesystem") {
+                continue;
+            }
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if tokens.len() >= 6 {
+                let filesystem = tokens[0].to_string();
+                let total_size = tokens[1].to_string();
+                let used_size = tokens[2].to_string();
+                let available_size = tokens[3].to_string();
+                let usage_percent = tokens[4].trim_end_matches('%').parse::<f32>().unwrap_or(0.0);
+                let mount_point = tokens[5].to_string();
+
+                // Skip non-interesting temporary filesystems
+                if filesystem.starts_with("/dev/") || mount_point == "/" || mount_point.starts_with("/home") || mount_point.starts_with("/data") || mount_point.starts_with("/var") {
+                    storage.push(StorageMountItem {
+                        filesystem,
+                        total_size,
+                        used_size,
+                        available_size,
+                        usage_percent,
+                        mount_point,
+                    });
+                }
+            }
+        }
+    }
+
+    // 9. Docker Disk Usage (docker system df)
+    let mut docker_disk_usage = None;
+    if let Some(content) = sections.get("DOCKER_DF") {
+        let mut images_size = None;
+        let mut containers_size = None;
+        let mut volumes_size = None;
+        let mut build_cache_size = None;
+
+        for line in content.lines() {
+            let lower = line.to_lowercase();
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if lower.starts_with("images") && tokens.len() >= 4 {
+                images_size = Some(format!("{} ({} reclaimable)", tokens[3], tokens.get(4).unwrap_or(&"")));
+            } else if lower.starts_with("containers") && tokens.len() >= 3 {
+                containers_size = Some(tokens[2].to_string());
+            } else if lower.starts_with("local volumes") && tokens.len() >= 4 {
+                volumes_size = Some(tokens[3].to_string());
+            } else if lower.starts_with("build cache") && tokens.len() >= 4 {
+                build_cache_size = Some(tokens[3].to_string());
+            }
+        }
+
+        if images_size.is_some() || containers_size.is_some() {
+            docker_disk_usage = Some(DockerDiskUsage {
+                images_size,
+                containers_size,
+                volumes_size,
+                build_cache_size,
+            });
+        }
+    }
 
     ServerToolboxOverview {
         host_id: host_id.to_string(),
         containers,
         services,
         ports,
+        processes,
+        storage,
+        docker_disk_usage,
         docker_installed,
         systemd_installed,
         timestamp: Utc::now().timestamp(),
@@ -372,7 +553,6 @@ fn parse_process_and_pid(raw: &str) -> (Option<String>, Option<u32>) {
         return (None, None);
     }
 
-    // Format 1: `users:(("sshd",pid=842,fd=3))` from ss
     if let Some(users_idx) = raw.find("users:((") {
         let inside = &raw[users_idx + 8..];
         let prog = inside.split('"').nth(1).map(|s| s.to_string());
@@ -390,7 +570,6 @@ fn parse_process_and_pid(raw: &str) -> (Option<String>, Option<u32>) {
         return (prog, pid);
     }
 
-    // Format 2: `842/sshd` from netstat
     if let Some(slash_idx) = raw.find('/') {
         let pid_str = &raw[..slash_idx].trim();
         let prog_str = &raw[slash_idx + 1..].trim();
@@ -415,6 +594,8 @@ mod tests {
 ---CONTAINERS---
 c85f53882737	nginx-proxy	nginx:alpine	Up 3 hours	running	0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp	docker
 a1b2c3d4e5f6	redis-cache	redis:7-alpine	Exited (0) 10 minutes ago	exited		docker
+---CONTAINER_STATS---
+c85f53882737	0.15%	42.1MiB / 3.8GiB	1.08%
 ---SYSTEMD_CHECK---
 /bin/systemctl
 ---SERVICES---
@@ -426,6 +607,20 @@ failed.service loaded failed failed Failed Service Test
 tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=842,fd=3))
 tcp LISTEN 0 511 127.0.0.1:6379 0.0.0.0:* users:(("redis-server",pid=1023,fd=6))
 udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:* users:(("avahi-daemon",pid=650,fd=12))
+---PROCESSES---
+PID USER %CPU %MEM COMMAND
+842 root 0.1 0.2 /usr/sbin/sshd -D
+1023 redis 0.4 1.5 redis-server 127.0.0.1:6379
+---STORAGE---
+Filesystem 1024-blocks Used Available Capacity Mounted on
+/dev/sda1 40G 12G 28G 30% /
+/dev/sdb1 100G 45G 55G 45% /data
+---DOCKER_DF---
+TYPE TOTAL ACTIVE SIZE RECLAIMABLE
+Images 5 2 1.4GB 800MB (57%)
+Containers 2 1 12MB 0B (0%)
+Local Volumes 1 1 50MB 0B (0%)
+Build Cache 0 0 0B 0B
 ===HAZE_TOOLBOX_END===
 "#;
 
@@ -435,13 +630,13 @@ udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:* users:(("avahi-daemon",pid=650,fd=12))
         assert!(overview.docker_installed);
         assert!(overview.systemd_installed);
 
-        // Containers
+        // Containers & Stats
         assert_eq!(overview.containers.len(), 2);
         assert_eq!(overview.containers[0].id, "c85f53882737");
         assert_eq!(overview.containers[0].names, "nginx-proxy");
         assert_eq!(overview.containers[0].state, "running");
-        assert_eq!(overview.containers[1].names, "redis-cache");
-        assert_eq!(overview.containers[1].state, "exited");
+        assert_eq!(overview.containers[0].cpu_percent.as_deref(), Some("0.15%"));
+        assert_eq!(overview.containers[0].memory_usage.as_deref(), Some("42.1MiB / 3.8GiB"));
 
         // Services
         assert_eq!(overview.services.len(), 4);
@@ -455,8 +650,20 @@ udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:* users:(("avahi-daemon",pid=650,fd=12))
         assert_eq!(overview.ports[0].local_port, 22);
         assert_eq!(overview.ports[0].process.as_deref(), Some("sshd"));
         assert_eq!(overview.ports[0].pid, Some(842));
-        assert_eq!(overview.ports[1].local_port, 5353);
-        assert_eq!(overview.ports[2].local_port, 6379);
-        assert_eq!(overview.ports[2].process.as_deref(), Some("redis-server"));
+
+        // Processes
+        assert_eq!(overview.processes.len(), 2);
+        assert_eq!(overview.processes[0].pid, 842);
+        assert_eq!(overview.processes[0].user, "root");
+        assert_eq!(overview.processes[0].command, "/usr/sbin/sshd -D");
+
+        // Storage
+        assert_eq!(overview.storage.len(), 2);
+        assert_eq!(overview.storage[0].mount_point, "/");
+        assert_eq!(overview.storage[0].total_size, "40G");
+        assert_eq!(overview.storage[0].usage_percent, 30.0);
+
+        // Docker DF
+        assert!(overview.docker_disk_usage.is_some());
     }
 }

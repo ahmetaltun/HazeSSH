@@ -479,8 +479,24 @@ export const api = {
   hostServiceAction: async (
     hostId: string,
     serviceUnit: string,
-    action: "start" | "stop" | "restart",
+    action: "start" | "stop" | "restart" | "kill",
   ): Promise<string> => {
     return await invoke<string>("host_service_action", { hostId, serviceUnit, action });
+  },
+
+  hostServiceLogs: async (
+    hostId: string,
+    serviceUnit: string,
+    tailLines?: number,
+  ): Promise<string> => {
+    return await invoke<string>("host_service_logs", { hostId, serviceUnit, tailLines });
+  },
+
+  hostKillProcess: async (hostId: string, pid: number): Promise<string> => {
+    return await invoke<string>("host_kill_process", { hostId, pid });
+  },
+
+  hostDockerPrune: async (hostId: string): Promise<string> => {
+    return await invoke<string>("host_docker_prune", { hostId });
   },
 };
