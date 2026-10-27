@@ -53,6 +53,7 @@ export const HostSchema = z.object({
   color: z.string().nullable().optional(),
   terminal_theme: z.string().nullable().optional(),
   startup_snippet_id: z.string().nullable().optional(),
+  enable_audit_log: z.boolean().nullable().optional(),
   created_at: z.number(),
   updated_at: z.number(),
 });
@@ -72,6 +73,7 @@ export const CreateHostInputSchema = z.object({
   color: z.string().optional(),
   terminal_theme: z.string().optional(),
   startup_snippet_id: z.string().optional(),
+  enable_audit_log: z.boolean().optional(),
 });
 
 export type CreateHostInput = z.infer<typeof CreateHostInputSchema>;

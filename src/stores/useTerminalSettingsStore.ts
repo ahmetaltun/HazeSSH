@@ -62,6 +62,9 @@ interface TerminalSettingsState {
   readonly highlightStyle: HighlightStyleMode;
   readonly highlightBoxOpacity: number;
   readonly highlightRules: readonly HighlightRule[];
+  readonly globalAuditLogEnabled: boolean;
+  readonly auditLogWithTimestamps: boolean;
+  readonly auditLogStripAnsi: boolean;
 
   readonly setFontFamily: (fontFamily: string) => void;
   readonly setFontSize: (fontSize: number) => void;
@@ -76,6 +79,9 @@ interface TerminalSettingsState {
   readonly setHighlightStyle: (style: HighlightStyleMode) => void;
   readonly setHighlightBoxOpacity: (opacity: number) => void;
   readonly setHighlightRules: (rules: readonly HighlightRule[]) => void;
+  readonly setGlobalAuditLogEnabled: (enabled: boolean) => void;
+  readonly setAuditLogWithTimestamps: (enabled: boolean) => void;
+  readonly setAuditLogStripAnsi: (enabled: boolean) => void;
   readonly toggleHighlightRule: (id: string) => void;
   readonly addHighlightRule: (rule: HighlightRule) => void;
   readonly deleteHighlightRule: (id: string) => void;
@@ -98,6 +104,9 @@ const DEFAULT_SETTINGS = {
   highlightStyle: "underline" as HighlightStyleMode,
   highlightBoxOpacity: 0.10,
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
+  globalAuditLogEnabled: false,
+  auditLogWithTimestamps: true,
+  auditLogStripAnsi: false,
 };
 
 function loadSavedSettings() {
@@ -130,6 +139,9 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
         highlightStyle: get().highlightStyle,
         highlightBoxOpacity: get().highlightBoxOpacity,
         highlightRules: get().highlightRules,
+        globalAuditLogEnabled: get().globalAuditLogEnabled,
+        auditLogWithTimestamps: get().auditLogWithTimestamps,
+        auditLogStripAnsi: get().auditLogStripAnsi,
         ...partial,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
@@ -204,6 +216,21 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set, get)
     setHighlightRules: (highlightRules) => {
       persist({ highlightRules });
       set({ highlightRules });
+    },
+
+    setGlobalAuditLogEnabled: (globalAuditLogEnabled) => {
+      persist({ globalAuditLogEnabled });
+      set({ globalAuditLogEnabled });
+    },
+
+    setAuditLogWithTimestamps: (auditLogWithTimestamps) => {
+      persist({ auditLogWithTimestamps });
+      set({ auditLogWithTimestamps });
+    },
+
+    setAuditLogStripAnsi: (auditLogStripAnsi) => {
+      persist({ auditLogStripAnsi });
+      set({ auditLogStripAnsi });
     },
 
     toggleHighlightRule: (id) => {

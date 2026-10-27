@@ -7,9 +7,13 @@ import {
   Rows2,
   RotateCcw,
   MousePointer2,
+  Circle,
+  Square,
+  Download,
 } from "lucide-react";
 import { api } from "@/services/api";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
+import { useRecordingStore } from "@/stores/useRecordingStore";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
 import { formatShortcut } from "@/utils/platform";
 import type { TerminalPane } from "@/types/terminal";
@@ -29,6 +33,7 @@ export function TerminalContextMenu({
 }: TerminalContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const { splitActivePane } = useMultiplexerStore();
+  const { isPaneRecording, startRecording, saveRecording, exportRecordingDialog } = useRecordingStore();
 
   const session = terminalSessionManager.getSession(pane.id);
   const hasSelection = Boolean(session?.term.hasSelection());
@@ -197,6 +202,52 @@ export function TerminalContextMenu({
           {formatShortcut("⌘K", "Ctrl+L")}
         </kbd>
       </button>
+
+      <div className="h-px bg-base-300 my-1" />
+
+      {/* Session Recording (.cast) */}
+      <button
+        type="button"
+        onClick={async () => {
+          onClose();
+          if (isPaneRecording(pane.id)) {
+            await saveRecording(pane.id, pane.title);
+          } else {
+            startRecording(pane.id, pane.title);
+          }
+        }}
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-base-200 text-left cursor-pointer transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          {isPaneRecording(pane.id) ? (
+            <>
+              <Square className="w-3.5 h-3.5 text-error fill-current" />
+              <span className="text-error font-medium">Stop & Save Recording</span>
+            </>
+          ) : (
+            <>
+              <Circle className="w-3.5 h-3.5 text-error" />
+              <span>Record Session (.cast)</span>
+            </>
+          )}
+        </span>
+      </button>
+
+      {isPaneRecording(pane.id) && (
+        <button
+          type="button"
+          onClick={async () => {
+            onClose();
+            await exportRecordingDialog(pane.id, pane.title);
+          }}
+          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-base-200 text-left cursor-pointer transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <Download className="w-3.5 h-3.5 text-warning" />
+            <span>Export Recording As...</span>
+          </span>
+        </button>
+      )}
 
       <div className="h-px bg-base-300 my-1" />
 

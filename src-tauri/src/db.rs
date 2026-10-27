@@ -136,6 +136,12 @@ impl Database {
             )?;
         }
 
+        // Schema migrations
+        let _ = conn.execute(
+            "ALTER TABLE hosts ADD COLUMN enable_audit_log INTEGER DEFAULT 0",
+            [],
+        );
+
         Ok(())
     }
 
@@ -186,13 +192,14 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, group_id, label, hostname, port, username, auth_type, identity_id,
                     jump_host_id, tags_json, color, terminal_theme, startup_snippet_id,
-                    created_at, updated_at
+                    created_at, updated_at, enable_audit_log
              FROM hosts ORDER BY label ASC",
         )?;
 
         let host_iter = stmt.query_map([], |row| {
             let tags_json: String = row.get(9)?;
             let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+            let enable_audit_log = row.get::<_, Option<i64>>(15).ok().flatten().map(|v| v != 0);
 
             Ok(Host {
                 id: row.get(0)?,
@@ -208,6 +215,7 @@ impl Database {
                 color: row.get(10)?,
                 terminal_theme: row.get(11)?,
                 startup_snippet_id: row.get(12)?,
+                enable_audit_log,
                 created_at: row.get(13)?,
                 updated_at: row.get(14)?,
             })
@@ -228,13 +236,14 @@ impl Database {
         let auth_type = input.auth_type.unwrap_or_else(|| "identity".into());
         let tags = input.tags.unwrap_or_default();
         let tags_json = serde_json::to_string(&tags)?;
+        let enable_audit_log = input.enable_audit_log.unwrap_or(false);
 
         conn.execute(
             "INSERT INTO hosts (
                 id, group_id, label, hostname, port, username, auth_type, identity_id,
                 jump_host_id, tags_json, color, terminal_theme, startup_snippet_id,
-                created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                created_at, updated_at, enable_audit_log
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 id,
                 input.group_id,
@@ -251,6 +260,7 @@ impl Database {
                 input.startup_snippet_id,
                 now,
                 now,
+                if enable_audit_log { 1 } else { 0 },
             ],
         )?;
 
@@ -268,6 +278,7 @@ impl Database {
             color: input.color,
             terminal_theme: input.terminal_theme,
             startup_snippet_id: input.startup_snippet_id,
+            enable_audit_log: Some(enable_audit_log),
             created_at: now,
             updated_at: now,
         })
@@ -277,13 +288,15 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let now = Utc::now().timestamp();
         let tags_json = serde_json::to_string(&input.tags)?;
+        let enable_audit_log = input.enable_audit_log.unwrap_or(false);
 
         let rows_affected = conn.execute(
             "UPDATE hosts SET
                 group_id = ?1, label = ?2, hostname = ?3, port = ?4, username = ?5,
                 auth_type = ?6, identity_id = ?7, jump_host_id = ?8, tags_json = ?9,
-                color = ?10, terminal_theme = ?11, startup_snippet_id = ?12, updated_at = ?13
-             WHERE id = ?14",
+                color = ?10, terminal_theme = ?11, startup_snippet_id = ?12, updated_at = ?13,
+                enable_audit_log = ?14
+             WHERE id = ?15",
             params![
                 input.group_id,
                 input.label,
@@ -298,6 +311,7 @@ impl Database {
                 input.terminal_theme,
                 input.startup_snippet_id,
                 now,
+                if enable_audit_log { 1 } else { 0 },
                 input.id,
             ],
         )?;
@@ -326,6 +340,7 @@ impl Database {
             color: input.color,
             terminal_theme: input.terminal_theme,
             startup_snippet_id: input.startup_snippet_id,
+            enable_audit_log: Some(enable_audit_log),
             created_at,
             updated_at: now,
         })
@@ -1170,6 +1185,8 @@ impl Database {
 
             let tags_json = serde_json::to_string(&host.tags)?;
 
+            let audit_log_val = if host.enable_audit_log.unwrap_or(false) { 1 } else { 0 };
+
             if !overwrite {
                 let exists: bool = tx.query_row(
                     "SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ?1)",
@@ -1190,8 +1207,9 @@ impl Database {
                             color = ?9,
                             terminal_theme = ?10,
                             startup_snippet_id = ?11,
-                            updated_at = ?12
-                         WHERE id = ?13",
+                            updated_at = ?12,
+                            enable_audit_log = ?13
+                         WHERE id = ?14",
                         params![
                             valid_group,
                             host.label,
@@ -1205,6 +1223,7 @@ impl Database {
                             host.terminal_theme,
                             valid_startup_snippet,
                             host.updated_at,
+                            audit_log_val,
                             host.id,
                         ],
                     )?;
@@ -1236,8 +1255,9 @@ impl Database {
                             color = COALESCE(?5, color),
                             terminal_theme = COALESCE(?6, terminal_theme),
                             startup_snippet_id = COALESCE(?7, startup_snippet_id),
-                            updated_at = ?8
-                         WHERE id = ?9",
+                            updated_at = ?8,
+                            enable_audit_log = COALESCE(?9, enable_audit_log)
+                         WHERE id = ?10",
                         params![
                             valid_group,
                             host.auth_type,
@@ -1247,6 +1267,7 @@ impl Database {
                             host.terminal_theme,
                             valid_startup_snippet,
                             host.updated_at,
+                            host.enable_audit_log.map(|b| if b { 1 } else { 0 }),
                             existing_id,
                         ],
                     )?;
@@ -1259,8 +1280,8 @@ impl Database {
                 "INSERT INTO hosts (
                     id, group_id, label, hostname, port, username, auth_type, identity_id,
                     jump_host_id, tags_json, color, terminal_theme, startup_snippet_id,
-                    created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    created_at, updated_at, enable_audit_log
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     host.id,
                     valid_group,
@@ -1276,6 +1297,7 @@ impl Database {
                     valid_startup_snippet,
                     host.created_at,
                     host.updated_at,
+                    audit_log_val,
                 ],
             )?;
             id_map.insert(host.id.clone(), host.id.clone());
@@ -1687,6 +1709,7 @@ mod tests {
                 color: Some("#00ff00".into()),
                 terminal_theme: None,
                 startup_snippet_id: Some(snippet.id.clone()),
+                enable_audit_log: None,
             })
             .expect("host created");
 
@@ -1755,6 +1778,7 @@ mod tests {
                 color: None,
                 terminal_theme: None,
                 startup_snippet_id: None,
+                enable_audit_log: None,
             })
             .expect("host 2 created");
 
@@ -1798,6 +1822,7 @@ mod tests {
                 color: None,
                 terminal_theme: None,
                 startup_snippet_id: None,
+                enable_audit_log: None,
             })
             .unwrap();
 
@@ -1818,6 +1843,7 @@ mod tests {
                 color: None,
                 terminal_theme: None,
                 startup_snippet_id: None,
+                enable_audit_log: None,
             })
             .unwrap();
 

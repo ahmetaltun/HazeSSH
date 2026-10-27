@@ -36,6 +36,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
   const [identityId, setIdentityId] = useState("");
   const [jumpHostId, setJumpHostId] = useState("");
   const [startupSnippetId, setStartupSnippetId] = useState("");
+  const [enableAuditLog, setEnableAuditLog] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [color, setColor] = useState(PRESET_COLORS[0]);
@@ -77,6 +78,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
         setIdentityId(hostToEdit.identity_id || "");
         setJumpHostId(hostToEdit.jump_host_id || "");
         setStartupSnippetId(hostToEdit.startup_snippet_id || "");
+        setEnableAuditLog(Boolean(hostToEdit.enable_audit_log));
         setTags(hostToEdit.tags || []);
         setColor(hostToEdit.color || PRESET_COLORS[0]);
       } else {
@@ -91,6 +93,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
         setIdentityId("");
         setJumpHostId("");
         setStartupSnippetId("");
+        setEnableAuditLog(false);
         setTags([]);
         setColor(PRESET_COLORS[0]);
       }
@@ -180,6 +183,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
           color,
           terminal_theme: hostToEdit.terminal_theme,
           startup_snippet_id: startupSnippetId.trim() || undefined,
+          enable_audit_log: enableAuditLog,
           created_at: hostToEdit.created_at,
           updated_at: Date.now(),
         });
@@ -197,6 +201,7 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
           tags,
           color,
           startup_snippet_id: startupSnippetId.trim() || undefined,
+          enable_audit_log: enableAuditLog,
         });
         onSaved?.(created);
       }
@@ -459,6 +464,22 @@ export function HostModal({ isOpen, hostToEdit, onClose, onSaved }: HostModalPro
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Session Audit Logging Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-base-100 border border-base-300">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold block text-base-content">Session Audit Logging</span>
+                <span className="text-[11px] text-base-content/60 block">
+                  Automatically log all terminal output for this host to ~/.haze/logs/
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={enableAuditLog}
+                onChange={(e) => setEnableAuditLog(e.target.checked)}
+                className="toggle toggle-sm toggle-primary"
+              />
             </div>
 
             {/* Tags Input */}

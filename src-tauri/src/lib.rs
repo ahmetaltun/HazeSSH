@@ -146,6 +146,12 @@ pub fn run() {
             commands::telnet_disconnect,
             commands::clipboard_read_text,
             commands::clipboard_write_text,
+            commands::audit_log_get_paths,
+            commands::audit_log_init,
+            commands::audit_log_append,
+            commands::session_save_recording,
+            commands::session_save_recording_dialog,
+            commands::open_directory_in_os,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

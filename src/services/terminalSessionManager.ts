@@ -6,6 +6,8 @@ import { attachTerminalRenderer, type TerminalRendererHandle } from "@/component
 import { api } from "@/services/api";
 import { resolveTerminalTheme } from "@/services/terminalThemes";
 import { TerminalHighlighter } from "@/services/keywordHighlightService";
+import { AsciinemaRecorder, SessionAuditLogger } from "@/services/sessionRecordingService";
+import { TerminalTriggerEngine } from "@/services/terminalTriggerEngine";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useTerminalSettingsStore } from "@/stores/useTerminalSettingsStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
@@ -14,6 +16,7 @@ import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { useSnippetStore } from "@/stores/useSnippetStore";
 import { useVaultStore } from "@/stores/useVaultStore";
+import { useTriggerStore } from "@/stores/useTriggerStore";
 import { resolveHostVariables } from "@/services/snippetInterpolation";
 import type { TerminalPane, SplitNode } from "@/types/terminal";
 import type { SshEvent } from "@/types/ssh";
@@ -27,6 +30,9 @@ export interface ActiveTerminalSession {
   readonly webLinksAddon: WebLinksAddon;
   readonly searchAddon: SearchAddon;
   readonly highlighter: TerminalHighlighter;
+  readonly recorder: AsciinemaRecorder;
+  readonly triggerEngine: TerminalTriggerEngine;
+  auditLogger: SessionAuditLogger | null;
   rendererHandle: TerminalRendererHandle | null;
   readonly wrapperEl: HTMLDivElement;
   sessionId: string | null;
@@ -102,6 +108,29 @@ class TerminalSessionManager {
       initialSettings.highlightBoxOpacity
     );
 
+    // 6. Asciinema Session Recorder
+    const recorder = new AsciinemaRecorder();
+
+    // 7. Expect / Automated Trigger Engine
+    const triggerEngine = new TerminalTriggerEngine({
+      hostId: pane.hostId,
+      onSendText: async (text: string) => {
+        const activeSession = this.sessions.get(pane.id);
+        if (!activeSession || activeSession.isDisposed || !activeSession.sessionId) return;
+        const toSend = text.endsWith("\n") ? text : `${text}\n`;
+        const bytes = Array.from(textEncoder.encode(toSend));
+        if (pane.connectionType === "local") {
+          await api.ptyWrite(activeSession.sessionId, bytes);
+        } else if (pane.connectionType === "serial") {
+          await api.serialWrite(activeSession.sessionId, bytes);
+        } else if (pane.connectionType === "telnet") {
+          await api.telnetWrite(activeSession.sessionId, bytes);
+        } else {
+          await api.sshWrite(activeSession.sessionId, bytes);
+        }
+      },
+    });
+
     const session: ActiveTerminalSession = {
       paneId: pane.id,
       term,
@@ -109,6 +138,9 @@ class TerminalSessionManager {
       webLinksAddon,
       searchAddon,
       highlighter,
+      recorder,
+      triggerEngine,
+      auditLogger: null,
       rendererHandle,
       wrapperEl,
       sessionId: null,
@@ -118,6 +150,33 @@ class TerminalSessionManager {
       pane,
       disposables: [],
     };
+
+    // Initialize session audit logger if globally enabled or configured on host
+    const isGlobalAudit = initialSettings.globalAuditLogEnabled;
+    const host = pane.hostId
+      ? useHostStore.getState().hosts.find((h) => h.id === pane.hostId)
+      : undefined;
+    const isHostAudit = Boolean(host?.enable_audit_log);
+
+    if (isGlobalAudit || isHostAudit) {
+      const sanitizedTitle = (pane.title || "session").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `${sanitizedTitle}_${timestamp}.log`;
+
+      api.auditLogInit(filename)
+        .then((filePath) => {
+          if (!session.isDisposed) {
+            session.auditLogger = new SessionAuditLogger({
+              filePath,
+              withTimestamps: initialSettings.auditLogWithTimestamps,
+              stripAnsi: initialSettings.auditLogStripAnsi,
+            });
+          }
+        })
+        .catch((err) => {
+          console.error(`[Terminal ${pane.id}] Failed to initialize audit logger:`, err);
+        });
+    }
 
     // Listen to line feeds to highlight keywords in real time
     const lineFeedDisposable = term.onLineFeed(() => {
@@ -134,9 +193,10 @@ class TerminalSessionManager {
       highlighter.dispose();
     });
 
-    // 6. Handle user input typing
+    // 7. Handle user input typing
     const dataDisposable = term.onData((data) => {
       if (session.isDisposed) return;
+      session.recorder.recordInput(data);
       const sessionId = session.sessionId;
       if (!sessionId) return;
       const bytes = Array.from(textEncoder.encode(data));
@@ -222,6 +282,14 @@ class TerminalSessionManager {
       switch (event.type) {
         case "Data": {
           const uint8 = new Uint8Array(event.payload);
+          session.recorder.recordOutput(uint8);
+          if (session.auditLogger) {
+            session.auditLogger.write(uint8);
+          }
+          const triggerState = useTriggerStore.getState();
+          if (triggerState.triggersEnabled) {
+            session.triggerEngine.processChunk(uint8, triggerState.rules);
+          }
           term.write(uint8);
           break;
         }
@@ -478,6 +546,7 @@ class TerminalSessionManager {
       session.fitAddon.fit();
       const cols = session.term.cols;
       const rows = session.term.rows;
+      session.recorder.recordResize(cols, rows);
       const sessionId = session.sessionId;
 
       if (
@@ -575,6 +644,16 @@ class TerminalSessionManager {
     }
 
     useTerminalRegistryStore.getState().unregisterSession(paneId);
+
+    if (session.recorder.isRecording()) {
+      session.recorder.stop();
+    }
+    if (session.auditLogger) {
+      void session.auditLogger.dispose();
+      session.auditLogger = null;
+    }
+
+    session.triggerEngine.reset();
 
     session.highlighter.dispose();
     session.rendererHandle?.dispose();

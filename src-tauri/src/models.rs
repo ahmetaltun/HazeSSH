@@ -57,6 +57,8 @@ pub struct Host {
     pub color: Option<String>,
     pub terminal_theme: Option<String>,
     pub startup_snippet_id: Option<String>,
+    #[serde(default)]
+    pub enable_audit_log: Option<bool>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -75,6 +77,8 @@ pub struct CreateHostInput {
     pub color: Option<String>,
     pub terminal_theme: Option<String>,
     pub startup_snippet_id: Option<String>,
+    #[serde(default)]
+    pub enable_audit_log: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +96,8 @@ pub struct UpdateHostInput {
     pub color: Option<String>,
     pub terminal_theme: Option<String>,
     pub startup_snippet_id: Option<String>,
+    #[serde(default)]
+    pub enable_audit_log: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

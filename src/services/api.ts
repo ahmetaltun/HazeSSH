@@ -407,4 +407,29 @@ export const api = {
   clipboardWriteText: async (text: string): Promise<void> => {
     return await invoke<void>("clipboard_write_text", { text });
   },
+
+  // --- Audit Logging & Session Recording ---
+  auditLogGetPaths: async (): Promise<{ logsDir: string; recordingsDir: string }> => {
+    return await invoke<{ logsDir: string; recordingsDir: string }>("audit_log_get_paths");
+  },
+
+  auditLogInit: async (filename: string): Promise<string> => {
+    return await invoke<string>("audit_log_init", { filename });
+  },
+
+  auditLogAppend: async (filePath: string, chunk: string): Promise<void> => {
+    return await invoke<void>("audit_log_append", { filePath, chunk });
+  },
+
+  sessionSaveRecording: async (suggestedFilename: string, castContent: string): Promise<string> => {
+    return await invoke<string>("session_save_recording", { suggestedFilename, castContent });
+  },
+
+  sessionSaveRecordingDialog: async (defaultFilename: string, castContent: string): Promise<string | null> => {
+    return await invoke<string | null>("session_save_recording_dialog", { defaultFilename, castContent });
+  },
+
+  openDirectoryInOs: async (path?: string): Promise<void> => {
+    return await invoke<void>("open_directory_in_os", { path: path ?? null });
+  },
 };

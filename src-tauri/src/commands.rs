@@ -926,6 +926,30 @@ fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
 }
 
 #[cfg(target_os = "macos")]
+fn os_save_recording_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let script = format!(
+        "POSIX path of (choose file name with prompt \"Save asciinema Recording (.cast)\" default name \"{}\")",
+        default_name.replace('"', "\\\"")
+    );
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("Failed to launch save dialog: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn os_pick_file_dialog() -> Result<Option<String>, String> {
     let script = "POSIX path of (choose file with prompt \"Select Haze Backup Archive (.haze, .json)\")";
     let output = std::process::Command::new("osascript")
@@ -950,6 +974,29 @@ fn os_pick_file_dialog() -> Result<Option<String>, String> {
 fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
     let script = format!(
         "Add-Type -AssemblyName System.Windows.Forms; $dlg = New-Object System.Windows.Forms.SaveFileDialog; $dlg.Filter = 'Haze Backup Archive (*.haze)|*.haze|All files (*.*)|*.*'; $dlg.FileName = '{}'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ $dlg.FileName }}",
+        default_name.replace('\'', "''")
+    );
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .output()
+        .map_err(|e| format!("Failed to launch save dialog on Windows: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn os_save_recording_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let script = format!(
+        "Add-Type -AssemblyName System.Windows.Forms; $dlg = New-Object System.Windows.Forms.SaveFileDialog; $dlg.Filter = 'asciinema Recording (*.cast)|*.cast|All files (*.*)|*.*'; $dlg.FileName = '{}'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ $dlg.FileName }}",
         default_name.replace('\'', "''")
     );
     let output = std::process::Command::new("powershell")
@@ -1007,6 +1054,23 @@ fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
 }
 
 #[cfg(target_os = "linux")]
+fn os_save_recording_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let output = std::process::Command::new("zenity")
+        .args(["--file-selection", "--save", "--confirm-overwrite", "--title=Save asciinema Recording", &format!("--filename={}", default_name)])
+        .output();
+
+    if let Ok(out) = output
+        && out.status.success()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(target_os = "linux")]
 fn os_pick_file_dialog() -> Result<Option<String>, String> {
     let output = std::process::Command::new("zenity")
         .args(["--file-selection", "--title=Select Haze Backup Archive", "--file-filter=Haze Backup (*.haze *.json) | *.haze *.json"])
@@ -1020,6 +1084,11 @@ fn os_pick_file_dialog() -> Result<Option<String>, String> {
             return Ok(Some(path));
         }
     }
+    Ok(None)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn os_save_recording_dialog(_default_name: &str) -> Result<Option<String>, String> {
     Ok(None)
 }
 
@@ -1434,6 +1503,155 @@ pub fn clipboard_write_text(text: String) -> Result<(), String> {
         Err("Unsupported operating system for native clipboard writing".into())
     }
 }
+
+// --- Session Audit Logging & asciinema Recording Commands ---
+
+fn get_haze_home_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
+    std::path::PathBuf::from(home).join(".haze")
+}
+
+fn get_haze_logs_dir() -> Result<std::path::PathBuf, String> {
+    let dir = get_haze_home_dir().join("logs");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create logs directory '{:?}': {}", dir, e))?;
+    }
+    Ok(dir)
+}
+
+fn get_haze_recordings_dir() -> Result<std::path::PathBuf, String> {
+    let dir = get_haze_home_dir().join("recordings");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create recordings directory '{:?}': {}", dir, e))?;
+    }
+    Ok(dir)
+}
+
+#[tauri::command]
+pub fn audit_log_get_paths() -> Result<serde_json::Value, String> {
+    let logs_dir = get_haze_logs_dir()?;
+    let recordings_dir = get_haze_recordings_dir()?;
+    Ok(serde_json::json!({
+        "logsDir": logs_dir.to_string_lossy(),
+        "recordingsDir": recordings_dir.to_string_lossy(),
+    }))
+}
+
+#[tauri::command]
+pub fn audit_log_init(filename: String) -> Result<String, String> {
+    let logs_dir = get_haze_logs_dir()?;
+    let clean_name = filename.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+    let target_file = logs_dir.join(clean_name);
+
+    if !target_file.exists() {
+        std::fs::File::create(&target_file)
+            .map_err(|e| format!("Failed to initialize audit log file at '{:?}': {}", target_file, e))?;
+    }
+
+    Ok(target_file.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn audit_log_append(file_path: String, chunk: String) -> Result<(), String> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+        .map_err(|e| format!("Failed to open audit log at '{}': {}", file_path, e))?;
+
+    file.write_all(chunk.as_bytes())
+        .map_err(|e| format!("Failed to write chunk to audit log at '{}': {}", file_path, e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn session_save_recording(suggested_filename: String, cast_content: String) -> Result<String, String> {
+    let recordings_dir = get_haze_recordings_dir()?;
+    let mut clean_name = suggested_filename.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+    if !clean_name.ends_with(".cast") {
+        clean_name.push_str(".cast");
+    }
+    let target_file = recordings_dir.join(clean_name);
+
+    std::fs::write(&target_file, cast_content.as_bytes())
+        .map_err(|e| format!("Failed to save session recording to '{:?}': {}", target_file, e))?;
+
+    Ok(target_file.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn session_save_recording_dialog(default_filename: String, cast_content: String) -> Result<Option<String>, String> {
+    let mut clean_name = default_filename.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+    if !clean_name.ends_with(".cast") {
+        clean_name.push_str(".cast");
+    }
+
+    if let Some(path) = os_save_recording_dialog(&clean_name)? {
+        let final_path = if !path.ends_with(".cast") {
+            format!("{}.cast", path)
+        } else {
+            path
+        };
+
+        std::fs::write(&final_path, cast_content.as_bytes())
+            .map_err(|e| format!("Failed to save session recording to '{}': {}", final_path, e))?;
+
+        Ok(Some(final_path))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub fn open_directory_in_os(path: Option<String>) -> Result<(), String> {
+    let target_dir = match path {
+        Some(p) => std::path::PathBuf::from(p),
+        None => get_haze_home_dir(),
+    };
+
+    if !target_dir.exists() {
+        std::fs::create_dir_all(&target_dir)
+            .map_err(|e| format!("Directory does not exist and could not be created: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&target_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open directory in Finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&target_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open directory in Explorer: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&target_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open directory with xdg-open: {}", e))?;
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        return Err("Unsupported OS for native directory opening".into());
+    }
+
+    Ok(())
+}
+
 
 
 

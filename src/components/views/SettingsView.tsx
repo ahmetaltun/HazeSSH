@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ShieldCheck,
   Lock,
@@ -11,10 +11,21 @@ import {
   Highlighter,
   Plus,
   Trash2,
+  FileText,
+  FolderOpen,
+  Video,
+  Zap,
+  Bell,
+  Volume2,
+  Send,
+  Play,
 } from "lucide-react";
+import { api } from "@/services/api";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { useTerminalSettingsStore, POPULAR_TERMINAL_FONTS } from "@/stores/useTerminalSettingsStore";
+import { useTriggerStore } from "@/stores/useTriggerStore";
+import { audioAlert, type TriggerMatchType, type TriggerActionType } from "@/services/terminalTriggerEngine";
 import { applyOpacity } from "@/services/keywordHighlightService";
 import { TERMINAL_THEME_OPTIONS } from "@/services/terminalThemes";
 import { terminalSessionManager } from "@/services/terminalSessionManager";
@@ -42,6 +53,9 @@ export function SettingsView() {
     highlightStyle,
     highlightBoxOpacity,
     highlightRules,
+    globalAuditLogEnabled,
+    auditLogWithTimestamps,
+    auditLogStripAnsi,
     setFontFamily,
     setFontSize,
     setLineHeight,
@@ -53,16 +67,88 @@ export function SettingsView() {
     setKeywordHighlightEnabled,
     setHighlightStyle,
     setHighlightBoxOpacity,
+    setGlobalAuditLogEnabled,
+    setAuditLogWithTimestamps,
+    setAuditLogStripAnsi,
     toggleHighlightRule,
     addHighlightRule,
     deleteHighlightRule,
     resetToDefaults,
   } = useTerminalSettingsStore();
 
+  const [paths, setPaths] = useState<{ logsDir: string; recordingsDir: string } | null>(null);
+
+  useEffect(() => {
+    api.auditLogGetPaths().then(setPaths).catch(() => {});
+  }, []);
+
   const [newRuleName, setNewRuleName] = useState("");
   const [newRulePattern, setNewRulePattern] = useState("");
   const [newRuleColor, setNewRuleColor] = useState("#ef4444");
   const [isAddingRule, setIsAddingRule] = useState(false);
+
+  // Trigger Store & State
+  const {
+    triggersEnabled,
+    rules: triggerRules,
+    setTriggersEnabled,
+    addRule: addTriggerRule,
+    toggleRule: toggleTriggerRule,
+    deleteRule: deleteTriggerRule,
+    resetToDefaults: resetTriggerDefaults,
+  } = useTriggerStore();
+
+  const [isAddingTrigger, setIsAddingTrigger] = useState(false);
+  const [newTriggerName, setNewTriggerName] = useState("");
+  const [newTriggerPattern, setNewTriggerPattern] = useState("");
+  const [newTriggerMatchType, setNewTriggerMatchType] = useState<TriggerMatchType>("contains");
+  const [newTriggerCaseSensitive, setNewTriggerCaseSensitive] = useState(false);
+  const [newTriggerOneShot, setNewTriggerOneShot] = useState(false);
+  const [newTriggerCooldown, setNewTriggerCooldown] = useState(5);
+  const [newTriggerActionType, setNewTriggerActionType] = useState<TriggerActionType>("sound");
+  const [newTriggerSendText, setNewTriggerSendText] = useState("");
+  const [newTriggerNotificationTitle, setNewTriggerNotificationTitle] = useState("");
+  const [newTriggerNotificationMsg, setNewTriggerNotificationMsg] = useState("");
+  const [newTriggerSoundType, setNewTriggerSoundType] = useState<"bell" | "chime" | "warning">("bell");
+
+  const handleCreateTrigger = () => {
+    if (!newTriggerName.trim() || !newTriggerPattern.trim()) return;
+
+    let action;
+    if (newTriggerActionType === "sendText") {
+      action = { type: "sendText" as const, text: newTriggerSendText };
+    } else if (newTriggerActionType === "notification") {
+      action = {
+        type: "notification" as const,
+        title: newTriggerNotificationTitle || newTriggerName,
+        message: newTriggerNotificationMsg || `Trigger '${newTriggerName}' matched.`,
+      };
+    } else {
+      action = {
+        type: "sound" as const,
+        soundType: newTriggerSoundType,
+      };
+    }
+
+    addTriggerRule({
+      name: newTriggerName.trim(),
+      pattern: newTriggerPattern.trim(),
+      matchType: newTriggerMatchType,
+      caseSensitive: newTriggerCaseSensitive,
+      scope: "global",
+      enabled: true,
+      oneShot: newTriggerOneShot,
+      cooldownSeconds: Math.max(1, newTriggerCooldown),
+      action,
+    });
+
+    setNewTriggerName("");
+    setNewTriggerPattern("");
+    setNewTriggerSendText("");
+    setNewTriggerNotificationTitle("");
+    setNewTriggerNotificationMsg("");
+    setIsAddingTrigger(false);
+  };
 
   const [modalMode, setModalMode] = useState<"unlock" | "setup" | "disable" | null>(null);
   const [isIdentityManagerOpen, setIsIdentityManagerOpen] = useState(false);
@@ -783,6 +869,466 @@ export function SettingsView() {
           ) : (
             <div className="p-3 bg-base-100 rounded-xl text-center text-xs text-base-content/60">
               Keyword highlighting is currently disabled. Toggle the switch to activate real-time token highlighting.
+            </div>
+          )}
+        </section>
+
+        {/* Session Audit Logging & asciinema Recording Section */}
+        <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-info/10 text-info flex items-center justify-center">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">Session Audit Logging & asciinema Recording</h3>
+                <p className="text-xs text-base-content/60">
+                  Continuous timestamped session capture, compliance logging, and .cast recording
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => api.openDirectoryInOs(paths?.logsDir)}
+                className="btn btn-xs btn-outline gap-1.5"
+                title="Open local audit logs folder"
+              >
+                <FolderOpen className="w-3 h-3 text-info" />
+                <span>Logs Folder</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => api.openDirectoryInOs(paths?.recordingsDir)}
+                className="btn btn-xs btn-outline gap-1.5"
+                title="Open asciinema recordings folder"
+              >
+                <Video className="w-3 h-3 text-error" />
+                <span>Recordings Folder</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="divider my-1"></div>
+
+          <div className="space-y-3">
+            {/* Global Auto-Log Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-base-100 border border-base-300">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold block text-base-content">
+                  Automatically Log All Sessions
+                </span>
+                <span className="text-[11px] text-base-content/60 block">
+                  Write continuous stdout streams for all SSH, Serial, Telnet, and Local sessions to ~/.haze/logs/
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={globalAuditLogEnabled}
+                onChange={(e) => setGlobalAuditLogEnabled(e.target.checked)}
+                className="toggle toggle-sm toggle-info"
+              />
+            </div>
+
+            {/* Timestamp Formatting Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-base-100 border border-base-300">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold block text-base-content">
+                  Prepend Millisecond Timestamps
+                </span>
+                <span className="text-[11px] text-base-content/60 block">
+                  Prefix every line with [YYYY-MM-DD HH:mm:ss.SSS] for chronological audit compliance
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={auditLogWithTimestamps}
+                onChange={(e) => setAuditLogWithTimestamps(e.target.checked)}
+                className="toggle toggle-sm toggle-info"
+              />
+            </div>
+
+            {/* ANSI Stripping Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-base-100 border border-base-300">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold block text-base-content">
+                  Strip ANSI Escape Sequences
+                </span>
+                <span className="text-[11px] text-base-content/60 block">
+                  Strip terminal color codes and cursor movement escapes to generate clean, grep-friendly plain text
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={auditLogStripAnsi}
+                onChange={(e) => setAuditLogStripAnsi(e.target.checked)}
+                className="toggle toggle-sm toggle-info"
+              />
+            </div>
+
+            {/* Directory Locations */}
+            {paths && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px] font-mono text-base-content/60">
+                <div className="p-2 rounded-lg bg-base-300/40 border border-base-300 truncate">
+                  <span className="font-semibold block text-[10px] text-base-content/80 mb-0.5">LOGS DIR:</span>
+                  <span className="truncate" title={paths.logsDir}>{paths.logsDir}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-base-300/40 border border-base-300 truncate">
+                  <span className="font-semibold block text-[10px] text-base-content/80 mb-0.5">RECORDINGS DIR:</span>
+                  <span className="truncate" title={paths.recordingsDir}>{paths.recordingsDir}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Automated Triggers & Expect Rules Section */}
+        <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-warning/10 text-warning flex items-center justify-center">
+                <Zap className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm">Automated Triggers & Expect Rules</h3>
+                <p className="text-xs text-base-content/60">
+                  Auto-respond to interactive prompts, sound alerts, and notify when tasks finish
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-base-content/70">Enable Triggers</span>
+                <input
+                  type="checkbox"
+                  checked={triggersEnabled}
+                  onChange={(e) => setTriggersEnabled(e.target.checked)}
+                  className="toggle toggle-sm toggle-warning"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="divider my-1"></div>
+
+          {triggersEnabled ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-base-content/80">
+                  Active Triggers ({triggerRules.filter((r) => r.enabled).length}/{triggerRules.length})
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingTrigger(!isAddingTrigger)}
+                    className="btn btn-xs btn-outline btn-warning gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Add Trigger</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={resetTriggerDefaults}
+                    className="btn btn-xs btn-ghost text-base-content/60 hover:text-base-content gap-1"
+                    title="Restore default trigger presets"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Add Trigger Inline Form */}
+              {isAddingTrigger && (
+                <div className="p-4 rounded-xl bg-base-300/80 border border-base-300 space-y-3">
+                  <span className="text-xs font-semibold text-base-content block">
+                    Create New Automation Trigger
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                        Trigger Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Confirm SSH Host Key"
+                        value={newTriggerName}
+                        onChange={(e) => setNewTriggerName(e.target.value)}
+                        className="input input-xs input-bordered w-full text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                        Pattern to Match
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Are you sure you want to continue"
+                        value={newTriggerPattern}
+                        onChange={(e) => setNewTriggerPattern(e.target.value)}
+                        className="input input-xs input-bordered w-full font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                        Match Strategy
+                      </label>
+                      <select
+                        value={newTriggerMatchType}
+                        onChange={(e) => setNewTriggerMatchType(e.target.value as TriggerMatchType)}
+                        className="select select-xs select-bordered w-full text-xs"
+                      >
+                        <option value="contains">Contains Substring</option>
+                        <option value="regex">Regular Expression (Regex)</option>
+                        <option value="exact">Exact Match</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                        Action to Perform
+                      </label>
+                      <select
+                        value={newTriggerActionType}
+                        onChange={(e) => setNewTriggerActionType(e.target.value as TriggerActionType)}
+                        className="select select-xs select-bordered w-full text-xs"
+                      >
+                        <option value="sound">Play Audio Chime</option>
+                        <option value="notification">Desktop Notification</option>
+                        <option value="sendText">Auto-Respond (Send Stdin)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                        Cooldown Seconds
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={newTriggerCooldown}
+                        onChange={(e) => setNewTriggerCooldown(parseInt(e.target.value, 10) || 5)}
+                        className="input input-xs input-bordered w-full text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action Specific Fields */}
+                  {newTriggerActionType === "sendText" && (
+                    <div>
+                      <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                        Text Response to Send (Stdin)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. yes"
+                        value={newTriggerSendText}
+                        onChange={(e) => setNewTriggerSendText(e.target.value)}
+                        className="input input-xs input-bordered w-full font-mono text-xs"
+                      />
+                      <span className="text-[10px] text-warning mt-1 block">
+                        Safety note: A newline (\n) is automatically appended. Cooldown prevents infinite feedback loops.
+                      </span>
+                    </div>
+                  )}
+
+                  {newTriggerActionType === "notification" && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                          Notification Title
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Build Succeeded"
+                          value={newTriggerNotificationTitle}
+                          onChange={(e) => setNewTriggerNotificationTitle(e.target.value)}
+                          className="input input-xs input-bordered w-full text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                          Message Body
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. The remote task has completed."
+                          value={newTriggerNotificationMsg}
+                          onChange={(e) => setNewTriggerNotificationMsg(e.target.value)}
+                          className="input input-xs input-bordered w-full text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {newTriggerActionType === "sound" && (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="text-[11px] font-medium text-base-content/70 block mb-1">
+                          Synthesized Sound Chime
+                        </label>
+                        <select
+                          value={newTriggerSoundType}
+                          onChange={(e) => setNewTriggerSoundType(e.target.value as "bell" | "chime" | "warning")}
+                          className="select select-xs select-bordered w-full text-xs"
+                        >
+                          <option value="bell">Sine Bell (880Hz)</option>
+                          <option value="chime">Ascending Major Chord (C-E-G)</option>
+                          <option value="warning">Two-Tone Warning Alert</option>
+                        </select>
+                      </div>
+                      <div className="pt-5">
+                        <button
+                          type="button"
+                          onClick={() => audioAlert.play(newTriggerSoundType)}
+                          className="btn btn-xs btn-outline gap-1"
+                        >
+                          <Play className="w-3 h-3" />
+                          <span>Test Sound</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                        <input
+                          type="checkbox"
+                          checked={newTriggerCaseSensitive}
+                          onChange={(e) => setNewTriggerCaseSensitive(e.target.checked)}
+                          className="checkbox checkbox-xs checkbox-primary"
+                        />
+                        <span className="text-base-content/80 text-[11px]">Case Sensitive</span>
+                      </label>
+
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                        <input
+                          type="checkbox"
+                          checked={newTriggerOneShot}
+                          onChange={(e) => setNewTriggerOneShot(e.target.checked)}
+                          className="checkbox checkbox-xs checkbox-primary"
+                        />
+                        <span className="text-base-content/80 text-[11px]">Fire Once Per Session (One-Shot)</span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingTrigger(false)}
+                        className="btn btn-xs btn-ghost"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreateTrigger}
+                        className="btn btn-xs btn-warning font-semibold"
+                        disabled={!newTriggerName.trim() || !newTriggerPattern.trim()}
+                      >
+                        Save Trigger
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Trigger Rules List */}
+              <div className="space-y-2">
+                {triggerRules.map((rule) => {
+                  return (
+                    <div
+                      key={rule.id}
+                      className="p-3 rounded-xl border border-base-300 bg-base-100 flex items-center justify-between gap-3 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <input
+                          type="checkbox"
+                          checked={rule.enabled}
+                          onChange={() => toggleTriggerRule(rule.id)}
+                          className="checkbox checkbox-xs checkbox-warning"
+                        />
+                        <div className="overflow-hidden">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-xs text-base-content truncate">
+                              {rule.name}
+                            </span>
+                            <span className="badge badge-xs badge-neutral font-mono text-[10px]">
+                              {rule.matchType}
+                            </span>
+                            {rule.oneShot && (
+                              <span className="badge badge-xs badge-ghost text-[10px]">
+                                1-shot
+                              </span>
+                            )}
+                            {rule.action.type === "sound" && (
+                              <span className="badge badge-xs badge-warning/20 text-warning text-[10px] gap-1">
+                                <Volume2 className="w-2.5 h-2.5" />
+                                <span>{rule.action.soundType || "bell"}</span>
+                              </span>
+                            )}
+                            {rule.action.type === "notification" && (
+                              <span className="badge badge-xs badge-info/20 text-info text-[10px] gap-1">
+                                <Bell className="w-2.5 h-2.5" />
+                                <span>notification</span>
+                              </span>
+                            )}
+                            {rule.action.type === "sendText" && (
+                              <span className="badge badge-xs badge-success/20 text-success text-[10px] gap-1 font-mono">
+                                <Send className="w-2.5 h-2.5" />
+                                <span>"{rule.action.text}"</span>
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] font-mono text-base-content/60 truncate mt-0.5" title={rule.pattern}>
+                            Pattern: {rule.pattern}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {rule.action.type === "sound" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (rule.action.type === "sound") {
+                                audioAlert.play(rule.action.soundType || "bell");
+                              }
+                            }}
+                            className="btn btn-ghost btn-xs btn-square text-base-content/60 hover:text-base-content"
+                            title="Test Sound"
+                          >
+                            <Play className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => deleteTriggerRule(rule.id)}
+                          className="btn btn-ghost btn-xs btn-square text-error/70 hover:text-error"
+                          title="Delete trigger"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-base-100 rounded-xl text-center text-xs text-base-content/60">
+              Automated triggers are currently disabled. Toggle the switch to activate stream monitoring.
             </div>
           )}
         </section>

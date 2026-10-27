@@ -5,10 +5,13 @@ import {
   Terminal,
   Radio,
   VolumeX,
+  Circle,
+  Square,
 } from "lucide-react";
 import type { TerminalPane } from "@/types/terminal";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
+import { useRecordingStore } from "@/stores/useRecordingStore";
 import { XTermTerminal } from "@/components/terminal/XTermTerminal";
 import { PaneHostSelector } from "@/components/terminal/PaneHostSelector";
 
@@ -19,6 +22,14 @@ interface PaneContainerProps {
   readonly isTabActive?: boolean;
 }
 
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
 export function PaneContainer({
   pane,
   tabId,
@@ -27,8 +38,12 @@ export function PaneContainer({
 }: PaneContainerProps) {
   const { splitActivePane, closePane, setActivePane } = useMultiplexerStore();
   const { isBroadcastEnabled, isPaneExcluded, togglePaneExclusion } = useBroadcastStore();
+  const { isPaneRecording, getPaneRecording, startRecording, saveRecording } = useRecordingStore();
 
   const isExcludedFromBroadcast = isPaneExcluded(pane.id);
+  const isRecordingActive = isPaneRecording(pane.id);
+  const recordingState = getPaneRecording(pane.id);
+
   const isConfigured = Boolean(
     pane.hostId ||
       pane.hostname ||
@@ -97,6 +112,17 @@ export function PaneContainer({
           </span>
           {getStatusBadge()}
 
+          {/* Active Asciinema Recording Badge */}
+          {isRecordingActive && recordingState && (
+            <div
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-error/15 text-error text-[10px] font-mono border border-error/30 animate-pulse"
+              title={`Recording active: ${formatDuration(recordingState.elapsedSeconds)} (${recordingState.eventCount} events)`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-error inline-block" />
+              <span>REC {formatDuration(recordingState.elapsedSeconds)}</span>
+            </div>
+          )}
+
           {/* Broadcast Exclusion Status Toggle */}
           {isBroadcastEnabled && isConfigured && (
             <button
@@ -133,6 +159,40 @@ export function PaneContainer({
 
         {/* Pane Controls */}
         <div className="flex items-center gap-1">
+          {isConfigured && (
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation();
+                setActivePane(tabId, pane.id);
+                if (isRecordingActive) {
+                  const res = await saveRecording(pane.id, pane.title);
+                  if (res.savedPath) {
+                    console.log(`[Haze] Saved session recording to ${res.savedPath}`);
+                  }
+                } else {
+                  startRecording(pane.id, pane.title);
+                }
+              }}
+              className={`btn btn-ghost btn-xs btn-square p-0.5 transition-colors ${
+                isRecordingActive
+                  ? "text-error hover:bg-error/20"
+                  : "text-base-content/60 hover:text-base-content hover:bg-base-300"
+              }`}
+              title={
+                isRecordingActive
+                  ? "Stop & Save asciinema recording (.cast)"
+                  : "Start asciinema recording (.cast)"
+              }
+            >
+              {isRecordingActive ? (
+                <Square className="w-3 h-3 fill-current text-error" />
+              ) : (
+                <Circle className="w-3 h-3 text-base-content/70 hover:text-error" />
+              )}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={(e) => {
