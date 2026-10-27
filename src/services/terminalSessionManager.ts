@@ -8,6 +8,7 @@ import { resolveTerminalTheme } from "@/services/terminalThemes";
 import { TerminalHighlighter } from "@/services/keywordHighlightService";
 import { AsciinemaRecorder, SessionAuditLogger } from "@/services/sessionRecordingService";
 import { TerminalTriggerEngine } from "@/services/terminalTriggerEngine";
+import { TerminalTransferCoordinator } from "@/services/terminalTransfer/terminalTransferCoordinator";
 import { useThemeStore } from "@/stores/useThemeStore";
 import { useTerminalSettingsStore } from "@/stores/useTerminalSettingsStore";
 import { useTerminalRegistryStore } from "@/stores/useTerminalRegistryStore";
@@ -32,6 +33,7 @@ export interface ActiveTerminalSession {
   readonly highlighter: TerminalHighlighter;
   readonly recorder: AsciinemaRecorder;
   readonly triggerEngine: TerminalTriggerEngine;
+  readonly transferCoordinator: TerminalTransferCoordinator;
   auditLogger: SessionAuditLogger | null;
   rendererHandle: TerminalRendererHandle | null;
   readonly wrapperEl: HTMLDivElement;
@@ -131,6 +133,22 @@ class TerminalSessionManager {
       },
     });
 
+    // 8. Terminal-Native Transfers (Zmodem / Trzsz) Coordinator
+    const transferCoordinator = new TerminalTransferCoordinator(pane.id, async (bytes) => {
+      const activeSession = this.sessions.get(pane.id);
+      if (!activeSession || activeSession.isDisposed || !activeSession.sessionId) return;
+      const byteArray = Array.from(bytes);
+      if (pane.connectionType === "local") {
+        await api.ptyWrite(activeSession.sessionId, byteArray);
+      } else if (pane.connectionType === "serial") {
+        await api.serialWrite(activeSession.sessionId, byteArray);
+      } else if (pane.connectionType === "telnet") {
+        await api.telnetWrite(activeSession.sessionId, byteArray);
+      } else {
+        await api.sshWrite(activeSession.sessionId, byteArray);
+      }
+    });
+
     const session: ActiveTerminalSession = {
       paneId: pane.id,
       term,
@@ -140,6 +158,7 @@ class TerminalSessionManager {
       highlighter,
       recorder,
       triggerEngine,
+      transferCoordinator,
       auditLogger: null,
       rendererHandle,
       wrapperEl,
@@ -148,7 +167,7 @@ class TerminalSessionManager {
       isDisposed: false,
       hasRunStartupSnippet: false,
       pane,
-      disposables: [],
+      disposables: [() => transferCoordinator.dispose()],
     };
 
     // Initialize session audit logger if globally enabled or configured on host
@@ -276,12 +295,20 @@ class TerminalSessionManager {
       }
     }
 
-    const handleTerminalEvent = (event: SshEvent) => {
+    const handleTerminalEvent = async (event: SshEvent) => {
       if (session.isDisposed) return;
 
       switch (event.type) {
         case "Data": {
           const uint8 = new Uint8Array(event.payload);
+
+          // Intercept in-stream file transfers (Zmodem / Trzsz)
+          const shouldPassthrough = await session.transferCoordinator.processIncomingChunk(uint8);
+          if (!shouldPassthrough) {
+            // Consumed by transfer protocol engine: prevent printing raw binary escape sequences
+            break;
+          }
+
           session.recorder.recordOutput(uint8);
           if (session.auditLogger) {
             session.auditLogger.write(uint8);

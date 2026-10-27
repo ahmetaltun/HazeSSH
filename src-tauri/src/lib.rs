@@ -16,6 +16,7 @@ pub mod ssh;
 pub mod ssh_config_parser;
 pub mod telnet;
 pub mod third_party_importer;
+pub mod toolbox;
 pub mod tunnels;
 
 use commands::AppState;
@@ -137,6 +138,10 @@ pub fn run() {
             commands::putty_parse,
             commands::putty_import,
             commands::host_fetch_metrics,
+            commands::host_fetch_toolbox_data,
+            commands::host_container_action,
+            commands::host_container_logs,
+            commands::host_service_action,
             commands::serial_list_ports,
             commands::serial_connect,
             commands::serial_write,
@@ -152,6 +157,11 @@ pub fn run() {
             commands::session_save_recording,
             commands::session_save_recording_dialog,
             commands::open_directory_in_os,
+            commands::dialog_save_transfer_download,
+            commands::dialog_pick_transfer_upload,
+            commands::fs_read_binary_chunk,
+            commands::fs_write_binary_chunk,
+            commands::fs_get_file_size,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

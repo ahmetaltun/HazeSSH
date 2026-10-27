@@ -19,11 +19,13 @@ import {
   Copy,
   Check,
   AlertCircle,
+  Boxes,
 } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
 import { useServerMonitorStore } from "@/stores/useServerMonitorStore";
+import { useServerToolboxStore } from "@/stores/useServerToolboxStore";
 import { useVaultStore } from "@/stores/useVaultStore";
 import type { Host } from "@/types/host";
 import { HostModal } from "@/components/hosts/HostModal";
@@ -631,6 +633,19 @@ export function HostsView() {
                           <FolderGit2 className="w-3 h-3 text-secondary" />
                           <span>SFTP</span>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            useServerToolboxStore.getState().openToolbox(host.id);
+                          }}
+                          className="btn btn-xs btn-ghost gap-1 text-[11px] text-base-content/70 hover:text-primary border border-base-300/50"
+                          title="Open Remote Systems Hub (Containers, systemd, Ports)"
+                        >
+                          <Boxes className="w-3 h-3 text-primary" />
+                          <span>Toolbox</span>
+                        </button>
                       </div>
 
                       <button
@@ -724,6 +739,17 @@ export function HostsView() {
                             >
                               <Terminal className="w-3 h-3" />
                               <span>Connect</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                useServerToolboxStore.getState().openToolbox(host.id);
+                              }}
+                              className="btn btn-xs btn-ghost btn-square text-base-content/70 hover:text-primary"
+                              title="Inspect Containers, Services & Ports"
+                            >
+                              <Boxes className="w-3 h-3" />
                             </button>
                             <button
                               type="button"

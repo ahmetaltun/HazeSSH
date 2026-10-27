@@ -25,6 +25,7 @@ import type {
   PuttyDetectResult,
 } from "@/types/importer";
 import type { ServerMetrics } from "@/types/monitor";
+import type { ServerToolboxOverview } from "@/types/toolbox";
 import type { SerialPortInfo, SerialConnectOptions } from "@/types/serial";
 import type { TelnetConnectOptions } from "@/types/telnet";
 
@@ -431,5 +432,55 @@ export const api = {
 
   openDirectoryInOs: async (path?: string): Promise<void> => {
     return await invoke<void>("open_directory_in_os", { path: path ?? null });
+  },
+
+  // --- Terminal-Native Transfers (Zmodem / Trzsz) ---
+  dialogSaveTransferDownload: async (defaultFilename: string): Promise<string | null> => {
+    return await invoke<string | null>("dialog_save_transfer_download", { defaultFilename });
+  },
+
+  dialogPickTransferUpload: async (): Promise<string | null> => {
+    return await invoke<string | null>("dialog_pick_transfer_upload");
+  },
+
+  fsReadBinaryChunk: async (path: string, offset: number, length: number): Promise<number[]> => {
+    return await invoke<number[]>("fs_read_binary_chunk", { path, offset, length });
+  },
+
+  fsWriteBinaryChunk: async (path: string, chunk: number[], append: boolean): Promise<void> => {
+    return await invoke<void>("fs_write_binary_chunk", { path, chunk, append });
+  },
+
+  fsGetFileSize: async (path: string): Promise<number> => {
+    return await invoke<number>("fs_get_file_size", { path });
+  },
+
+  // --- Extended Agentless Server Toolbox ---
+  hostFetchToolboxData: async (hostId: string): Promise<ServerToolboxOverview> => {
+    return await invoke<ServerToolboxOverview>("host_fetch_toolbox_data", { hostId });
+  },
+
+  hostContainerAction: async (
+    hostId: string,
+    containerId: string,
+    action: "start" | "stop" | "restart",
+  ): Promise<string> => {
+    return await invoke<string>("host_container_action", { hostId, containerId, action });
+  },
+
+  hostContainerLogs: async (
+    hostId: string,
+    containerId: string,
+    tailLines?: number,
+  ): Promise<string> => {
+    return await invoke<string>("host_container_logs", { hostId, containerId, tailLines });
+  },
+
+  hostServiceAction: async (
+    hostId: string,
+    serviceUnit: string,
+    action: "start" | "stop" | "restart",
+  ): Promise<string> => {
+    return await invoke<string>("host_service_action", { hostId, serviceUnit, action });
   },
 };

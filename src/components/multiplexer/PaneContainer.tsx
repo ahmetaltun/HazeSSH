@@ -7,13 +7,16 @@ import {
   VolumeX,
   Circle,
   Square,
+  Boxes,
 } from "lucide-react";
 import type { TerminalPane } from "@/types/terminal";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { useRecordingStore } from "@/stores/useRecordingStore";
+import { useServerToolboxStore } from "@/stores/useServerToolboxStore";
 import { XTermTerminal } from "@/components/terminal/XTermTerminal";
 import { PaneHostSelector } from "@/components/terminal/PaneHostSelector";
+import { TransferProgressOverlay } from "@/components/terminal/TransferProgressOverlay";
 
 interface PaneContainerProps {
   readonly pane: TerminalPane;
@@ -159,6 +162,20 @@ export function PaneContainer({
 
         {/* Pane Controls */}
         <div className="flex items-center gap-1">
+          {pane.hostId && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                useServerToolboxStore.getState().openToolbox(pane.hostId!);
+              }}
+              className="btn btn-ghost btn-xs btn-square p-0.5 text-base-content/60 hover:text-primary hover:bg-base-300"
+              title="Inspect Containers, Services & Ports (Remote Systems Hub)"
+            >
+              <Boxes className="w-3 h-3" />
+            </button>
+          )}
+
           {isConfigured && (
             <button
               type="button"
@@ -234,11 +251,14 @@ export function PaneContainer({
       {/* Pane Content: Terminal Canvas or Host Selector */}
       <div className="flex-1 w-full min-h-0 bg-base-100 relative overflow-hidden">
         {isConfigured ? (
-          <XTermTerminal
-            pane={pane}
-            isFocused={isFocused}
-            isTabActive={isTabActive}
-          />
+          <>
+            <XTermTerminal
+              pane={pane}
+              isFocused={isFocused}
+              isTabActive={isTabActive}
+            />
+            <TransferProgressOverlay paneId={pane.id} />
+          </>
         ) : (
           <PaneHostSelector pane={pane} tabId={tabId} />
         )}

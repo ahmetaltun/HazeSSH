@@ -306,5 +306,48 @@ pub struct TelnetConnectOptions {
     pub rows: Option<u16>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerItem {
+    pub id: String,
+    pub names: String,
+    pub image: String,
+    pub status: String,
+    pub state: String,
+    pub ports: String,
+    pub engine: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceItem {
+    pub unit: String,
+    pub load_state: String,
+    pub active_state: String,
+    pub sub_state: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenPortItem {
+    pub protocol: String,
+    pub local_address: String,
+    pub local_port: u16,
+    pub foreign_address: String,
+    pub state: String,
+    pub process: Option<String>,
+    pub pid: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerToolboxOverview {
+    pub host_id: String,
+    pub containers: Vec<ContainerItem>,
+    pub services: Vec<ServiceItem>,
+    pub ports: Vec<OpenPortItem>,
+    pub docker_installed: bool,
+    pub systemd_installed: bool,
+    pub timestamp: i64,
+    pub error: Option<String>,
+}
+
 
 

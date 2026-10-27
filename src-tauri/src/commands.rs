@@ -10,11 +10,12 @@ use crate::models::{
     BackupData, BackupEnvelope, BackupSummary, CreateGroupInput, CreateHostInput,
     CreateIdentityInput, CreateSnippetInput, CreateTunnelInput, Host, HostGroup, Identity,
     ImportResultSummary, ImportSshHostsInput, ImportTermiusInput, PuttyDetectResult,
-    SerialConnectOptions, SerialPortInfo, ServerMetrics, Snippet, SshConfigHostCandidate,
-    SshConfigParseResult, TelnetConnectOptions, TermiusParseResult, Tunnel, UpdateHostInput,
-    UpdateSnippetInput, VaultStatus,
+    SerialConnectOptions, SerialPortInfo, ServerMetrics, ServerToolboxOverview, Snippet,
+    SshConfigHostCandidate, SshConfigParseResult, TelnetConnectOptions, TermiusParseResult,
+    Tunnel, UpdateHostInput, UpdateSnippetInput, VaultStatus,
 };
 use crate::monitor;
+use crate::toolbox;
 use crate::pty::{PtyEvent, PtyManager};
 use crate::serial::{self, SerialSessionManager};
 use crate::sftp::{self, FileEntry};
@@ -970,6 +971,51 @@ fn os_pick_file_dialog() -> Result<Option<String>, String> {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn os_save_transfer_download_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let script = format!(
+        "POSIX path of (choose file name with prompt \"Save Downloaded File\" default name \"{}\")",
+        default_name.replace('"', "\\\"")
+    );
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("Failed to launch save dialog: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn os_pick_transfer_upload_dialog() -> Result<Option<String>, String> {
+    let script = "POSIX path of (choose file with prompt \"Select File to Upload\")";
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .map_err(|e| format!("Failed to launch file selection dialog: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn os_save_file_dialog(default_name: &str) -> Result<Option<String>, String> {
     let script = format!(
@@ -1019,6 +1065,49 @@ fn os_save_recording_dialog(default_name: &str) -> Result<Option<String>, String
 #[cfg(target_os = "windows")]
 fn os_pick_file_dialog() -> Result<Option<String>, String> {
     let script = "Add-Type -AssemblyName System.Windows.Forms; $dlg = New-Object System.Windows.Forms.OpenFileDialog; $dlg.Filter = 'Haze Backup Archive (*.haze;*.json)|*.haze;*.json|All files (*.*)|*.*'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dlg.FileName }";
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .output()
+        .map_err(|e| format!("Failed to launch file dialog on Windows: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn os_save_transfer_download_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let script = format!(
+        "Add-Type -AssemblyName System.Windows.Forms; $dlg = New-Object System.Windows.Forms.SaveFileDialog; $dlg.Filter = 'All files (*.*)|*.*'; $dlg.FileName = '{}'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ $dlg.FileName }}",
+        default_name.replace('\'', "''")
+    );
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .output()
+        .map_err(|e| format!("Failed to launch save dialog on Windows: {}", e))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn os_pick_transfer_upload_dialog() -> Result<Option<String>, String> {
+    let script = "Add-Type -AssemblyName System.Windows.Forms; $dlg = New-Object System.Windows.Forms.OpenFileDialog; $dlg.Filter = 'All files (*.*)|*.*'; if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $dlg.FileName }";
     let output = std::process::Command::new("powershell")
         .args(["-NoProfile", "-Command", script])
         .output()
@@ -1087,6 +1176,40 @@ fn os_pick_file_dialog() -> Result<Option<String>, String> {
     Ok(None)
 }
 
+#[cfg(target_os = "linux")]
+fn os_save_transfer_download_dialog(default_name: &str) -> Result<Option<String>, String> {
+    let output = std::process::Command::new("zenity")
+        .args(["--file-selection", "--save", "--confirm-overwrite", "--title=Save Downloaded File", &format!("--filename={}", default_name)])
+        .output();
+
+    if let Ok(out) = output
+        && out.status.success()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(target_os = "linux")]
+fn os_pick_transfer_upload_dialog() -> Result<Option<String>, String> {
+    let output = std::process::Command::new("zenity")
+        .args(["--file-selection", "--title=Select File to Upload"])
+        .output();
+
+    if let Ok(out) = output
+        && out.status.success()
+    {
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn os_save_recording_dialog(_default_name: &str) -> Result<Option<String>, String> {
     Ok(None)
@@ -1102,6 +1225,16 @@ fn os_pick_file_dialog() -> Result<Option<String>, String> {
     Ok(None)
 }
 
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn os_save_transfer_download_dialog(_default_name: &str) -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn os_pick_transfer_upload_dialog() -> Result<Option<String>, String> {
+    Ok(None)
+}
+
 #[tauri::command]
 pub fn dialog_save_backup_path(default_filename: String) -> Result<Option<String>, String> {
     os_save_file_dialog(&default_filename)
@@ -1110,6 +1243,54 @@ pub fn dialog_save_backup_path(default_filename: String) -> Result<Option<String
 #[tauri::command]
 pub fn dialog_pick_backup_file() -> Result<Option<String>, String> {
     os_pick_file_dialog()
+}
+
+#[tauri::command]
+pub fn dialog_save_transfer_download(default_filename: String) -> Result<Option<String>, String> {
+    os_save_transfer_download_dialog(&default_filename)
+}
+
+#[tauri::command]
+pub fn dialog_pick_transfer_upload() -> Result<Option<String>, String> {
+    os_pick_transfer_upload_dialog()
+}
+
+#[tauri::command]
+pub fn fs_read_binary_chunk(path: String, offset: u64, length: usize) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(&path)
+        .map_err(|e| format!("Failed to open file '{}': {}", path, e))?;
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|e| format!("Failed to seek to offset {} in '{}': {}", offset, path, e))?;
+    let mut buffer = vec![0u8; length];
+    let bytes_read = file.read(&mut buffer)
+        .map_err(|e| format!("Failed to read chunk from '{}': {}", path, e))?;
+    buffer.truncate(bytes_read);
+    Ok(buffer)
+}
+
+#[tauri::command]
+pub fn fs_write_binary_chunk(path: String, chunk: Vec<u8>, append: bool) -> Result<(), String> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(&path)
+        .map_err(|e| format!("Failed to open destination file '{}': {}", path, e))?;
+    file.write_all(&chunk)
+        .map_err(|e| format!("Failed to write chunk to '{}': {}", path, e))?;
+    file.flush()
+        .map_err(|e| format!("Failed to flush chunk to '{}': {}", path, e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn fs_get_file_size(path: String) -> Result<u64, String> {
+    let metadata = std::fs::metadata(&path)
+        .map_err(|e| format!("Failed to get metadata for '{}': {}", path, e))?;
+    Ok(metadata.len())
 }
 
 #[tauri::command]
@@ -1324,6 +1505,44 @@ pub async fn host_fetch_metrics(
     state: State<'_, AppState>,
 ) -> Result<ServerMetrics, String> {
     monitor::fetch_server_metrics(&host_id, &state).await
+}
+
+#[tauri::command]
+pub async fn host_fetch_toolbox_data(
+    host_id: String,
+    state: State<'_, AppState>,
+) -> Result<ServerToolboxOverview, String> {
+    toolbox::fetch_server_toolbox_overview(&host_id, &state).await
+}
+
+#[tauri::command]
+pub async fn host_container_action(
+    host_id: String,
+    container_id: String,
+    action: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    toolbox::execute_container_action(&host_id, &container_id, &action, &state).await
+}
+
+#[tauri::command]
+pub async fn host_container_logs(
+    host_id: String,
+    container_id: String,
+    tail_lines: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    toolbox::fetch_container_logs(&host_id, &container_id, tail_lines.unwrap_or(100), &state).await
+}
+
+#[tauri::command]
+pub async fn host_service_action(
+    host_id: String,
+    service_unit: String,
+    action: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    toolbox::execute_service_action(&host_id, &service_unit, &action, &state).await
 }
 
 #[tauri::command]

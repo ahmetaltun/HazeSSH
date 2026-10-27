@@ -6,6 +6,7 @@ import { StatusBar } from "@/components/layout/StatusBar";
 import { CommandPaletteModal } from "@/components/layout/CommandPaletteModal";
 import { AboutModal } from "@/components/layout/AboutModal";
 import { VaultModal } from "@/components/vault/VaultModal";
+import { ServerToolboxModal } from "@/components/toolbox/ServerToolboxModal";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { MultiplexerArea } from "@/components/multiplexer/MultiplexerArea";
 import { HostsView } from "@/components/views/HostsView";
@@ -404,6 +405,9 @@ export function AppShell() {
         onClose={() => resolveUnlockRequest(false)}
         onSuccess={() => resolveUnlockRequest(true)}
       />
+
+      {/* Global Remote Systems Hub / Server Inspection Toolbox Modal */}
+      <ServerToolboxModal />
     </div>
   );
 }
