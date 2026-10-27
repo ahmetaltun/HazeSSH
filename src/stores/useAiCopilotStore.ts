@@ -31,7 +31,7 @@ export const DEFAULT_AI_CONFIGS: Record<AiProviderType, AiProviderConfig> = {
   nvidia: {
     endpoint: "https://integrate.api.nvidia.com/v1",
     apiKey: "",
-    selectedModel: "meta/llama-3.1-70b-instruct",
+    selectedModel: "nvidia/nemotron-3.5-bolt-e4b",
     temperature: 0.2,
     maxTokens: 1024,
   },
@@ -103,6 +103,7 @@ function loadSavedSettings() {
         isEnabled: false,
         activeProvider: "ollama" as AiProviderType,
         providerConfigs: DEFAULT_AI_CONFIGS,
+        availableModels: {} as Partial<Record<AiProviderType, readonly AiModelInfo[]>>,
         history: [],
       };
     }
@@ -114,6 +115,7 @@ function loadSavedSettings() {
         ...DEFAULT_AI_CONFIGS,
         ...(parsed.providerConfigs || {}),
       },
+      availableModels: parsed.availableModels || {},
       history: Array.isArray(parsed.history) ? parsed.history : [],
     };
   } catch {
@@ -121,6 +123,7 @@ function loadSavedSettings() {
       isEnabled: false,
       activeProvider: "ollama" as AiProviderType,
       providerConfigs: DEFAULT_AI_CONFIGS,
+      availableModels: {} as Partial<Record<AiProviderType, readonly AiModelInfo[]>>,
       history: [],
     };
   }
@@ -135,6 +138,7 @@ export const useAiCopilotStore = create<AiCopilotState>((set, get) => {
         isEnabled: get().isEnabled,
         activeProvider: get().activeProvider,
         providerConfigs: get().providerConfigs,
+        availableModels: get().availableModels,
         history: get().history,
         ...partial,
       };
@@ -148,7 +152,7 @@ export const useAiCopilotStore = create<AiCopilotState>((set, get) => {
     isEnabled: initial.isEnabled,
     activeProvider: initial.activeProvider,
     providerConfigs: initial.providerConfigs,
-    availableModels: {},
+    availableModels: initial.availableModels,
     isPromptOpen: false,
     activePaneId: null,
     history: initial.history,
@@ -179,12 +183,12 @@ export const useAiCopilotStore = create<AiCopilotState>((set, get) => {
     },
 
     setAvailableModels: (provider, models) => {
-      set((state) => ({
-        availableModels: {
-          ...state.availableModels,
-          [provider]: models,
-        },
-      }));
+      const nextModels = {
+        ...get().availableModels,
+        [provider]: models,
+      };
+      persist({ availableModels: nextModels });
+      set({ availableModels: nextModels });
     },
 
     openPrompt: (paneId) => {

@@ -68,10 +68,13 @@ async fn execute_curl_request(
 ) -> Result<(u16, String), AiError> {
     let mut cmd = tokio::process::Command::new("curl");
     cmd.arg("-sS")
+        .arg("-L")
         .arg("-X")
         .arg(method)
         .arg("--max-time")
         .arg(timeout_secs.to_string())
+        .arg("-H")
+        .arg("Expect:")
         .arg("-w")
         .arg("\n%{http_code}")
         .arg(url);
@@ -92,11 +95,11 @@ async fn execute_curl_request(
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    if !output.status.success() && stdout.trim().is_empty() {
-        return Err(AiError::Transport(if stderr.trim().is_empty() {
-            format!("curl exited with code {:?}", output.status.code())
+    if !output.status.success() {
+        return Err(AiError::Transport(if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
         } else {
-            stderr
+            format!("curl exited with code {:?}", output.status.code())
         }));
     }
 
@@ -257,12 +260,20 @@ pub async fn chat_completion(input: AiCompletionInput) -> Result<AiCompletionOut
 
     let latency_ms = start_time.elapsed().as_millis() as u64;
 
-    if status >= 400 {
+    if status < 200 || status >= 400 {
         return Err(format!(
             "AI Provider returned HTTP {}: {}",
             status,
-            body.trim()
+            if body.trim().is_empty() {
+                format!("(Empty response body, status code {})", status)
+            } else {
+                body.trim().to_string()
+            }
         ));
+    }
+
+    if body.trim().is_empty() {
+        return Err("AI Provider returned an empty completion response body.".to_string());
     }
 
     let extracted_text = match provider.as_str() {
@@ -375,6 +386,69 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
         return Ok(models);
     }
 
+    if provider == "anthropic" {
+        let mut anthropic_headers = vec![
+            ("Accept".to_string(), "application/json".to_string()),
+            ("anthropic-version".to_string(), "2023-06-01".to_string()),
+        ];
+        if let Some(key) = &input.api_key
+            && !key.trim().is_empty() {
+            anthropic_headers.push(("x-api-key".to_string(), key.trim().to_string()));
+        }
+
+        let base_url = if input.endpoint.trim().is_empty() {
+            "https://api.anthropic.com/v1"
+        } else {
+            input.endpoint.trim_end_matches('/')
+        };
+
+        let target_url = if base_url.ends_with("/models") {
+            base_url.to_string()
+        } else {
+            format!("{}/models", base_url)
+        };
+
+        let (status, body) = execute_curl_request("GET", &target_url, &anthropic_headers, None, timeout)
+            .await
+            .map_err(|e| format!("Failed to reach Anthropic at {}: {}", target_url, e))?;
+
+        if status < 200 || status >= 400 {
+            return Err(format!(
+                "Anthropic returned HTTP {}: {}",
+                status,
+                if body.trim().is_empty() {
+                    format!("(Empty response body, status code {})", status)
+                } else {
+                    body.trim().to_string()
+                }
+            ));
+        }
+
+        let json_val: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| format!("Invalid JSON from Anthropic /v1/models: {}", e))?;
+
+        let mut models = Vec::new();
+        if let Some(data_arr) = json_val.get("data").and_then(|d| d.as_array()) {
+            for item in data_arr {
+                if let Some(id) = item.get("id").and_then(|s| s.as_str()) {
+                    let name = item
+                        .get("display_name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(id)
+                        .to_string();
+
+                    models.push(AiModelInfo {
+                        id: id.to_string(),
+                        name,
+                        description: None,
+                    });
+                }
+            }
+        }
+        models.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        return Ok(models);
+    }
+
     let base_url = if input.endpoint.trim().is_empty() {
         match provider.as_str() {
             "lmstudio" => "http://localhost:1234/v1",
@@ -397,8 +471,16 @@ pub async fn fetch_models(input: AiFetchModelsInput) -> Result<Vec<AiModelInfo>,
         .await
         .map_err(|e| format!("Failed to fetch models from {}: {}", target_url, e))?;
 
-    if status >= 400 {
-        return Err(format!("Provider returned HTTP {}: {}", status, body));
+    if status < 200 || status >= 400 {
+        return Err(format!(
+            "Provider returned HTTP {}: {}",
+            status,
+            if body.trim().is_empty() {
+                format!("(Empty response body, status code {})", status)
+            } else {
+                body.trim().to_string()
+            }
+        ));
     }
 
     let json_val: serde_json::Value = serde_json::from_str(&body)

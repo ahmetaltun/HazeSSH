@@ -17,7 +17,7 @@ import {
   Hash,
 } from "lucide-react";
 import { useAiCopilotStore } from "@/stores/useAiCopilotStore";
-import { aiCopilotService } from "@/services/aiCopilotService";
+import { aiCopilotService, pickRecommendedModel } from "@/services/aiCopilotService";
 import { api } from "@/services/api";
 import type { AiProviderType } from "@/types/ai";
 
@@ -134,7 +134,8 @@ export function AiSettingsSection() {
       );
       setAvailableModels(activeProvider, sorted);
       if (sorted.length > 0 && !sorted.some((m) => m.id === activeConfig.selectedModel)) {
-        updateProviderConfig(activeProvider, { selectedModel: sorted[0].id });
+        const recommended = pickRecommendedModel(activeProvider, sorted) || sorted[0].id;
+        updateProviderConfig(activeProvider, { selectedModel: recommended });
         setIsCustomModel(false);
       }
     } catch (err) {

@@ -4,6 +4,7 @@ import type {
   AiChatMessage,
   AiGeneratedCommand,
   AiErrorExplanation,
+  AiModelInfo,
 } from "@/types/ai";
 
 export interface TargetShellContext {
@@ -82,6 +83,98 @@ function extractJsonFromText(rawText: string): string {
   }
 
   return cleaned;
+}
+
+/**
+ * Intelligently picks a recommended active chat/instruct model for a provider
+ */
+export function pickRecommendedModel(
+  provider: string,
+  models: readonly AiModelInfo[]
+): string | undefined {
+  if (!models || models.length === 0) return undefined;
+
+  const p = provider.toLowerCase();
+
+  // Helper to filter out known non-chat models (embedding, safety, reward, moderation)
+  const isLikelyChatModel = (id: string) => {
+    const lower = id.toLowerCase();
+    return (
+      !lower.includes("embed") &&
+      !lower.includes("reward") &&
+      !lower.includes("safety") &&
+      !lower.includes("moderation") &&
+      !lower.includes("guard") &&
+      !lower.includes("rerank")
+    );
+  };
+
+  const validModels = models.filter((m) => isLikelyChatModel(m.id));
+  const pool = validModels.length > 0 ? validModels : models;
+
+  // Provider-specific heuristics
+  if (p === "nvidia") {
+    // Prefer known fast & high quality native instruct models
+    const preferredNvidia = [
+      "nvidia/nemotron-3.5-bolt-e4b",
+      "nvidia/nemotron-4-340b-instruct",
+      "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "meta/llama-3.3-70b-instruct",
+      "mistralai/mistral-large-2-instruct",
+    ];
+    for (const pref of preferredNvidia) {
+      const match = pool.find((m) => m.id === pref || m.id.endsWith(pref));
+      if (match) return match.id;
+    }
+    const instructMatch = pool.find((m) => m.id.toLowerCase().includes("instruct"));
+    if (instructMatch) return instructMatch.id;
+  } else if (p === "openai") {
+    const preferredOpenai = ["gpt-4o-mini", "gpt-4o", "o3-mini", "gpt-4-turbo"];
+    for (const pref of preferredOpenai) {
+      const match = pool.find((m) => m.id === pref || m.id.startsWith(pref));
+      if (match) return match.id;
+    }
+  } else if (p === "anthropic") {
+    const preferredAnthropic = ["claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-opus"];
+    for (const pref of preferredAnthropic) {
+      const match = pool.find((m) => m.id.toLowerCase().includes(pref));
+      if (match) return match.id;
+    }
+  } else if (p === "deepseek") {
+    const preferredDeepseek = ["deepseek-chat", "deepseek-reasoner"];
+    for (const pref of preferredDeepseek) {
+      const match = pool.find((m) => m.id.toLowerCase().includes(pref));
+      if (match) return match.id;
+    }
+  } else if (p === "openrouter") {
+    const preferredOpenRouter = [
+      "deepseek/deepseek-chat",
+      "anthropic/claude-3.5-sonnet",
+      "meta-llama/llama-3.3-70b-instruct",
+      "meta-llama/llama-3.1-70b-instruct",
+    ];
+    for (const pref of preferredOpenRouter) {
+      const match = pool.find((m) => m.id === pref || m.id.endsWith(pref));
+      if (match) return match.id;
+    }
+  } else if (p === "ollama") {
+    const preferredOllama = ["llama3.2", "llama3.1", "qwen2.5-coder", "qwen2.5", "mistral"];
+    for (const pref of preferredOllama) {
+      const match = pool.find((m) => m.id.toLowerCase().includes(pref));
+      if (match) return match.id;
+    }
+  } else if (p === "lmstudio") {
+    const match = pool.find(
+      (m) =>
+        m.id.toLowerCase().includes("coder") ||
+        m.id.toLowerCase().includes("instruct") ||
+        m.id.toLowerCase().includes("chat")
+    );
+    if (match) return match.id;
+  }
+
+  // Fallback to first non-embedding candidate
+  return pool[0]?.id;
 }
 
 export const aiCopilotService = {
@@ -283,31 +376,54 @@ Return only valid JSON.`;
   },
 
   /**
-   * Tests connection to the configured AI provider
+   * Tests connection to the configured AI provider by querying the models catalog.
+   * Does NOT require a model name upfront, consumes zero completion tokens,
+   * verifies credentials and network, and automatically populates available models.
    */
-  testConnection: async (provider: string): Promise<{ success: boolean; latencyMs: number; message: string }> => {
-    const { providerConfigs } = useAiCopilotStore.getState();
+  testConnection: async (
+    provider: string
+  ): Promise<{ success: boolean; latencyMs: number; message: string; modelCount?: number }> => {
+    const { providerConfigs, setAvailableModels, updateProviderConfig } = useAiCopilotStore.getState();
     const config = providerConfigs[provider as keyof typeof providerConfigs];
     if (!config) {
       return { success: false, latencyMs: 0, message: "Provider not configured" };
     }
 
+    const startTime = Date.now();
+
     try {
-      const response = await api.aiChatCompletion({
+      const models = await api.aiFetchModels({
         provider,
         endpoint: config.endpoint,
         api_key: config.apiKey,
-        model: config.selectedModel,
-        messages: [{ role: "user", content: "Reply with the word 'OK'." }],
-        temperature: 0.1,
-        max_tokens: 8,
         timeout_seconds: 15,
       });
 
+      const latencyMs = Date.now() - startTime;
+
+      const sorted = [...models].sort((a, b) =>
+        (a.name || a.id).localeCompare(b.name || b.id, undefined, {
+          sensitivity: "base",
+          numeric: true,
+        })
+      );
+
+      // Automatically populate available models in the store
+      setAvailableModels(provider as any, sorted);
+
+      // Smart auto-select: if no model selected or current model is not found in available list, pick recommended
+      if (sorted.length > 0 && (!config.selectedModel || !sorted.some((m) => m.id === config.selectedModel))) {
+        const recommended = pickRecommendedModel(provider, sorted);
+        if (recommended) {
+          updateProviderConfig(provider as any, { selectedModel: recommended });
+        }
+      }
+
       return {
         success: true,
-        latencyMs: response.latency_ms,
-        message: `Connected successfully (${response.latency_ms}ms)`,
+        latencyMs,
+        message: `Connected successfully (${latencyMs}ms) • ${sorted.length} models available`,
+        modelCount: sorted.length,
       };
     } catch (err) {
       return {

@@ -138,6 +138,48 @@ a *,
 }
 
 /* ==========================================================================
+   xterm.js Minimal Floating Scrollbar (Option A - Sleek Modern Pill)
+   ========================================================================== */
+
+/* The vertical scrollbar track */
+.xterm .xterm-scrollable-element > .scrollbar.vertical {
+  width: 6px !important;
+  right: 2px !important;
+  background: transparent !important;
+}
+
+/* The scrollbar thumb / slider */
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  width: 6px !important;
+  border-radius: 9999px !important;
+  right: 0 !important;
+  left: auto !important;
+  transition:
+    width 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+/* Subtle expansion on hover or active dragging */
+.xterm .xterm-scrollable-element > .scrollbar.vertical:hover,
+.xterm .xterm-scrollable-element > .scrollbar.vertical:hover > .slider,
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
+  width: 8px !important;
+}
+
+/* Ensure no native browser scrollbar interferes with xterm's virtual scroller */
+.xterm .xterm-viewport::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.xterm .xterm-viewport {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+/* ==========================================================================
    Subtle Desktop Focus States & Interactive Resets
    ========================================================================== */
 
