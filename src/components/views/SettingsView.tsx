@@ -38,6 +38,7 @@ import { TermiusImportModal } from "@/components/settings/TermiusImportModal";
 import { PuttyImportModal } from "@/components/settings/PuttyImportModal";
 import { AiSettingsSection } from "@/components/settings/AiSettingsSection";
 import { SyncSettingsSection } from "@/components/settings/SyncSettingsSection";
+import { AboutUpdateSection } from "@/components/settings/AboutUpdateSection";
 
 export function SettingsView() {
   const { hasMasterPassword, isLocked, lock } = useVaultStore();
@@ -1486,6 +1487,9 @@ export function SettingsView() {
             </button>
           </div>
         </section>
+
+        {/* Application About & Cryptographic Update Section */}
+        <AboutUpdateSection />
       </div>
 
       {modalMode && (
