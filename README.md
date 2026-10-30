@@ -7,13 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ahmetaltun/HazeSSH/releases"><img src="https://img.shields.io/github/v/release/ahmetaltun/HazeSSH?style=flat&color=3b82f6" alt="Latest Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-emerald.svg?style=flat" alt="License: MIT" /></a>
-  <a href="https://v2.tauri.app/"><img src="https://img.shields.io/badge/Tauri-v2-6366f1.svg?style=flat" alt="Tauri v2" /></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-v1.85+-f97316.svg?style=flat" alt="Rust v1.85+" /></a>
-  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-06b6d4.svg?style=flat" alt="React 19" /></a>
-  <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS-v4-38bdf8.svg?style=flat" alt="Tailwind CSS v4" /></a>
-  <a href="https://daisyui.com/"><img src="https://img.shields.io/badge/DaisyUI-v5-ec4899.svg?style=flat" alt="DaisyUI v5" /></a>
   <a href="#security--privacy-first-architecture"><img src="https://img.shields.io/badge/Telemetry-Zero%20%2F%20Local--First-10b981.svg?style=flat" alt="Zero Telemetry" /></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-8b5cf6.svg?style=flat" alt="PRs Welcome" /></a>
 </p>
@@ -21,10 +15,10 @@
 <p align="center">
   <a href="#overview">Overview</a> •
   <a href="#key-capabilities">Key Capabilities</a> •
+  <a href="#installation">Installation</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#security--privacy-first-architecture">Security & Privacy</a> •
   <a href="#desktop-keyboard-shortcuts">Shortcuts</a> •
-  <a href="#getting-started">Installation</a> •
   <a href="PRIVACY.md">Privacy Policy</a> •
   <a href="#code-signing-policy">Code Signing Policy</a>
 </p>
@@ -99,6 +93,52 @@ Unlike cloud-dependent proprietary tools, Haze SSH is **100% free, open-source, 
   - **OpenSSH**: Imports hosts, aliases, identities, and proxy directives directly from `~/.ssh/config`.
   - **Termius**: One-click import for unencrypted Termius JSON exports.
 - **Encrypted Portability**: Export and restore password-protected `.haze` vault archives using native file pickers.
+
+---
+
+## Installation
+
+Official release packages for macOS, Windows, and Linux are available on the [Releases page](https://github.com/ahmetaltun/HazeSSH/releases):
+
+- **macOS**: Universal Disk Image (`.dmg`) supporting Apple Silicon (M-Series) and Intel processors.
+- **Windows**: Modern executable setup (`.exe` via NSIS) and Windows Installer (`.msi`).
+- **Linux**: Portable `.AppImage`, Debian package (`.deb`), and Red Hat package (`.rpm`).
+
+Automated checksums (`SHA256SUMS.txt`) and GPG detached signatures are generated with each release.
+
+### Building from Source
+
+#### Prerequisites
+
+1. **Rust Toolchain** (v1.85+ recommended):
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+2. **Node.js** (v20+ LTS) and `npm`.
+3. Platform-specific dependencies (see [Tauri v2 Prerequisites](https://v2.tauri.app/start/prerequisites/)).
+
+#### Development Workflow
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/ahmetaltun/HazeSSH.git
+cd HazeSSH
+
+# 2. Install frontend dependencies
+npm install
+
+# 3. Launch Tauri development desktop application
+npm run tauri dev
+```
+
+#### Packaging Production Binaries
+
+```bash
+# Build optimized desktop package for your current operating system
+npm run tauri build
+```
+
+Compiled desktop packages are output to `src-tauri/target/release/bundle/`.
 
 ---
 
@@ -212,56 +252,6 @@ For comprehensive details on data residency, encryption algorithms, and network 
 | <kbd>⌘ S</kbd> | <kbd>Ctrl + S</kbd> | Save Remote File in In-App Editor |
 | <kbd>⌘ A</kbd> | <kbd>Ctrl + A</kbd> | Select All Files in SFTP Pane |
 | <kbd>Tab</kbd> | <kbd>Tab</kbd> | Switch Active Focus between SFTP Panes |
-
----
-
-## Getting Started
-
-### Installation
-
-Official release packages for macOS, Windows, and Linux are available on the [Releases page](https://github.com/ahmetaltun/HazeSSH/releases):
-
-- **macOS**: Universal Disk Image (`.dmg`) supporting Apple Silicon (M-Series) and Intel processors.
-- **Windows**: Modern executable setup (`.exe` via NSIS) and Windows Installer (`.msi`).
-- **Linux**: Portable `.AppImage`, Debian package (`.deb`), and Red Hat package (`.rpm`).
-
-Automated checksums (`SHA256SUMS.txt`) and GPG detached signatures are generated with each release.
-
----
-
-### Building from Source
-
-#### Prerequisites
-
-1. **Rust Toolchain** (v1.85+ recommended):
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-2. **Node.js** (v20+ LTS) and `npm`.
-3. Platform-specific dependencies (see [Tauri v2 Prerequisites](https://v2.tauri.app/start/prerequisites/)).
-
-#### Development Workflow
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/ahmetaltun/HazeSSH.git
-cd HazeSSH
-
-# 2. Install frontend dependencies
-npm install
-
-# 3. Launch Tauri development desktop application
-npm run tauri dev
-```
-
-#### Packaging Production Binaries
-
-```bash
-# Build optimized desktop package for your current operating system
-npm run tauri build
-```
-
-Compiled desktop packages are output to `src-tauri/target/release/bundle/`.
 
 ---
 
