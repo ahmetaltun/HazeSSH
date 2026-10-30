@@ -20,7 +20,7 @@ jobs:
           - platform: 'macos-latest'
             args: '--target universal-apple-darwin'
           - platform: 'ubuntu-22.04'
-            args: ''
+            args: '--bundles appimage,deb,rpm'
           - platform: 'windows-latest'
             args: ''
 
@@ -49,7 +49,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev rpm
 
       - name: Install npm dependencies
         run: npm ci
@@ -60,6 +60,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_RPM_KEY: ${{ secrets.TAURI_SIGNING_RPM_KEY }}
+          TAURI_SIGNING_RPM_KEY_PASSPHRASE: ${{ secrets.TAURI_SIGNING_RPM_KEY_PASSPHRASE }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -73,3 +75,53 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  checksums:
+    name: Generate & GPG-Sign SHA256 Checksums
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download all release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$TAG_NAME" --pattern "*" --dir release-assets
+
+      - name: Generate SHA256SUMS and Sign with GPG
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          cd release-assets
+          # Compute sha256 for all binary artifacts (excluding existing sums and updater manifests)
+          find . -maxdepth 1 -type f ! -name "SHA256SUMS*" ! -name "latest.json" -print0 | sort -z | xargs -0 sha256sum | sed 's| \./|  |' > SHA256SUMS
+          
+          echo "=== Generated SHA256SUMS ==="
+          cat SHA256SUMS
+
+          # GPG Detached Signing
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "Importing GPG private key..."
+            echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+            
+            echo "Creating ASCII-armored detached signature SHA256SUMS.asc..."
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+            
+            echo "Verifying signature..."
+            gpg --verify SHA256SUMS.asc SHA256SUMS
+            
+            echo "Uploading SHA256SUMS and SHA256SUMS.asc to release..."
+            gh release upload "$TAG_NAME" SHA256SUMS SHA256SUMS.asc --clobber
+          else
+            echo "Warning: GPG_PRIVATE_KEY secret is not set. Uploading unsigned SHA256SUMS..."
+            gh release upload "$TAG_NAME" SHA256SUMS --clobber
+          fi
