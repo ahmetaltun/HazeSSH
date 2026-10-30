@@ -29,13 +29,10 @@ export function StatusBar() {
         <button
           type="button"
           onClick={() => setAboutModalOpen(true)}
-          className="flex items-center gap-1.5 font-sans font-medium text-base-content/85 hover:text-primary transition-colors cursor-pointer"
+          className="flex items-center font-sans font-medium text-base-content/85 hover:text-primary transition-colors cursor-pointer"
           title="About Haze SSH"
         >
           <span>Haze SSH</span>
-          <span className="badge badge-xs badge-neutral text-[9px] font-mono">
-            v0.2.0
-          </span>
         </button>
 
         <span className="text-base-content/20">•</span>

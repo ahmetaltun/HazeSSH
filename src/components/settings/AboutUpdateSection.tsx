@@ -6,10 +6,12 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
-  ShieldCheck,
   RotateCcw,
-  Terminal,
-  Zap,
+  Cpu,
+  Layers,
+  Shield,
+  Copy,
+  Check,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -41,6 +43,8 @@ export function AboutUpdateSection() {
   const [errorMessage, setErrorMessage] = useState<string | null>(updateService.getErrorMessage());
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [isInstalling, setIsInstalling] = useState<boolean>(false);
+  const [copiedDiagnostics, setCopiedDiagnostics] = useState<boolean>(false);
+  const [lastCheckedTime, setLastCheckedTime] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = updateService.subscribe((newStatus, newInfo, newProgress, newError) => {
@@ -50,6 +54,11 @@ export function AboutUpdateSection() {
       setErrorMessage(newError || null);
       setIsChecking(newStatus === "checking");
       setIsInstalling(newStatus === "downloading");
+
+      if (newStatus === "up-to-date" || newStatus === "available" || newStatus === "error") {
+        const now = new Date();
+        setLastCheckedTime(now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      }
     });
     return unsubscribe;
   }, []);
@@ -86,55 +95,80 @@ export function AboutUpdateSection() {
     }
   };
 
+  const handleCopyDiagnostics = async () => {
+    const diagnostics = [
+      `Haze SSH: v${APP_VERSION}`,
+      `Platform: macOS (Darwin)`,
+      `Architecture: Universal (Apple Silicon & Intel)`,
+      `Core Engine: Tauri v2 / Rust`,
+      `Distribution: GitHub Releases`,
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(diagnostics);
+      setCopiedDiagnostics(true);
+      setTimeout(() => setCopiedDiagnostics(false), 2000);
+    } catch (e) {
+      console.warn("Failed to copy diagnostics:", e);
+    }
+  };
+
   return (
     <section className="bg-base-200/50 rounded-2xl p-5 border border-base-300 space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-primary/10 text-primary">
-            <Terminal className="w-5 h-5" />
+      {/* Hero / Header Lockup */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl border border-base-300/80 bg-base-100 flex items-center justify-center p-1.5 shadow-xs shrink-0">
+            <img src="/favicon.svg" alt="Haze SSH" className="w-full h-full object-contain" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-base-content flex items-center gap-2">
-              About & Updates
-              <span className="badge badge-sm badge-outline font-mono text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-bold text-base-content tracking-tight">Haze SSH</h3>
+              <span className="badge badge-sm badge-outline font-mono text-[11px] font-semibold text-primary border-primary/30 bg-primary/5">
                 v{APP_VERSION}
               </span>
-            </h3>
-            <p className="text-xs text-base-content/60">
-              Application version, cryptographic update pipeline, and project links
+              <span className="badge badge-sm badge-ghost text-[10px] text-base-content/60 font-mono">
+                Stable
+              </span>
+            </div>
+            <p className="text-xs text-base-content/60 mt-0.5">
+              Modern, privacy-first SSH client & terminal multiplexer
             </p>
           </div>
         </div>
 
         <button
+          type="button"
           onClick={handleCheckForUpdates}
           disabled={isChecking || isInstalling}
-          className="btn btn-sm btn-outline border-base-300 gap-2 hover:bg-base-300"
+          className="btn btn-sm btn-outline border-base-300 gap-2 hover:bg-base-300 shrink-0 self-start sm:self-auto transition-all"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? "animate-spin" : ""}`} />
-          {isChecking ? "Checking..." : "Check for Updates"}
+          <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? "animate-spin text-primary" : ""}`} />
+          <span>{isChecking ? "Checking..." : "Check for Updates"}</span>
         </button>
       </div>
 
       {/* Update Status Card */}
-      <div className="p-4 rounded-xl bg-base-100 border border-base-300 space-y-4">
+      <div className="p-4 rounded-xl bg-base-100 border border-base-300 transition-all">
         {status === "idle" && (
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-base-content/30" />
+              <div className="w-2.5 h-2.5 rounded-full bg-base-content/30 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-base-content">
-                  Running Haze SSH v{APP_VERSION}
+                  Haze SSH v{APP_VERSION}
                 </p>
                 <p className="text-xs text-base-content/50">
-                  Updates are signed with Ed25519 and verified before installation
+                  {lastCheckedTime
+                    ? `Last checked today at ${lastCheckedTime}`
+                    : "Ready to check for new releases"}
                 </p>
               </div>
             </div>
             <button
+              type="button"
               onClick={handleCheckForUpdates}
-              className="btn btn-xs btn-ghost text-primary"
+              className="btn btn-xs btn-ghost text-primary self-start sm:self-auto"
             >
               Check now
             </button>
@@ -143,30 +177,33 @@ export function AboutUpdateSection() {
 
         {status === "checking" && (
           <div className="flex items-center gap-3 py-1">
-            <RefreshCw className="w-4 h-4 text-primary animate-spin" />
-            <p className="text-sm text-base-content/80">
-              Querying GitHub Releases for signed update artifacts...
-            </p>
+            <RefreshCw className="w-4 h-4 text-primary animate-spin shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-base-content">Checking for updates...</p>
+              <p className="text-xs text-base-content/50">Connecting to GitHub Releases</p>
+            </div>
           </div>
         )}
 
         {status === "up-to-date" && (
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
               <div>
-                <p className="text-sm font-medium text-base-content flex items-center gap-2">
-                  You are up to date!
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-base-content">Haze SSH is up to date</p>
                   <span className="badge badge-xs badge-success text-[10px]">Latest</span>
-                </p>
+                </div>
                 <p className="text-xs text-base-content/50">
-                  Haze SSH v{APP_VERSION} is the newest verified version available.
+                  v{APP_VERSION} is currently the newest available version
+                  {lastCheckedTime ? ` (Checked at ${lastCheckedTime})` : ""}
                 </p>
               </div>
             </div>
             <button
+              type="button"
               onClick={handleCheckForUpdates}
-              className="btn btn-xs btn-ghost text-base-content/60"
+              className="btn btn-xs btn-ghost text-base-content/60 self-start sm:self-auto"
             >
               Re-check
             </button>
@@ -174,26 +211,27 @@ export function AboutUpdateSection() {
         )}
 
         {status === "available" && updateInfo && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="p-1.5 rounded-lg bg-warning/10 text-warning">
+                <div className="p-2 rounded-lg bg-warning/10 text-warning shrink-0">
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-base-content">
+                    <span className="text-sm font-bold text-base-content">
                       Update Available: v{updateInfo.version}
                     </span>
-                    <span className="badge badge-xs badge-warning">New</span>
+                    <span className="badge badge-xs badge-warning font-semibold">New</span>
                   </div>
                   <p className="text-xs text-base-content/50">
-                    Current: v{APP_VERSION} → New: v{updateInfo.version}
+                    Installed: v{APP_VERSION} → Latest: v{updateInfo.version}
                   </p>
                 </div>
               </div>
 
               <button
+                type="button"
                 onClick={handleDownloadAndInstall}
                 className="btn btn-sm btn-primary gap-1.5 shadow-xs"
               >
@@ -203,10 +241,8 @@ export function AboutUpdateSection() {
             </div>
 
             {updateInfo.body && (
-              <div className="p-3 rounded-lg bg-base-200/70 border border-base-300 max-h-36 overflow-y-auto">
-                <p className="text-xs font-semibold text-base-content/80 mb-1">
-                  Release Notes:
-                </p>
+              <div className="p-3 rounded-lg bg-base-200/60 border border-base-300 max-h-40 overflow-y-auto">
+                <p className="text-xs font-semibold text-base-content/80 mb-1">Release Notes:</p>
                 <div className="text-xs text-base-content/70 whitespace-pre-wrap font-sans leading-relaxed">
                   {updateInfo.body}
                 </div>
@@ -216,15 +252,13 @@ export function AboutUpdateSection() {
         )}
 
         {status === "downloading" && (
-          <div className="space-y-2">
+          <div className="space-y-2 py-1">
             <div className="flex items-center justify-between text-xs">
               <span className="text-base-content font-medium flex items-center gap-2">
                 <Download className="w-3.5 h-3.5 text-primary animate-bounce" />
-                Downloading update bundle...
+                Downloading update package...
               </span>
-              <span className="font-mono text-primary font-bold">
-                {progress.percentage}%
-              </span>
+              <span className="font-mono text-primary font-bold">{progress.percentage}%</span>
             </div>
             <div className="w-full bg-base-300 rounded-full h-2 overflow-hidden">
               <div
@@ -242,19 +276,20 @@ export function AboutUpdateSection() {
         )}
 
         {status === "downloaded" && (
-          <div className="flex items-center justify-between p-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
               <div>
                 <p className="text-sm font-semibold text-base-content">
-                  Update Downloaded & Verified!
+                  Update Downloaded & Verified
                 </p>
                 <p className="text-xs text-base-content/50">
-                  Signature verified. Restart Haze SSH to apply update.
+                  Ready to apply. Restart Haze SSH to finish updating.
                 </p>
               </div>
             </div>
             <button
+              type="button"
               onClick={handleRestart}
               className="btn btn-sm btn-success gap-2 shadow-xs text-white"
             >
@@ -265,65 +300,111 @@ export function AboutUpdateSection() {
         )}
 
         {status === "error" && (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-error shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-error">
-                  Update Check Failed
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-base-content">
+                  Update Check Notice
                 </p>
-                <p className="text-xs text-base-content/60">
+                <p className="text-xs text-base-content/70 leading-relaxed max-w-xl">
                   {errorMessage || "Unable to reach update server. Check your network connection."}
                 </p>
               </div>
             </div>
-            <button
-              onClick={handleCheckForUpdates}
-              className="btn btn-xs btn-outline border-base-300"
-            >
-              Retry
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 pt-1 sm:pt-0">
+              <button
+                type="button"
+                onClick={handleCheckForUpdates}
+                className="btn btn-xs btn-outline border-base-300"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenLink(`${GITHUB_REPO_URL}/releases`)}
+                className="btn btn-xs btn-ghost text-primary gap-1"
+              >
+                <span>GitHub Releases</span>
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Security & Project Badges */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="p-3 rounded-xl bg-base-100 border border-base-300 flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-success/10 text-success">
-            <ShieldCheck className="w-4 h-4" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-base-content">Developer ID Signed</p>
-            <p className="text-[11px] text-base-content/50">Apple Notarized & Hardened</p>
-          </div>
+      {/* System & Architecture Diagnostics Grid */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-semibold text-base-content/80">Application Details</span>
+          <button
+            type="button"
+            onClick={handleCopyDiagnostics}
+            className="btn btn-ghost btn-xs gap-1.5 text-base-content/60 hover:text-base-content"
+            title="Copy system and version diagnostics"
+          >
+            {copiedDiagnostics ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-success" />
+                <span className="text-success text-[11px]">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span className="text-[11px]">Copy Diagnostics</span>
+              </>
+            )}
+          </button>
         </div>
 
-        <div className="p-3 rounded-xl bg-base-100 border border-base-300 flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-info/10 text-info">
-            <Zap className="w-4 h-4" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="p-3 rounded-xl bg-base-100 border border-base-300 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wider text-base-content/50">
+              Core Engine
+            </span>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <Cpu className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span className="text-xs font-medium text-base-content">Tauri v2 • Rust</span>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-base-content">Minisign Verified</p>
-            <p className="text-[11px] text-base-content/50">Ed25519 Tamper-Proof</p>
-          </div>
-        </div>
 
-        <div className="p-3 rounded-xl bg-base-100 border border-base-300 flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-warning/10 text-warning">
-            <GitHubIcon className="w-4 h-4" />
+          <div className="p-3 rounded-xl bg-base-100 border border-base-300 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wider text-base-content/50">
+              Architecture
+            </span>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <Layers className="w-3.5 h-3.5 text-info shrink-0" />
+              <span className="text-xs font-medium text-base-content">Universal Binary</span>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-base-content">100% Open Source</p>
-            <p className="text-[11px] text-base-content/50">MIT Licensed</p>
+
+          <div className="p-3 rounded-xl bg-base-100 border border-base-300 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wider text-base-content/50">
+              License
+            </span>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <GitHubIcon className="w-3.5 h-3.5 text-warning shrink-0" />
+              <span className="text-xs font-medium text-base-content">MIT Open Source</span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-base-100 border border-base-300 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wider text-base-content/50">
+              Privacy
+            </span>
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <Shield className="w-3.5 h-3.5 text-success shrink-0" />
+              <span className="text-xs font-medium text-base-content">Zero Telemetry</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* External Links */}
-      <div className="flex flex-wrap items-center justify-between pt-2 border-t border-base-300/70 text-xs text-base-content/60">
-        <div className="flex items-center gap-4">
+      {/* External Project Links */}
+      <div className="flex flex-wrap items-center justify-between pt-3 border-t border-base-300/70 text-xs text-base-content/60 gap-y-2">
+        <div className="flex items-center gap-4 flex-wrap">
           <button
+            type="button"
             onClick={() => handleOpenLink(GITHUB_REPO_URL)}
             className="hover:text-primary transition-colors flex items-center gap-1.5"
           >
@@ -332,6 +413,7 @@ export function AboutUpdateSection() {
             <ExternalLink className="w-3 h-3" />
           </button>
           <button
+            type="button"
             onClick={() => handleOpenLink(`${GITHUB_REPO_URL}/releases`)}
             className="hover:text-primary transition-colors flex items-center gap-1.5"
           >
@@ -339,6 +421,7 @@ export function AboutUpdateSection() {
             <ExternalLink className="w-3 h-3" />
           </button>
           <button
+            type="button"
             onClick={() => handleOpenLink(`${GITHUB_REPO_URL}/issues`)}
             className="hover:text-primary transition-colors flex items-center gap-1.5"
           >
@@ -347,8 +430,8 @@ export function AboutUpdateSection() {
           </button>
         </div>
 
-        <p className="text-[11px] text-base-content/40">
-          Built with Tauri v2 & Rust
+        <p className="text-[11px] text-base-content/40 font-mono">
+          Made for developers & sysadmins
         </p>
       </div>
     </section>

@@ -8,6 +8,7 @@ pub mod ai;
 pub mod commands;
 pub mod crypto;
 pub mod db;
+pub mod menu;
 pub mod models;
 pub mod monitor;
 pub mod pty;
@@ -34,6 +35,7 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .menu(menu::build_menu)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

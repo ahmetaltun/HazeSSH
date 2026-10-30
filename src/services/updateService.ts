@@ -92,13 +92,23 @@ class UpdateService {
       }
     } catch (err: unknown) {
       this.activeUpdate = null;
-      const message = err instanceof Error ? err.message : String(err);
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      let message = rawMessage;
+
+      if (
+        rawMessage.includes("Could not fetch a valid release JSON from the remote") ||
+        rawMessage.includes("404")
+      ) {
+        message =
+          "No published release manifest found on GitHub Releases (HTTP 404). If no public releases have been published yet or this is a development build, this is expected.";
+      }
+
       // If silent check fails (e.g. offline / DNS issue), treat gracefully
       if (silent) {
         this.status = 'idle';
       } else {
         this.status = 'error';
-        this.errorMessage = `Failed to check for updates: ${message}`;
+        this.errorMessage = message;
       }
       this.notify();
       return null;
