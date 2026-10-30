@@ -19,8 +19,7 @@
   <a href="#architecture">Architecture</a> •
   <a href="#security--privacy-first-architecture">Security & Privacy</a> •
   <a href="#desktop-keyboard-shortcuts">Shortcuts</a> •
-  <a href="PRIVACY.md">Privacy Policy</a> •
-  <a href="#code-signing-policy">Code Signing Policy</a>
+  <a href="PRIVACY.md">Privacy Policy</a>
 </p>
 
 ---
@@ -208,7 +207,7 @@ Haze SSH is engineered from the ground up on a **zero-trust, zero-cloud foundati
 
 ### Network Connection Disclosures
 
-In accordance with our [Privacy Policy](PRIVACY.md) and code signing standards, network activity is strictly categorized into user-initiated and opt-in automated connections:
+In accordance with our [Privacy Policy](PRIVACY.md), network activity is strictly categorized into user-initiated and opt-in automated connections:
 
 #### 1. User-Initiated Network Connections
 - **SSH & Bastion Sessions**: Direct TCP connections (port 22 or custom) to user-configured destination hosts and multi-hop ProxyJump jump hosts.
@@ -276,58 +275,3 @@ npm run build
 
 This project is licensed under the [MIT License](LICENSE).
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [SECURITY.md](SECURITY.md) for our security reporting policy.
-
----
-
-## Code signing policy
-
-Official Windows releases of HazeSSH are intended to be
-digitally signed through SignPath Foundation.
-
-Free code signing provided by SignPath.io, certificate
-by SignPath Foundation.
-
-### Project repository
-
-https://github.com/ahmetaltun/HazeSSH
-
-### Team roles
-
-- Authors / Committers: Ahmet Altun (@ahmetaltun)
-- Reviewers: Ahmet Altun (@ahmetaltun)
-- Signing Approvers: Ahmet Altun (@ahmetaltun)
-
-External contributions must be reviewed before merging.
-Signing requests must be manually approved by an
-authorized project maintainer.
-
-### Build and release security
-
-- Official releases originate from this public repository.
-- Release artifacts are built through approved CI workflows.
-- Signing is restricted to verified source-controlled builds.
-- All maintainers with repository or signing access must
-  use multi-factor authentication.
-- Each production signing request requires manual approval.
-- Signing credentials are not stored in source control.
-
-### Privacy
-
-HazeSSH is designed as a local-first SSH client.
-
-Server credentials, private keys, and connection
-configuration are intended to remain on the user's device.
-
-Network communication is initiated for functionality
-requested or configured by the user, including SSH, SFTP,
-Telnet, port forwarding, and server monitoring.
-
-Any additional network services, connection behaviors, and
-telemetry disclosures are documented in the project's
-[Privacy Policy](PRIVACY.md).
-
-### Signing status
-
-Code signing is planned. Until SignPath Foundation
-approval and integration are complete, Windows releases
-may be unsigned.

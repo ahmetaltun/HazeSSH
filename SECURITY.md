@@ -47,8 +47,7 @@ Haze SSH is built around a zero-cloud, client-side cryptographic security model:
 
 ### 6. Build Security & Release Integrity
 - **Source-Controlled CI/CD**: Official releases are built from verified source code in public GitHub Actions workflows with strict supply-chain provenance.
-- **Release Verification**: Releases publish cryptographic checksums (`SHA256SUMS.txt`), GPG signatures for Linux packages, and authenticated digital signatures.
-- **Windows Code Signing**: Official Windows binaries are intended to be digitally signed through SignPath Foundation using certificates issued by SignPath.io.
+- **Release Verification**: Releases publish cryptographic checksums (`SHA256SUMS.txt`), GPG signatures for Linux packages, and automated release artifacts.
 - **Cryptographic Auto-Updater**: Native application updates verify release payloads against pinned minisign public keys prior to extraction and execution.
 
 ---

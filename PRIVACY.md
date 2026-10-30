@@ -18,7 +18,7 @@ HazeSSH is designed as a **local-first, zero-cloud desktop application**. The co
 
 ## 2. Network Activity & Connection Disclosures
 
-To comply with the SignPath Foundation code signing policy and ensure full transparency, this section details all network connections made by HazeSSH, distinguishing between user-initiated actions and automatic background operations.
+To ensure full transparency, this section details all network connections made by HazeSSH, distinguishing between user-initiated actions and automatic background operations.
 
 ### A. User-Initiated Network Connections
 
@@ -102,16 +102,7 @@ You retain complete control over your data:
 
 ---
 
-## 7. Compliance with Code Signing Policies
-
-This Privacy Policy is maintained in accordance with the [SignPath Foundation Code Signing Policy](https://github.com/ahmetaltun/HazeSSH#code-signing-policy). HazeSSH certifies that:
-1. It does not covertly transmit personal data or credentials.
-2. All network communication serves user-configured features (SSH, SFTP, Telnet, tunnels, sync, and update verification).
-3. Any optional automatic network activities (such as background sync or periodic health probing) are strictly opt-in and disclosed in this policy.
-
----
-
-## 8. Contact & Questions
+## 7. Contact & Questions
 
 If you have questions about this privacy policy, security practices, or the HazeSSH codebase:
 
