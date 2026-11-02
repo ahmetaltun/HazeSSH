@@ -1942,6 +1942,7 @@ fn ensure_path_within_dir(file_path: &str, expected_dir: &std::path::Path) -> Re
 }
 
 #[tauri::command]
+#[allow(clippy::collapsible_if)]
 pub fn audit_log_list() -> Result<Vec<AuditLogFileInfo>, String> {
     let logs_dir = get_haze_logs_dir()?;
     let mut files = Vec::new();
@@ -1981,7 +1982,7 @@ pub fn audit_log_list() -> Result<Vec<AuditLogFileInfo>, String> {
         }
     }
 
-    files.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    files.sort_by_key(|a| std::cmp::Reverse(a.modified_at));
     Ok(files)
 }
 
@@ -2016,6 +2017,7 @@ pub fn audit_log_delete(file_path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::collapsible_if)]
 pub fn audit_log_clear_all() -> Result<usize, String> {
     let logs_dir = get_haze_logs_dir()?;
     let mut count = 0;
@@ -2066,6 +2068,7 @@ struct CastHeaderHelper {
 }
 
 #[tauri::command]
+#[allow(clippy::collapsible_if)]
 pub fn session_recording_list() -> Result<Vec<RecordingFileInfo>, String> {
     let recs_dir = get_haze_recordings_dir()?;
     let mut files = Vec::new();
@@ -2126,7 +2129,7 @@ pub fn session_recording_list() -> Result<Vec<RecordingFileInfo>, String> {
         }
     }
 
-    files.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    files.sort_by_key(|a| std::cmp::Reverse(a.modified_at));
     Ok(files)
 }
 
@@ -2151,6 +2154,7 @@ pub fn session_recording_delete(file_path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::collapsible_if)]
 pub fn session_recording_clear_all() -> Result<usize, String> {
     let recs_dir = get_haze_recordings_dir()?;
     let mut count = 0;
