@@ -133,6 +133,50 @@ jobs:
           mkdir -p release-assets
           gh release download "$TAG_NAME" --pattern "*" --dir release-assets
 
+      - name: Validate & Synchronize Updater Manifest (latest.json)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          cd release-assets
+          python3 - << 'EOF'
+          import json, os, subprocess
+          from urllib.parse import urlparse
+
+          if not os.path.exists("latest.json"):
+              print("latest.json not found in release assets, skipping sync.")
+              exit(0)
+
+          with open("latest.json", "r") as f:
+              manifest = json.load(f)
+
+          modified = False
+          platforms = manifest.get("platforms", {})
+          for plat, info in platforms.items():
+              url = info.get("url", "")
+              filename = os.path.basename(urlparse(url).path)
+              sig_filename = filename + ".sig"
+              if os.path.exists(sig_filename):
+                  with open(sig_filename, "r") as sf:
+                      actual_sig = sf.read().strip()
+                  if info.get("signature") != actual_sig:
+                      print(f"Fixing signature mismatch for platform '{plat}': sync with {sig_filename}")
+                      info["signature"] = actual_sig
+                      modified = True
+              else:
+                  print(f"Warning: Signature file {sig_filename} not found for platform '{plat}'")
+
+          if modified:
+              print("Saving synchronized latest.json...")
+              with open("latest.json", "w") as f:
+                  json.dump(manifest, f, indent=2)
+              print("Re-uploading updated latest.json to release...")
+              tag = os.environ.get("TAG_NAME", "")
+              subprocess.run(["gh", "release", "upload", tag, "latest.json", "--clobber"], check=True)
+          else:
+              print("All platform signatures in latest.json match release signatures.")
+          EOF
+
       - name: Generate SHA256SUMS and Sign with GPG
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
