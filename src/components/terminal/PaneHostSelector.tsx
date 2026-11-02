@@ -3,7 +3,6 @@ import {
   Server,
   Zap,
   Copy,
-  Search,
   ArrowRight,
   X,
   Shield,
@@ -14,6 +13,7 @@ import type { Host } from "@/types/host";
 import { useHostStore } from "@/stores/useHostStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { TextInput } from "@/components/common/TextInput";
+import { SearchInput } from "@/components/common/SearchInput";
 
 interface PaneHostSelectorProps {
   readonly pane: TerminalPane;
@@ -280,14 +280,14 @@ export function PaneHostSelector({ pane, tabId }: PaneHostSelectorProps) {
               <span>Saved Hosts ({filteredHosts.length})</span>
             </label>
             {hosts.length > 4 && (
-              <div className="relative max-w-[180px]">
-                <Search className="w-3 h-3 absolute left-2 top-2.5 text-base-content/40" />
-                <TextInput
-                  type="text"
+              <div className="w-[180px]">
+                <SearchInput
+                  inputSize="xs"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  onClear={() => setSearchTerm("")}
                   placeholder="Filter hosts..."
-                  className="input input-xs bg-base-200 border-base-300 pl-7 w-full text-xs"
+                  className="w-full bg-base-200 border-base-300"
                 />
               </div>
             )}

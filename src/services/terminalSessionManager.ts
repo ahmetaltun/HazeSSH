@@ -36,6 +36,10 @@ export interface ActiveTerminalSession {
   readonly triggerEngine: TerminalTriggerEngine;
   readonly transferCoordinator: TerminalTransferCoordinator;
   auditLogger: SessionAuditLogger | null;
+  auditLogFilePath?: string;
+  recordingFilePath?: string;
+  historyId?: string;
+  historyStartedAt?: number;
   rendererHandle: TerminalRendererHandle | null;
   readonly wrapperEl: HTMLDivElement;
   sessionId: string | null;
@@ -225,11 +229,18 @@ class TerminalSessionManager {
       api.auditLogInit(filename)
         .then((filePath) => {
           if (!session.isDisposed) {
+            session.auditLogFilePath = filePath;
             session.auditLogger = new SessionAuditLogger({
               filePath,
               withTimestamps: initialSettings.auditLogWithTimestamps,
               stripAnsi: initialSettings.auditLogStripAnsi,
             });
+            if (session.historyId) {
+              void api.sessionHistoryUpdate({
+                id: session.historyId,
+                log_file_path: filePath,
+              }).catch(() => {});
+            }
           }
         })
         .catch((err) => {
@@ -320,6 +331,48 @@ class TerminalSessionManager {
 
     const { pane, term } = session;
 
+    // Track session connection history
+    const historyId = crypto.randomUUID();
+    const startedAt = Date.now();
+    session.historyId = historyId;
+    session.historyStartedAt = startedAt;
+
+    const host = pane.hostId
+      ? useHostStore.getState().hosts.find((h) => h.id === pane.hostId)
+      : undefined;
+
+    let target = "";
+    if (
+      pane.connectionType === "local" ||
+      (!pane.hostId && !pane.hostname && pane.connectionType !== "serial" && pane.connectionType !== "telnet")
+    ) {
+      target = `Local Shell (${pane.workingDir || "~"})`;
+    } else if (pane.connectionType === "serial") {
+      target = `Serial: ${pane.serialOptions?.port_name || pane.title} (${pane.serialOptions?.baud_rate || 115200} baud)`;
+    } else if (pane.connectionType === "telnet") {
+      target = `telnet://${pane.hostname || pane.telnetOptions?.host || "localhost"}:${pane.port || pane.telnetOptions?.port || 23}`;
+    } else {
+      const u = pane.username || host?.username || "root";
+      const h = pane.hostname || host?.hostname || "localhost";
+      const p = pane.port || host?.port || 22;
+      target = `${u}@${h}:${p}`;
+    }
+
+    void api
+      .sessionHistoryCreate({
+        id: historyId,
+        host_id: pane.hostId || null,
+        title: pane.title || host?.label || "Terminal Session",
+        connection_type: (pane.connectionType as any) || "ssh",
+        target,
+        status: "connecting",
+        started_at: startedAt,
+        log_file_path: session.auditLogFilePath || null,
+      })
+      .catch((err) => {
+        console.warn(`[Terminal ${pane.id}] Failed to record session history start:`, err);
+      });
+
     // Intercept vault unlock if connection requires decrypting host credentials
     if (pane.hostId) {
       const { hasMasterPassword, isLocked, requestUnlock } = useVaultStore.getState();
@@ -368,6 +421,15 @@ class TerminalSessionManager {
               ? "error"
               : "connecting";
           useMultiplexerStore.getState().updatePaneStatus(pane.id, mappedStatus);
+
+          if (event.payload.status === "connected" && session.historyId) {
+            void api
+              .sessionHistoryUpdate({
+                id: session.historyId,
+                status: "connected",
+              })
+              .catch(() => {});
+          }
 
           if (event.payload.message) {
             term.writeln(`\r\n\x1b[33m[Haze] ${event.payload.message}\x1b[0m`);
@@ -420,11 +482,32 @@ class TerminalSessionManager {
         case "Error": {
           useMultiplexerStore.getState().updatePaneStatus(pane.id, "error", event.payload);
           term.writeln(`\r\n\x1b[31m[Haze Error] ${event.payload}\x1b[0m\r\n`);
+          if (session.historyId) {
+            void api
+              .sessionHistoryUpdate({
+                id: session.historyId,
+                status: "error",
+                error_message: String(event.payload),
+              })
+              .catch(() => {});
+          }
           break;
         }
         case "Exit": {
           useMultiplexerStore.getState().updatePaneStatus(pane.id, "disconnected");
           term.writeln(`\r\n\x1b[90m[Session closed with exit code ${event.payload.code}]\x1b[0m\r\n`);
+          if (session.historyId && session.historyStartedAt) {
+            const endedAt = Date.now();
+            const durationSeconds = Math.max(0, Math.floor((endedAt - session.historyStartedAt) / 1000));
+            void api
+              .sessionHistoryUpdate({
+                id: session.historyId,
+                status: "disconnected",
+                ended_at: endedAt,
+                duration_seconds: durationSeconds,
+              })
+              .catch(() => {});
+          }
           break;
         }
       }
@@ -718,6 +801,21 @@ class TerminalSessionManager {
     if (session.auditLogger) {
       void session.auditLogger.dispose();
       session.auditLogger = null;
+    }
+
+    if (session.historyId && session.historyStartedAt) {
+      const endedAt = Date.now();
+      const durationSeconds = Math.max(0, Math.floor((endedAt - session.historyStartedAt) / 1000));
+      void api
+        .sessionHistoryUpdate({
+          id: session.historyId,
+          status: "disconnected",
+          ended_at: endedAt,
+          duration_seconds: durationSeconds,
+          log_file_path: session.auditLogFilePath || null,
+          recording_file_path: session.recordingFilePath || null,
+        })
+        .catch(() => {});
     }
 
     session.triggerEngine.reset();

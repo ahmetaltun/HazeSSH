@@ -63,7 +63,30 @@ export const useRecordingStore = create<RecordingStoreState>((set, get) => ({
     const rows = session.term.rows || 24;
     const sessionTitle = title || session.pane.title || "Terminal Session";
 
-    session.recorder.start(cols, rows, sessionTitle);
+    // Snapshot existing terminal buffer so playback does not start with a blank screen
+    let initialScreen = "";
+    try {
+      const buffer = session.term.buffer.active;
+      const lines: string[] = [];
+      const startRow = Math.max(0, buffer.baseY);
+      const endRow = Math.min(buffer.length, buffer.baseY + session.term.rows);
+      for (let y = startRow; y < endRow; y++) {
+        const line = buffer.getLine(y);
+        if (line) {
+          lines.push(line.translateToString(true));
+        }
+      }
+      while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+        lines.pop();
+      }
+      if (lines.length > 0) {
+        initialScreen = lines.join("\r\n") + "\r\n";
+      }
+    } catch {
+      // Ignore buffer snapshot error
+    }
+
+    session.recorder.start(cols, rows, sessionTitle, initialScreen);
 
     set((state) => ({
       recordings: {
@@ -129,6 +152,15 @@ export const useRecordingStore = create<RecordingStoreState>((set, get) => ({
 
     try {
       const savedPath = await api.sessionSaveRecording(filename, castContent);
+      if (session?.historyId) {
+        session.recordingFilePath = savedPath;
+        void api
+          .sessionHistoryUpdate({
+            id: session.historyId,
+            recording_file_path: savedPath,
+          })
+          .catch(() => {});
+      }
       return { savedPath };
     } catch (err) {
       return { error: String(err) };

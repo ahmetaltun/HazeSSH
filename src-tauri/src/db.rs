@@ -9,8 +9,9 @@ use uuid::Uuid;
 use crate::crypto;
 use crate::models::{
     BackupData, BackupIdentity, BackupSummary, CreateGroupInput, CreateHostInput,
-    CreateIdentityInput, CreateSnippetInput, CreateTunnelInput, Host, HostGroup, Identity,
-    ImportResultSummary, Snippet, SshConfigHostCandidate, Tunnel, UpdateHostInput,
+    CreateIdentityInput, CreateSessionHistoryInput, CreateSnippetInput, CreateTunnelInput, Host,
+    HostGroup, Identity, ImportResultSummary, SessionHistoryEntry, Snippet,
+    SshConfigHostCandidate, Tunnel, UpdateHostInput, UpdateSessionHistoryInput,
     UpdateSnippetInput, VaultStatus,
 };
 
@@ -116,6 +117,23 @@ impl Database {
                 auto_start INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS session_history (
+                id TEXT PRIMARY KEY,
+                host_id TEXT REFERENCES hosts(id) ON DELETE SET NULL,
+                title TEXT NOT NULL,
+                connection_type TEXT NOT NULL DEFAULT 'ssh',
+                target TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'connected',
+                error_message TEXT,
+                log_file_path TEXT,
+                recording_file_path TEXT,
+                started_at INTEGER NOT NULL,
+                ended_at INTEGER,
+                duration_seconds INTEGER
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_session_history_started_at ON session_history(started_at DESC);
             ",
         )?;
 
@@ -1645,6 +1663,114 @@ impl Database {
 
         Ok(summary)
     }
+
+    // --- Session History Operations ---
+
+    pub fn session_history_list(&self, limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, DbError> {
+        let conn = self.conn.lock().unwrap();
+        let limit_val = limit.unwrap_or(200) as i64;
+        let mut stmt = conn.prepare(
+            "SELECT id, host_id, title, connection_type, target, status, error_message, log_file_path, recording_file_path, started_at, ended_at, duration_seconds
+             FROM session_history
+             ORDER BY started_at DESC
+             LIMIT ?1"
+        )?;
+
+        let rows = stmt.query_map(params![limit_val], |row| {
+            Ok(SessionHistoryEntry {
+                id: row.get(0)?,
+                host_id: row.get(1)?,
+                title: row.get(2)?,
+                connection_type: row.get(3)?,
+                target: row.get(4)?,
+                status: row.get(5)?,
+                error_message: row.get(6)?,
+                log_file_path: row.get(7)?,
+                recording_file_path: row.get(8)?,
+                started_at: row.get(9)?,
+                ended_at: row.get(10)?,
+                duration_seconds: row.get(11)?,
+            })
+        })?;
+
+        let mut entries = Vec::new();
+        for r in rows {
+            entries.push(r?);
+        }
+        Ok(entries)
+    }
+
+    pub fn session_history_create(&self, input: CreateSessionHistoryInput) -> Result<SessionHistoryEntry, DbError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO session_history (id, host_id, title, connection_type, target, status, error_message, log_file_path, recording_file_path, started_at, ended_at, duration_seconds)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, NULL, ?8, NULL, NULL)",
+            params![
+                input.id,
+                input.host_id,
+                input.title,
+                input.connection_type,
+                input.target,
+                input.status,
+                input.log_file_path,
+                input.started_at,
+            ],
+        )?;
+
+        Ok(SessionHistoryEntry {
+            id: input.id,
+            host_id: input.host_id,
+            title: input.title,
+            connection_type: input.connection_type,
+            target: input.target,
+            status: input.status,
+            error_message: None,
+            log_file_path: input.log_file_path,
+            recording_file_path: None,
+            started_at: input.started_at,
+            ended_at: None,
+            duration_seconds: None,
+        })
+    }
+
+    pub fn session_history_update(&self, input: UpdateSessionHistoryInput) -> Result<bool, DbError> {
+        let conn = self.conn.lock().unwrap();
+        let rows_affected = conn.execute(
+            "UPDATE session_history SET
+                status = COALESCE(?2, status),
+                error_message = COALESCE(?3, error_message),
+                ended_at = COALESCE(?4, ended_at),
+                duration_seconds = COALESCE(?5, duration_seconds),
+                log_file_path = COALESCE(?6, log_file_path),
+                recording_file_path = COALESCE(?7, recording_file_path)
+             WHERE id = ?1",
+            params![
+                input.id,
+                input.status,
+                input.error_message,
+                input.ended_at,
+                input.duration_seconds,
+                input.log_file_path,
+                input.recording_file_path,
+            ],
+        )?;
+        Ok(rows_affected > 0)
+    }
+
+    pub fn session_history_delete(&self, id: &str) -> Result<bool, DbError> {
+        let conn = self.conn.lock().unwrap();
+        let rows_affected = conn.execute(
+            "DELETE FROM session_history WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(rows_affected > 0)
+    }
+
+    pub fn session_history_clear(&self) -> Result<(), DbError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM session_history", [])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -2015,5 +2141,81 @@ mod tests {
         let (s1, _) = db.get_identity_secret(&id1).unwrap();
         assert_eq!(s1, enc1);
         assert_eq!(crypto::decrypt_secret(&s1, &key_a).unwrap(), "valid_secret");
+    }
+
+    #[test]
+    fn test_session_history_lifecycle() {
+        let db = setup_test_db();
+
+        let entry = db
+            .session_history_create(CreateSessionHistoryInput {
+                id: "sess_1".into(),
+                host_id: None,
+                title: "Test Session".into(),
+                connection_type: "ssh".into(),
+                target: "root@example.com:22".into(),
+                status: "connecting".into(),
+                started_at: 1000,
+                log_file_path: Some("/tmp/test.log".into()),
+            })
+            .expect("Failed to create session history");
+
+        assert_eq!(entry.id, "sess_1");
+        assert_eq!(entry.status, "connecting");
+
+        // Update status to connected
+        let updated = db
+            .session_history_update(UpdateSessionHistoryInput {
+                id: "sess_1".into(),
+                status: Some("connected".into()),
+                error_message: None,
+                ended_at: None,
+                duration_seconds: None,
+                log_file_path: None,
+                recording_file_path: None,
+            })
+            .expect("Failed to update status");
+        assert!(updated);
+
+        // Update status to disconnected with duration and recording path
+        let updated2 = db
+            .session_history_update(UpdateSessionHistoryInput {
+                id: "sess_1".into(),
+                status: Some("disconnected".into()),
+                error_message: None,
+                ended_at: Some(1060),
+                duration_seconds: Some(60),
+                log_file_path: None,
+                recording_file_path: Some("/tmp/test.cast".into()),
+            })
+            .expect("Failed to update disconnected");
+        assert!(updated2);
+
+        let list = db.session_history_list(Some(10)).expect("Failed to list history");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "sess_1");
+        assert_eq!(list[0].status, "disconnected");
+        assert_eq!(list[0].duration_seconds, Some(60));
+        assert_eq!(list[0].recording_file_path, Some("/tmp/test.cast".into()));
+
+        // Delete entry
+        let deleted = db.session_history_delete("sess_1").expect("Failed to delete entry");
+        assert!(deleted);
+        assert!(db.session_history_list(None).unwrap().is_empty());
+
+        // Test clear
+        db.session_history_create(CreateSessionHistoryInput {
+            id: "sess_2".into(),
+            host_id: None,
+            title: "Test 2".into(),
+            connection_type: "local".into(),
+            target: "Local Shell".into(),
+            status: "connected".into(),
+            started_at: 2000,
+            log_file_path: None,
+        })
+        .unwrap();
+        db.session_history_clear().expect("Failed to clear history");
+        assert!(db.session_history_list(None).unwrap().is_empty());
     }
 }

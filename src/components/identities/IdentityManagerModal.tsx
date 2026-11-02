@@ -4,7 +4,6 @@ import {
   Lock,
   Trash2,
   Plus,
-  Search,
   Server,
   Calendar,
   User,
@@ -15,6 +14,7 @@ import {
 import { useHostStore } from "@/stores/useHostStore";
 import type { Identity } from "@/types/host";
 import { IdentityModal } from "@/components/identities/IdentityModal";
+import { SearchInput } from "@/components/common/SearchInput";
 
 interface IdentityManagerModalProps {
   readonly isOpen: boolean;
@@ -102,14 +102,14 @@ export function IdentityManagerModal({ isOpen, onClose }: IdentityManagerModalPr
 
           {/* Search & Actions Bar */}
           <div className="px-6 py-3 border-b border-base-300 flex items-center gap-3 bg-base-100/50">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-              <input
-                type="text"
+            <div className="flex-1">
+              <SearchInput
+                inputSize="sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onClear={() => setSearchTerm("")}
                 placeholder="Search credentials by label, user, or type..."
-                className="input input-sm input-bordered w-full pl-9 bg-base-100 text-xs"
+                className="w-full"
               />
             </div>
             <button

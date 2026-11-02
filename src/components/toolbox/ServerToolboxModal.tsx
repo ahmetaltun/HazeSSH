@@ -13,7 +13,6 @@ import {
   Terminal,
   AlertCircle,
   AlertTriangle,
-  Search,
   Copy,
   Check,
   Skull,
@@ -29,6 +28,7 @@ import { useHostStore } from "@/stores/useHostStore";
 import { useTunnelStore } from "@/stores/useTunnelStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { SearchInput } from "@/components/common/SearchInput";
 import type { ContainerItem, ServiceItem, OpenPortItem } from "@/types/toolbox";
 
 interface ParsedPort {
@@ -690,14 +690,15 @@ export function ServerToolboxModal() {
                     <>
                       {/* Filter Bar */}
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="relative flex-1 max-w-xs">
-                          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-                          <input
-                            type="text"
+                        <div className="flex-1 max-w-xs">
+                          <SearchInput
+                            inputSize="sm"
                             placeholder="Search containers..."
                             value={containerSearch}
                             onChange={(e) => setContainerSearch(e.target.value)}
-                            className="input input-sm input-bordered w-full pl-8 font-mono text-xs"
+                            onClear={() => setContainerSearch("")}
+                            inputClassName="font-mono"
+                            className="w-full"
                           />
                         </div>
 
@@ -961,25 +962,16 @@ export function ServerToolboxModal() {
                     <>
                       {/* Filter Bar */}
                       <div className="flex flex-wrap items-center justify-between gap-2.5">
-                        <div className="relative flex-1 max-w-xs">
-                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40" />
-                          <input
-                            type="text"
+                        <div className="flex-1 max-w-xs">
+                          <SearchInput
+                            inputSize="xs"
                             placeholder="Search units or description..."
                             value={serviceSearch}
                             onChange={(e) => setServiceSearch(e.target.value)}
-                            className="input input-xs input-bordered w-full pl-7 pr-7 font-mono text-xs h-7"
+                            onClear={() => setServiceSearch("")}
+                            inputClassName="font-mono"
+                            className="w-full"
                           />
-                          {serviceSearch && (
-                            <button
-                              type="button"
-                              onClick={() => setServiceSearch("")}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
-                              title="Clear search"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          )}
                         </div>
 
                         <div className="flex items-center gap-2.5 flex-wrap">
@@ -1301,14 +1293,15 @@ export function ServerToolboxModal() {
                 <div className="space-y-4">
                   {/* Filter Bar */}
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="relative flex-1 max-w-xs">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-                      <input
-                        type="text"
+                    <div className="flex-1 max-w-xs">
+                      <SearchInput
+                        inputSize="sm"
                         placeholder="Search ports or process..."
                         value={portSearch}
                         onChange={(e) => setPortSearch(e.target.value)}
-                        className="input input-sm input-bordered w-full pl-8 font-mono text-xs"
+                        onClear={() => setPortSearch("")}
+                        inputClassName="font-mono"
+                        className="w-full"
                       />
                     </div>
 
@@ -1434,14 +1427,15 @@ export function ServerToolboxModal() {
                 <div className="space-y-4">
                   {/* Filter Bar */}
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="relative flex-1 max-w-xs">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-                      <input
-                        type="text"
+                    <div className="flex-1 max-w-xs">
+                      <SearchInput
+                        inputSize="sm"
                         placeholder="Search command, user, or PID..."
                         value={processSearch}
                         onChange={(e) => setProcessSearch(e.target.value)}
-                        className="input input-sm input-bordered w-full pl-8 font-mono text-xs"
+                        onClear={() => setProcessSearch("")}
+                        inputClassName="font-mono"
+                        className="w-full"
                       />
                     </div>
 

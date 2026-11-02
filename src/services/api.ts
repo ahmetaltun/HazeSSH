@@ -29,6 +29,13 @@ import type { ServerToolboxOverview, ToolboxTelemetry } from "@/types/toolbox";
 import type { SerialPortInfo, SerialConnectOptions } from "@/types/serial";
 import type { TelnetConnectOptions } from "@/types/telnet";
 import type {
+  SessionHistoryEntry,
+  CreateSessionHistoryInput,
+  UpdateSessionHistoryInput,
+  AuditLogFileInfo,
+  RecordingFileInfo,
+} from "@/types/sessionHistory";
+import type {
   AiCompletionInput,
   AiCompletionOutput,
   AiFetchModelsInput,
@@ -438,12 +445,69 @@ export const api = {
     return await invoke<void>("audit_log_append", { filePath, chunk });
   },
 
+  auditLogList: async (): Promise<AuditLogFileInfo[]> => {
+    return await invoke<AuditLogFileInfo[]>("audit_log_list");
+  },
+
+  auditLogRead: async (filePath: string, maxLines?: number): Promise<string> => {
+    return await invoke<string>("audit_log_read", { filePath, maxLines: maxLines ?? null });
+  },
+
+  auditLogDelete: async (filePath: string): Promise<boolean> => {
+    return await invoke<boolean>("audit_log_delete", { filePath });
+  },
+
+  auditLogClearAll: async (): Promise<number> => {
+    return await invoke<number>("audit_log_clear_all");
+  },
+
+  auditLogExportDialog: async (defaultFilename: string, content: string): Promise<string | null> => {
+    return await invoke<string | null>("audit_log_export_dialog", { defaultFilename, content });
+  },
+
   sessionSaveRecording: async (suggestedFilename: string, castContent: string): Promise<string> => {
     return await invoke<string>("session_save_recording", { suggestedFilename, castContent });
   },
 
   sessionSaveRecordingDialog: async (defaultFilename: string, castContent: string): Promise<string | null> => {
     return await invoke<string | null>("session_save_recording_dialog", { defaultFilename, castContent });
+  },
+
+  sessionRecordingList: async (): Promise<RecordingFileInfo[]> => {
+    return await invoke<RecordingFileInfo[]>("session_recording_list");
+  },
+
+  sessionRecordingRead: async (filePath: string): Promise<string> => {
+    return await invoke<string>("session_recording_read", { filePath });
+  },
+
+  sessionRecordingDelete: async (filePath: string): Promise<boolean> => {
+    return await invoke<boolean>("session_recording_delete", { filePath });
+  },
+
+  sessionRecordingClearAll: async (): Promise<number> => {
+    return await invoke<number>("session_recording_clear_all");
+  },
+
+  // --- Session Connection History ---
+  sessionHistoryList: async (limit?: number): Promise<SessionHistoryEntry[]> => {
+    return await invoke<SessionHistoryEntry[]>("session_history_list", { limit: limit ?? null });
+  },
+
+  sessionHistoryCreate: async (input: CreateSessionHistoryInput): Promise<SessionHistoryEntry> => {
+    return await invoke<SessionHistoryEntry>("session_history_create", { input });
+  },
+
+  sessionHistoryUpdate: async (input: UpdateSessionHistoryInput): Promise<boolean> => {
+    return await invoke<boolean>("session_history_update", { input });
+  },
+
+  sessionHistoryDelete: async (id: string): Promise<boolean> => {
+    return await invoke<boolean>("session_history_delete", { id });
+  },
+
+  sessionHistoryClear: async (): Promise<boolean> => {
+    return await invoke<boolean>("session_history_clear");
   },
 
   openDirectoryInOs: async (path?: string): Promise<void> => {

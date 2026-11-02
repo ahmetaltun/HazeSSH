@@ -3,7 +3,6 @@ import {
   Download,
   AlertCircle,
   X,
-  Search,
   CheckCircle2,
   Key,
   Folder,
@@ -16,6 +15,7 @@ import {
 import { api } from "@/services/api";
 import { useHostStore } from "@/stores/useHostStore";
 import { useVaultStore } from "@/stores/useVaultStore";
+import { SearchInput } from "@/components/common/SearchInput";
 import type { SshConfigHostCandidate, ImportResultSummary } from "@/types/importer";
 
 interface OpenSshImportModalProps {
@@ -249,16 +249,14 @@ export function OpenSshImportModal({ isOpen, onClose }: OpenSshImportModalProps)
 
             {/* Filter and Selection Toolbar */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 my-3 shrink-0">
-              <div className="relative w-full sm:w-64">
-                <input
-                  type="text"
-                  placeholder="Filter by label, host, group..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="input input-bordered input-xs w-full pl-7 text-xs"
-                />
-                <Search className="w-3.5 h-3.5 text-base-content/40 absolute left-2 top-2" />
-              </div>
+              <SearchInput
+                inputSize="xs"
+                placeholder="Filter by label, host, group..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onClear={() => setSearchQuery("")}
+                className="w-full sm:w-64"
+              />
 
               <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
                 <label className="cursor-pointer label py-0 gap-2">

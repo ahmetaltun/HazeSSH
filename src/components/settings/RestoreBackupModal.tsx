@@ -483,16 +483,16 @@ export function RestoreBackupModal({ isOpen, onClose }: RestoreBackupModalProps)
                   )}
                 </button>
               </div>
-              <div className="relative">
+              <label className="input input-sm flex items-center gap-2 rounded-lg bg-base-100 border border-base-300 w-full focus-within:border-primary">
+                <KeyRound className="w-4 h-4 text-base-content/40 shrink-0 pointer-events-none" />
                 <input
                   type={showPassphrase ? "text" : "password"}
                   placeholder="Enter the passphrase used when exporting"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
-                  className="input input-bordered input-sm w-full pl-9 pr-9 text-xs"
+                  className="grow min-w-0 bg-transparent border-none outline-none p-0 text-xs placeholder:text-base-content/40 focus:outline-none"
                 />
-                <KeyRound className="w-4 h-4 text-base-content/40 absolute left-2.5 top-2.5" />
-              </div>
+              </label>
             </div>
 
             <p className="text-[11px] text-base-content/60 leading-relaxed bg-base-200/40 p-2.5 rounded-lg border border-base-300">

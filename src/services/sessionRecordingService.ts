@@ -39,7 +39,7 @@ export class AsciinemaRecorder {
     return this.events.length;
   }
 
-  public start(cols: number, rows: number, title?: string): void {
+  public start(cols: number, rows: number, title?: string, initialScreen?: string): void {
     this.startTime = performance.now();
     this.events = [];
     this.recording = true;
@@ -55,6 +55,10 @@ export class AsciinemaRecorder {
         HAZE_CLIENT: "Haze SSH",
       },
     };
+
+    if (initialScreen && initialScreen.trim().length > 0) {
+      this.events.push([0, "o", initialScreen]);
+    }
   }
 
   public recordOutput(data: string | Uint8Array): void {

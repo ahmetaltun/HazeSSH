@@ -382,5 +382,68 @@ pub struct ServerToolboxOverview {
     pub error: Option<String>,
 }
 
+// --- Session History, Audit Logs & Session Recordings ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHistoryEntry {
+    pub id: String,
+    pub host_id: Option<String>,
+    pub title: String,
+    pub connection_type: String, // "ssh", "local", "serial", "telnet"
+    pub target: String,
+    pub status: String, // "connected", "disconnected", "error"
+    pub error_message: Option<String>,
+    pub log_file_path: Option<String>,
+    pub recording_file_path: Option<String>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub duration_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSessionHistoryInput {
+    pub id: String,
+    pub host_id: Option<String>,
+    pub title: String,
+    pub connection_type: String,
+    pub target: String,
+    pub status: String,
+    pub started_at: i64,
+    pub log_file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSessionHistoryInput {
+    pub id: String,
+    pub status: Option<String>,
+    pub error_message: Option<String>,
+    pub ended_at: Option<i64>,
+    pub duration_seconds: Option<i64>,
+    pub log_file_path: Option<String>,
+    pub recording_file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditLogFileInfo {
+    pub filename: String,
+    pub file_path: String,
+    pub size_bytes: u64,
+    pub created_at: i64,
+    pub modified_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingFileInfo {
+    pub filename: String,
+    pub file_path: String,
+    pub size_bytes: u64,
+    pub title: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub created_at: i64,
+    pub modified_at: i64,
+}
+
+
 
 

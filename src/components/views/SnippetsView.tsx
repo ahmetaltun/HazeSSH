@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import {
   Code2,
   Plus,
-  Search,
   Tag,
   Copy,
   Check,
@@ -19,6 +18,7 @@ import { SnippetModal } from "@/components/snippets/SnippetModal";
 import { SnippetRunnerModal } from "@/components/snippets/SnippetRunnerModal";
 import { BatchSnippetModal } from "@/components/snippets/BatchSnippetModal";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { SearchInput } from "@/components/common/SearchInput";
 import type { Snippet } from "@/types/snippet";
 
 export function SnippetsView() {
@@ -167,24 +167,15 @@ export function SnippetsView() {
 
       {/* Filter & Search Bar */}
       <div className="px-6 py-3 border-b border-base-200 bg-base-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-          <input
-            type="text"
+        <div className="flex-1 max-w-md">
+          <SearchInput
+            inputSize="sm"
             placeholder="Search snippets by name, command, or tag..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="input input-sm input-bordered w-full pl-9 rounded-lg text-xs focus:input-primary"
+            onClear={() => setSearchQuery("")}
+            className="w-full"
           />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-base-content/40 hover:text-base-content"
-            >
-              Clear
-            </button>
-          )}
         </div>
 
         {/* Tag Filter Carousel */}

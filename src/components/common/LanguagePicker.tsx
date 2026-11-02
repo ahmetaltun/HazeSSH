@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronDown, Check, Search } from "lucide-react";
+import { ChevronDown, Check } from "lucide-react";
+import { SearchInput } from "@/components/common/SearchInput";
 import {
   POPULAR_LANGUAGES,
   getAllAvailableLanguages,
@@ -82,17 +83,16 @@ export function LanguagePicker({
         <div className="absolute left-0 sm:right-0 sm:left-auto mt-1 w-52 max-h-72 bg-base-200 border border-base-300 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden text-xs animate-in fade-in zoom-in-95 duration-100">
           {/* Search Header */}
           <div className="p-2 border-b border-base-300 bg-base-300/40 shrink-0">
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 absolute left-2 text-base-content/40 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search language..."
-                className="input input-xs w-full pl-7 pr-2 bg-base-100 text-base-content border-base-300 focus:outline-hidden font-mono text-[11px]"
-              />
-            </div>
+            <SearchInput
+              ref={searchInputRef}
+              inputSize="xs"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClear={() => setSearch("")}
+              placeholder="Search language..."
+              inputClassName="font-mono text-[11px]"
+              className="w-full"
+            />
           </div>
 
           {/* List of Languages */}

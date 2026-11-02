@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Server, ChevronDown, Check, Search } from "lucide-react";
+import { Server, ChevronDown, Check } from "lucide-react";
 import { useHostStore } from "@/stores/useHostStore";
+import { SearchInput } from "@/components/common/SearchInput";
 import type { Host } from "@/types/host";
 
 export interface HostSelectDropdownProps {
@@ -145,17 +146,15 @@ export function HostSelectDropdown({
           {/* Search bar when there are more than 5 hosts */}
           {hosts.length > 5 && (
             <div className="p-1 pb-1.5 border-b border-base-300/60 mb-1">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search hosts..."
-                  className="input input-xs input-bordered w-full pl-8 text-xs bg-base-100 focus:outline-none"
-                />
-              </div>
+              <SearchInput
+                ref={searchInputRef}
+                inputSize="xs"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onClear={() => setSearchQuery("")}
+                placeholder="Search hosts..."
+                className="w-full"
+              />
             </div>
           )}
 

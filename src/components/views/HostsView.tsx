@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import {
   Server,
   Plus,
-  Search,
   Folder,
   Layers,
   LayoutGrid,
@@ -27,6 +26,7 @@ import { useLayoutStore } from "@/stores/useLayoutStore";
 import { useServerMonitorStore } from "@/stores/useServerMonitorStore";
 import { useServerToolboxStore } from "@/stores/useServerToolboxStore";
 import { useVaultStore } from "@/stores/useVaultStore";
+import { SearchInput } from "@/components/common/SearchInput";
 import type { Host } from "@/types/host";
 import { HostModal } from "@/components/hosts/HostModal";
 import { GroupModal } from "@/components/hosts/GroupModal";
@@ -314,14 +314,14 @@ export function HostsView() {
         {/* Top Control Bar */}
         <div className="h-14 border-b border-base-200 px-5 flex items-center justify-between gap-3 shrink-0 bg-base-200/20">
           {/* Search Input */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-            <input
-              type="text"
+          <div className="flex-1 max-w-md">
+            <SearchInput
+              inputSize="sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onClear={() => setSearchTerm("")}
               placeholder="Search hosts by label, IP, username, tag..."
-              className="input input-sm input-bordered w-full pl-9 bg-base-100 text-xs"
+              className="w-full"
             />
           </div>
 

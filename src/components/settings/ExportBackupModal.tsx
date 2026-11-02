@@ -435,33 +435,33 @@ export function ExportBackupModal({ isOpen, onClose }: ExportBackupModalProps) {
                     )}
                   </button>
                 </div>
-                <div className="relative">
+                <label className="input input-sm flex items-center gap-2 rounded-lg bg-base-100 border border-base-300 w-full focus-within:border-primary">
+                  <KeyRound className="w-4 h-4 text-base-content/40 shrink-0 pointer-events-none" />
                   <input
                     type={showPassphrase ? "text" : "password"}
                     placeholder="Enter strong encryption passphrase (min 6 characters)"
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
-                    className="input input-bordered input-sm w-full pl-9 pr-9 text-xs"
+                    className="grow min-w-0 bg-transparent border-none outline-none p-0 text-xs placeholder:text-base-content/40 focus:outline-none"
                     autoFocus
                   />
-                  <KeyRound className="w-4 h-4 text-base-content/40 absolute left-2.5 top-2.5" />
-                </div>
+                </label>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-base-content/80 mb-1">
                   Confirm Passphrase
                 </label>
-                <div className="relative">
+                <label className="input input-sm flex items-center gap-2 rounded-lg bg-base-100 border border-base-300 w-full focus-within:border-primary">
+                  <KeyRound className="w-4 h-4 text-base-content/40 shrink-0 pointer-events-none" />
                   <input
                     type={showPassphrase ? "text" : "password"}
                     placeholder="Re-enter export passphrase"
                     value={confirmPassphrase}
                     onChange={(e) => setConfirmPassphrase(e.target.value)}
-                    className="input input-bordered input-sm w-full pl-9 text-xs"
+                    className="grow min-w-0 bg-transparent border-none outline-none p-0 text-xs placeholder:text-base-content/40 focus:outline-none"
                   />
-                  <KeyRound className="w-4 h-4 text-base-content/40 absolute left-2.5 top-2.5" />
-                </div>
+                </label>
                 {confirmPassphrase && passphrase !== confirmPassphrase && (
                   <p className="text-[10px] text-error mt-1">Passphrases do not match yet.</p>
                 )}

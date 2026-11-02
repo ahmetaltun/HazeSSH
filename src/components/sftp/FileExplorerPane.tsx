@@ -11,7 +11,6 @@ import {
   FolderPlus,
   Trash2,
   Edit2,
-  Search,
   HardDrive,
   Globe,
   CornerDownRight,
@@ -23,6 +22,7 @@ import {
   Package,
   Film,
 } from "lucide-react";
+import { SearchInput } from "@/components/common/SearchInput";
 import { api } from "@/services/api";
 import type { FileEntry } from "@/types/sftp";
 import { FileContextMenu } from "./FileContextMenu";
@@ -531,12 +531,12 @@ export function FileExplorerPane({
           {currentPath}
         </div>
 
-        <div className="relative w-36">
-          <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-base-content/40" />
-          <input
-            type="text"
+        <div className="w-36">
+          <SearchInput
+            inputSize="xs"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onClear={() => setSearchTerm("")}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 if (searchTerm) {
@@ -548,7 +548,7 @@ export function FileExplorerPane({
             }}
             onFocus={() => onFocusPane?.()}
             placeholder="Filter files..."
-            className="input input-xs input-bordered w-full pl-6 text-[10px]"
+            className="w-full text-[10px]"
           />
         </div>
       </div>

@@ -9,12 +9,13 @@ use crate::crypto;
 use crate::db::Database;
 use crate::sync::{self, GitFileGetInput, GitFileGetOutput, GitFilePutInput, GitFilePutOutput, LocalFolderSyncInput, LocalFolderSyncOutput, WebDavRequestInput, WebDavRequestOutput};
 use crate::models::{
-    BackupData, BackupEnvelope, BackupSummary, CreateGroupInput, CreateHostInput,
-    CreateIdentityInput, CreateSnippetInput, CreateTunnelInput, Host, HostGroup, Identity,
-    ImportResultSummary, ImportSshHostsInput, ImportTermiusInput, PuttyDetectResult,
-    SerialConnectOptions, SerialPortInfo, ServerMetrics, ServerToolboxOverview, Snippet,
-    SshConfigHostCandidate, SshConfigParseResult, TelnetConnectOptions, TermiusParseResult,
-    Tunnel, UpdateHostInput, UpdateSnippetInput, VaultStatus,
+    AuditLogFileInfo, BackupData, BackupEnvelope, BackupSummary, CreateGroupInput, CreateHostInput,
+    CreateIdentityInput, CreateSessionHistoryInput, CreateSnippetInput, CreateTunnelInput, Host,
+    HostGroup, Identity, ImportResultSummary, ImportSshHostsInput, ImportTermiusInput,
+    PuttyDetectResult, RecordingFileInfo, SerialConnectOptions, SerialPortInfo, ServerMetrics,
+    ServerToolboxOverview, SessionHistoryEntry, Snippet, SshConfigHostCandidate,
+    SshConfigParseResult, TelnetConnectOptions, TermiusParseResult, Tunnel, UpdateHostInput,
+    UpdateSessionHistoryInput, UpdateSnippetInput, VaultStatus,
 };
 use crate::monitor;
 use crate::toolbox;
@@ -1867,46 +1868,345 @@ pub fn session_save_recording_dialog(default_filename: String, cast_content: Str
 
 #[tauri::command]
 pub fn open_directory_in_os(path: Option<String>) -> Result<(), String> {
-    let target_dir = match path {
+    let target_path = match path {
         Some(p) => std::path::PathBuf::from(p),
         None => get_haze_home_dir(),
     };
 
-    if !target_dir.exists() {
-        std::fs::create_dir_all(&target_dir)
-            .map_err(|e| format!("Directory does not exist and could not be created: {}", e))?;
+    let is_file = target_path.is_file();
+
+    if !target_path.exists() {
+        if target_path.extension().is_none() {
+            let _ = std::fs::create_dir_all(&target_path);
+        } else if let Some(parent) = target_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
     }
 
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(&target_dir)
-            .spawn()
-            .map_err(|e| format!("Failed to open directory in Finder: {}", e))?;
+        let mut cmd = std::process::Command::new("open");
+        if is_file {
+            cmd.arg("-R").arg(&target_path);
+        } else {
+            cmd.arg(&target_path);
+        }
+        cmd.spawn()
+            .map_err(|e| format!("Failed to reveal path in Finder: {}", e))?;
     }
 
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer")
-            .arg(&target_dir)
-            .spawn()
-            .map_err(|e| format!("Failed to open directory in Explorer: {}", e))?;
+        let mut cmd = std::process::Command::new("explorer");
+        if is_file {
+            cmd.arg(format!("/select,\"{}\"", target_path.to_string_lossy()));
+        } else {
+            cmd.arg(&target_path);
+        }
+        cmd.spawn()
+            .map_err(|e| format!("Failed to open path in Explorer: {}", e))?;
     }
 
     #[cfg(target_os = "linux")]
     {
+        let dir_to_open = if is_file {
+            target_path.parent().unwrap_or(&target_path)
+        } else {
+            &target_path
+        };
         std::process::Command::new("xdg-open")
-            .arg(&target_dir)
+            .arg(dir_to_open)
             .spawn()
             .map_err(|e| format!("Failed to open directory with xdg-open: {}", e))?;
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
-        return Err("Unsupported OS for native directory opening".into());
+        return Err("Unsupported OS for native path opening".into());
     }
 
     Ok(())
+}
+
+fn ensure_path_within_dir(file_path: &str, expected_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let path = std::path::Path::new(file_path);
+    let canonical = path.canonicalize()
+        .map_err(|e| format!("Invalid path '{}': {}", file_path, e))?;
+    let canonical_dir = expected_dir.canonicalize()
+        .map_err(|e| format!("Invalid base directory '{:?}': {}", expected_dir, e))?;
+
+    if !canonical.starts_with(&canonical_dir) {
+        return Err(format!("Access denied: path '{}' is outside permitted directory '{:?}'", file_path, expected_dir));
+    }
+    Ok(canonical)
+}
+
+#[tauri::command]
+pub fn audit_log_list() -> Result<Vec<AuditLogFileInfo>, String> {
+    let logs_dir = get_haze_logs_dir()?;
+    let mut files = Vec::new();
+
+    let entries = std::fs::read_dir(&logs_dir)
+        .map_err(|e| format!("Failed to read logs directory: {}", e))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if filename.ends_with(".log") {
+                if let Ok(meta) = path.metadata() {
+                    let size_bytes = meta.len();
+                    let modified_at = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    let created_at = meta
+                        .created()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(modified_at);
+
+                    files.push(AuditLogFileInfo {
+                        filename,
+                        file_path: path.to_string_lossy().to_string(),
+                        size_bytes,
+                        created_at,
+                        modified_at,
+                    });
+                }
+            }
+        }
+    }
+
+    files.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn audit_log_read(file_path: String, max_lines: Option<usize>) -> Result<String, String> {
+    let logs_dir = get_haze_logs_dir()?;
+    let canonical = ensure_path_within_dir(&file_path, &logs_dir)?;
+
+    let content = std::fs::read_to_string(&canonical)
+        .map_err(|e| format!("Failed to read log file '{}': {}", file_path, e))?;
+
+    if let Some(limit) = max_lines {
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.len() > limit {
+            let start = lines.len() - limit;
+            return Ok(lines[start..].join("\n"));
+        }
+    }
+
+    Ok(content)
+}
+
+#[tauri::command]
+pub fn audit_log_delete(file_path: String) -> Result<bool, String> {
+    let logs_dir = get_haze_logs_dir()?;
+    let canonical = ensure_path_within_dir(&file_path, &logs_dir)?;
+
+    std::fs::remove_file(&canonical)
+        .map_err(|e| format!("Failed to delete audit log at '{}': {}", file_path, e))?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn audit_log_clear_all() -> Result<usize, String> {
+    let logs_dir = get_haze_logs_dir()?;
+    let mut count = 0;
+
+    let entries = std::fs::read_dir(&logs_dir)
+        .map_err(|e| format!("Failed to read logs directory: {}", e))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("log") {
+            if std::fs::remove_file(&path).is_ok() {
+                count += 1;
+            }
+        }
+    }
+
+    Ok(count)
+}
+
+#[tauri::command]
+pub fn audit_log_export_dialog(default_filename: String, content: String) -> Result<Option<String>, String> {
+    let mut clean_name = default_filename.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+    if !clean_name.ends_with(".log") && !clean_name.ends_with(".txt") {
+        clean_name.push_str(".log");
+    }
+
+    if let Some(path) = os_save_file_dialog(&clean_name)? {
+        let final_path = if !path.ends_with(".log") && !path.ends_with(".txt") {
+            format!("{}.log", path)
+        } else {
+            path
+        };
+
+        std::fs::write(&final_path, content.as_bytes())
+            .map_err(|e| format!("Failed to export audit log to '{}': {}", final_path, e))?;
+
+        Ok(Some(final_path))
+    } else {
+        Ok(None)
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct CastHeaderHelper {
+    title: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+#[tauri::command]
+pub fn session_recording_list() -> Result<Vec<RecordingFileInfo>, String> {
+    let recs_dir = get_haze_recordings_dir()?;
+    let mut files = Vec::new();
+
+    let entries = std::fs::read_dir(&recs_dir)
+        .map_err(|e| format!("Failed to read recordings directory: {}", e))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if filename.ends_with(".cast") {
+                if let Ok(meta) = path.metadata() {
+                    let size_bytes = meta.len();
+                    let modified_at = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    let created_at = meta
+                        .created()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(modified_at);
+
+                    // Attempt parsing first line for header
+                    let mut title = None;
+                    let mut width = None;
+                    let mut height = None;
+
+                    if let Ok(file) = std::fs::File::open(&path) {
+                        use std::io::BufRead;
+                        let mut reader = std::io::BufReader::new(file);
+                        let mut first_line = String::new();
+                        if reader.read_line(&mut first_line).is_ok() {
+                            if let Ok(header) = serde_json::from_str::<CastHeaderHelper>(&first_line) {
+                                title = header.title;
+                                width = header.width;
+                                height = header.height;
+                            }
+                        }
+                    }
+
+                    files.push(RecordingFileInfo {
+                        filename,
+                        file_path: path.to_string_lossy().to_string(),
+                        size_bytes,
+                        title,
+                        width,
+                        height,
+                        created_at,
+                        modified_at,
+                    });
+                }
+            }
+        }
+    }
+
+    files.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn session_recording_read(file_path: String) -> Result<String, String> {
+    let recs_dir = get_haze_recordings_dir()?;
+    let canonical = ensure_path_within_dir(&file_path, &recs_dir)?;
+
+    std::fs::read_to_string(&canonical)
+        .map_err(|e| format!("Failed to read recording file '{}': {}", file_path, e))
+}
+
+#[tauri::command]
+pub fn session_recording_delete(file_path: String) -> Result<bool, String> {
+    let recs_dir = get_haze_recordings_dir()?;
+    let canonical = ensure_path_within_dir(&file_path, &recs_dir)?;
+
+    std::fs::remove_file(&canonical)
+        .map_err(|e| format!("Failed to delete recording at '{}': {}", file_path, e))?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn session_recording_clear_all() -> Result<usize, String> {
+    let recs_dir = get_haze_recordings_dir()?;
+    let mut count = 0;
+
+    let entries = std::fs::read_dir(&recs_dir)
+        .map_err(|e| format!("Failed to read recordings directory: {}", e))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("cast") {
+            if std::fs::remove_file(&path).is_ok() {
+                count += 1;
+            }
+        }
+    }
+
+    Ok(count)
+}
+
+#[tauri::command]
+pub fn session_history_list(
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<SessionHistoryEntry>, String> {
+    state.db.session_history_list(limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn session_history_create(
+    input: CreateSessionHistoryInput,
+    state: State<'_, AppState>,
+) -> Result<SessionHistoryEntry, String> {
+    state.db.session_history_create(input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn session_history_update(
+    input: UpdateSessionHistoryInput,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state.db.session_history_update(input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn session_history_delete(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state.db.session_history_delete(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn session_history_clear(
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state.db.session_history_clear().map(|_| true).map_err(|e| e.to_string())
 }
 
 // --- Privacy-First AI Copilot Commands ---

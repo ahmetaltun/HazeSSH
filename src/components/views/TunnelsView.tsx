@@ -7,7 +7,6 @@ import {
   Copy,
   Check,
   Trash2,
-  Search,
   ArrowRight,
   Laptop,
   Server,
@@ -21,6 +20,7 @@ import { useTunnelStore } from "@/stores/useTunnelStore";
 import { useHostStore } from "@/stores/useHostStore";
 import { TunnelModal } from "@/components/tunnels/TunnelModal";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { SearchInput } from "@/components/common/SearchInput";
 import type { Tunnel } from "@/types/tunnel";
 
 function formatBytes(bytes: number): string {
@@ -232,16 +232,14 @@ export function TunnelsView() {
         </div>
 
         {/* Search */}
-        <div className="relative w-64">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search tunnels or ports..."
-            className="input input-xs input-bordered w-full pl-8 rounded-lg bg-base-200/50"
-          />
-        </div>
+        <SearchInput
+          inputSize="xs"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onClear={() => setSearchQuery("")}
+          placeholder="Search tunnels or ports..."
+          className="w-64 bg-base-200/50"
+        />
       </div>
 
       {/* Main Content Area */}
