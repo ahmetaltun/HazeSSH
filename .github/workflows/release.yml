@@ -76,6 +76,43 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+      - name: Package & Publish Premium macOS DMG
+        if: matrix.platform == 'macos-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "=== Building Premium macOS DMG for Release ==="
+          python3 -m pip install --upgrade dmgbuild pillow
+
+          APP_PATH=$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -name "*.app" -maxdepth 1 2>/dev/null | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::Compiled macOS application bundle not found in src-tauri/target/universal-apple-darwin/release/bundle/macos"
+            exit 1
+          fi
+          echo "Found compiled Universal .app: $APP_PATH"
+
+          python3 scripts/build_dmg.py \
+            --app "$APP_PATH" \
+            --output dist/HazeSSH.dmg \
+            --platform-text "macOS 15+ · Apple Silicon"
+
+          echo "Cleaning up default Tauri DMG from release draft if present..."
+          DEFAULT_DMGS=$(gh release view "$TAG_NAME" --json assets -q '.assets[].name' 2>/dev/null | grep -E '\.dmg$' | grep -v 'HazeSSH\.dmg' || true)
+          if [ -n "$DEFAULT_DMGS" ]; then
+            for asset in $DEFAULT_DMGS; do
+              echo "Removing default DMG asset: $asset"
+              gh release delete-asset "$TAG_NAME" "$asset" -y || true
+            done
+          fi
+
+          echo "Uploading premium HazeSSH.dmg to release draft..."
+          gh release upload "$TAG_NAME" dist/HazeSSH.dmg --clobber
+
   checksums:
     name: Generate & GPG-Sign SHA256 Checksums
     needs: release

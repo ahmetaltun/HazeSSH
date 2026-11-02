@@ -33,7 +33,7 @@ function GitHubIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.5.0";
 const GITHUB_REPO_URL = "https://github.com/ahmetaltun/HazeSSH";
 
 export function AboutUpdateSection() {

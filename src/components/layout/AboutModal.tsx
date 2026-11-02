@@ -42,7 +42,7 @@ export function AboutModal() {
           <div className="flex items-center gap-3">
             <BrandLogo variant="horizontal" size={40} />
             <span className="badge badge-primary badge-sm font-mono font-semibold">
-              v0.4.0
+              v0.5.0
             </span>
           </div>
 
