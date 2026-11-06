@@ -39,6 +39,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main"
+                && matches!(
+                    payload.event(),
+                    tauri::webview::PageLoadEvent::Finished
+                )
+            {
+                if let Err(err) = webview.window().show() {
+                    eprintln!("[startup] Could not show main window: {err}");
+                }
+            }
+        })
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -65,14 +77,6 @@ pub fn run() {
                 sftp_manager: Arc::new(sftp::SftpManager::new()),
                 toolbox_manager: Arc::new(toolbox::ToolboxManager::new()),
             });
-
-            // Fallback safety timeout: ensure window is revealed even if frontend script crashes
-            if let Some(win) = app.get_webview_window("main") {
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(3500));
-                    let _ = win.show();
-                });
-            }
 
             Ok(())
         })

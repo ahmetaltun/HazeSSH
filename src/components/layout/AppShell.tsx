@@ -1,5 +1,4 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { StatusBar } from "@/components/layout/StatusBar";
@@ -100,23 +99,6 @@ export function AppShell() {
         console.warn("[Haze Sync] Background startup pull skipped:", err);
       });
     }
-
-    // Reveal native window smoothly only after the first frame has rasterized
-    const revealWindow = () => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(async () => {
-          try {
-            const appWindow = getCurrentWindow();
-            await appWindow.show();
-            await appWindow.setFocus();
-          } catch {
-            // Graceful fallback for non-Tauri / web browser environment
-          }
-        });
-      });
-    };
-
-    revealWindow();
   }, [initTheme, fetchStatus, fetchAll]);
 
   // Global Desktop Environment Interceptors & Hotkeys
