@@ -55,7 +55,7 @@ export function CommandPaletteModal() {
     setShortcutsModalOpen,
   } = useLayoutStore();
   const { hosts } = useHostStore();
-  const { snippets } = useSnippetStore();
+  const { snippets, hasLoaded, fetchSnippets } = useSnippetStore();
   const { openTab, splitActivePane, closePane, getActiveTab } = useMultiplexerStore();
   const { setTheme, currentTheme } = useThemeStore();
   const { getActiveSession } = useTerminalRegistryStore();
@@ -66,17 +66,20 @@ export function CommandPaletteModal() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Focus input automatically when opened
+  // Focus input automatically when opened and ensure snippets are loaded
   useEffect(() => {
     if (isCommandPaletteOpen) {
       setQuery("");
       setSelectedIndex(0);
+      if (!hasLoaded) {
+        void fetchSnippets();
+      }
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [isCommandPaletteOpen]);
+  }, [isCommandPaletteOpen, hasLoaded, fetchSnippets]);
 
   // Construct all possible actions
   const allItems = useMemo<PaletteItem[]>(() => {

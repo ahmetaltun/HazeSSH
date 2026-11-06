@@ -5,6 +5,7 @@ import type { Snippet, CreateSnippetInput, UpdateSnippetInput } from "@/types/sn
 interface SnippetState {
   readonly snippets: readonly Snippet[];
   readonly isLoading: boolean;
+  readonly hasLoaded: boolean;
   readonly error: string | null;
   readonly searchQuery: string;
   readonly selectedTag: string | null;
@@ -17,25 +18,38 @@ interface SnippetState {
   readonly setSelectedTag: (tag: string | null) => void;
 }
 
+let inFlightFetch: Promise<void> | null = null;
+
 export const useSnippetStore = create<SnippetState>((set) => ({
   snippets: [],
   isLoading: false,
+  hasLoaded: false,
   error: null,
   searchQuery: "",
   selectedTag: null,
 
   fetchSnippets: async () => {
-    set({ isLoading: true, error: null });
-    try {
-      const snippets = await api.snippetList();
-      set({ snippets, isLoading: false });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      set({
-        error: `Failed to load snippets from local vault: ${msg}`,
-        isLoading: false,
-      });
+    if (inFlightFetch) {
+      return inFlightFetch;
     }
+
+    set({ isLoading: true, error: null });
+    inFlightFetch = (async () => {
+      try {
+        const snippets = await api.snippetList();
+        set({ snippets, isLoading: false, hasLoaded: true });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        set({
+          error: `Failed to load snippets from local vault: ${msg}`,
+          isLoading: false,
+        });
+      } finally {
+        inFlightFetch = null;
+      }
+    })();
+
+    return inFlightFetch;
   },
 
   createSnippet: async (input: CreateSnippetInput) => {

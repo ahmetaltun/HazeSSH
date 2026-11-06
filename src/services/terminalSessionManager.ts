@@ -446,9 +446,20 @@ class TerminalSessionManager {
             const host = useHostStore.getState().hosts.find((h) => h.id === pane.hostId);
 
             if (host?.startup_snippet_id) {
-              const snippet = useSnippetStore
+              let snippet = useSnippetStore
                 .getState()
                 .snippets.find((s) => s.id === host.startup_snippet_id);
+
+              if (!snippet && !useSnippetStore.getState().hasLoaded) {
+                try {
+                  await useSnippetStore.getState().fetchSnippets();
+                  snippet = useSnippetStore
+                    .getState()
+                    .snippets.find((s) => s.id === host.startup_snippet_id);
+                } catch (err) {
+                  console.error(`[Terminal ${pane.id}] Failed to load snippets for startup:`, err);
+                }
+              }
 
               if (snippet) {
                 const { resolvedScript } = resolveHostVariables(snippet.script, {

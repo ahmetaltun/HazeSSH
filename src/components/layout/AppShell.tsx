@@ -14,6 +14,8 @@ import { useThemeStore } from "@/stores/useThemeStore";
 import { useMultiplexerStore } from "@/stores/useMultiplexerStore";
 import { useVaultStore } from "@/stores/useVaultStore";
 import { useHostStore } from "@/stores/useHostStore";
+import { useSnippetStore } from "@/stores/useSnippetStore";
+import { useTunnelStore } from "@/stores/useTunnelStore";
 import { useBroadcastStore } from "@/stores/useBroadcastStore";
 import { useAiCopilotStore } from "@/stores/useAiCopilotStore";
 import { useSyncStore } from "@/stores/useSyncStore";
@@ -91,6 +93,8 @@ export function AppShell() {
     initTheme();
     fetchStatus();
     fetchAll();
+    void useSnippetStore.getState().fetchSnippets();
+    void useTunnelStore.getState().fetchTunnels();
 
     // Background Decentralized Sync on app launch if enabled
     const syncState = useSyncStore.getState();
