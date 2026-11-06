@@ -45,10 +45,9 @@ pub fn run() {
                     payload.event(),
                     tauri::webview::PageLoadEvent::Finished
                 )
+                && let Err(err) = webview.window().show()
             {
-                if let Err(err) = webview.window().show() {
-                    eprintln!("[startup] Could not show main window: {err}");
-                }
+                eprintln!("[startup] Could not show main window: {err}");
             }
         })
         .setup(|app| {
