@@ -11,46 +11,83 @@
     <!-- Synchronous theme pre-hydration to prevent FOUC and startup white flash -->
     <script>
       (function () {
+        var root = document.documentElement;
+        var theme = 'dracula';
+        var mode = 'dark';
+        var background = '#282a36';
+        var lightThemes = [
+          'light', 'nord', 'corporate', 'emerald', 'cupcake', 'retro',
+          'cyberpunk', 'valentine', 'garden', 'pastel', 'lofi', 'winter',
+          'autumn', 'acid', 'lemonade', 'wireframe', 'caramellatte', 'silk'
+        ];
+
         try {
-          var saved = localStorage.getItem("haze_ssh_theme");
-          var theme = saved || "dracula";
-          document.documentElement.setAttribute("data-theme", theme);
-          var lightThemes = [
-            "light", "nord", "corporate", "emerald", "cupcake", "retro",
-            "cyberpunk", "valentine", "garden", "pastel", "lofi", "winter",
-            "autumn", "acid", "lemonade", "wireframe", "caramellatte", "silk"
-          ];
+          var savedTheme = localStorage.getItem('haze_ssh_theme');
+          if (savedTheme) theme = savedTheme;
           if (lightThemes.indexOf(theme) !== -1) {
-            document.documentElement.style.backgroundColor = "#ffffff";
-            document.documentElement.style.colorScheme = "light";
+            mode = 'light';
+            background = '#ffffff';
+          }
+          var raw = localStorage.getItem('haze_ssh_theme_boot_v1');
+          if (raw) {
+            var cached = JSON.parse(raw);
+            if (
+              cached && cached.id === theme &&
+              (cached.mode === 'dark' || cached.mode === 'light') &&
+              typeof cached.background === 'string' &&
+              /^#[0-9a-fA-F]{6}$/.test(cached.background)
+            ) {
+              mode = cached.mode;
+              background = cached.background;
+            }
           }
         } catch (_) {
-          document.documentElement.setAttribute("data-theme", "dracula");
+          // Storage may be inaccessible or the cache may contain invalid JSON.
+          // A safe default is preferable to crashing before React initializes.
         }
+
+        root.setAttribute('data-theme', theme);
+        root.style.setProperty('--startup-bg', background);
+        root.style.colorScheme = mode;
       })();
     </script>
 
     <style>
       :root {
+        --startup-bg: #282a36;
         color-scheme: dark;
-        background-color: #282a36;
       }
+
       html,
       body,
       #root {
-        background-color: #282a36;
-        color: #f8f8f2;
-        height: 100%;
+        background-color: var(--color-base-100, var(--startup-bg));
+        color: var(--color-base-content, #f8f8f2);
         width: 100%;
+        height: 100%;
         margin: 0;
         padding: 0;
         overflow: hidden;
+      }
+
+      #boot-splash {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--color-base-100, var(--startup-bg));
+        color: var(--color-base-content, #f8f8f2);
+        font: 600 14px system-ui, -apple-system, sans-serif;
+        letter-spacing: 0.02em;
       }
     </style>
   </head>
 
   <body spellcheck="false" autocorrect="off" autocapitalize="none">
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-splash" role="status" aria-live="polite">Haze SSH</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

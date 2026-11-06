@@ -10,13 +10,12 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color-scheme: light dark;
 }
 
 html,
 body,
 #root {
-  background-color: var(--color-base-100, #282a36);
+  background-color: var(--color-base-100, var(--startup-bg, #282a36));
   height: 100%;
   width: 100%;
   margin: 0;

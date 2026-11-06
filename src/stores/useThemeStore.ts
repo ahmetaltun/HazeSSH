@@ -57,7 +57,30 @@ interface ThemeState {
 }
 
 const STORAGE_KEY = "haze_ssh_theme";
+const BOOT_CACHE_KEY = "haze_ssh_theme_boot_v1";
 const DEFAULT_THEME: ThemeId = "dracula";
+
+function applyThemeAppearance(option: ThemeOption): void {
+  const root = document.documentElement;
+  root.setAttribute("data-theme", option.id);
+  root.style.setProperty("--startup-bg", option.baseColor);
+  root.style.colorScheme = option.group;
+
+  try {
+    localStorage.setItem(STORAGE_KEY, option.id);
+    localStorage.setItem(
+      BOOT_CACHE_KEY,
+      JSON.stringify({
+        id: option.id,
+        background: option.baseColor,
+        mode: option.group,
+      }),
+    );
+  } catch (error) {
+    // Storage failures must not prevent the in-memory theme from applying.
+    console.warn("Unable to persist theme preference:", error);
+  }
+}
 
 const getInitialTheme = (): ThemeId => {
   try {
@@ -75,26 +98,21 @@ export const useThemeStore = create<ThemeState>((set) => ({
   currentTheme: getInitialTheme(),
 
   setTheme: (theme: ThemeId) => {
-    try {
-      document.documentElement.setAttribute("data-theme", theme);
-      localStorage.setItem(STORAGE_KEY, theme);
-      set({ currentTheme: theme });
-    } catch (err) {
-      console.error(`Failed to apply or persist theme "${theme}":`, err);
+    const option = AVAILABLE_THEMES.find((t) => t.id === theme);
+    if (!option) {
+      console.warn("Ignoring unknown theme:", theme);
+      return;
     }
+    applyThemeAppearance(option);
+    set({ currentTheme: option.id });
   },
 
   initTheme: () => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
-      const isValid = saved && AVAILABLE_THEMES.some((t) => t.id === saved);
-      const activeTheme = isValid ? saved : DEFAULT_THEME;
-      document.documentElement.setAttribute("data-theme", activeTheme);
-      set({ currentTheme: activeTheme });
-    } catch (err) {
-      console.warn("Could not read saved theme from storage, falling back to default:", err);
-      document.documentElement.setAttribute("data-theme", DEFAULT_THEME);
-      set({ currentTheme: DEFAULT_THEME });
-    }
+    const id = getInitialTheme();
+    const option =
+      AVAILABLE_THEMES.find((t) => t.id === id) ??
+      AVAILABLE_THEMES.find((t) => t.id === DEFAULT_THEME)!;
+    applyThemeAppearance(option);
+    set({ currentTheme: option.id });
   },
 }));
