@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { X, ExternalLink, ShieldCheck, Cpu, Terminal, Zap, GitBranch } from "lucide-react";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { useLayoutStore } from "@/stores/useLayoutStore";
+import { APP_VERSION } from "@/utils/version";
 
 export function AboutModal() {
   const { isAboutModalOpen, setAboutModalOpen } = useLayoutStore();
@@ -42,7 +43,7 @@ export function AboutModal() {
           <div className="flex items-center gap-3">
             <BrandLogo variant="horizontal" size={40} />
             <span className="badge badge-primary badge-sm font-mono font-semibold">
-              v0.5.0
+              v{APP_VERSION}
             </span>
           </div>
 

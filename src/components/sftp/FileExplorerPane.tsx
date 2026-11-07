@@ -597,9 +597,9 @@ export function FileExplorerPane({
           </div>
         ) : (
           <table className="table table-xs table-pin-rows table-fixed w-full font-mono">
-            <thead>
-              <tr className="h-8 bg-base-200/50 text-[10px] text-base-content/60">
-                <th className="w-8 px-2 text-center align-middle">
+            <thead className="sticky top-0 z-10">
+              <tr className="h-8 bg-base-200 text-[10px] text-base-content/60 border-b border-base-300">
+                <th className="w-8 px-2 text-center align-middle bg-base-200">
                   <input
                     type="checkbox"
                     checked={isAllSelected}
@@ -611,10 +611,10 @@ export function FileExplorerPane({
                     title={isAllSelected ? "Deselect All" : "Select All"}
                   />
                 </th>
-                <th className="w-auto align-middle">Name</th>
-                <th className="w-20 text-right align-middle">Size</th>
-                <th className="w-32 text-right hidden sm:table-cell align-middle">Modified</th>
-                <th className="w-16 text-right hidden md:table-cell align-middle">Perms</th>
+                <th className="w-auto align-middle bg-base-200">Name</th>
+                <th className="w-20 text-right align-middle bg-base-200">Size</th>
+                <th className="w-32 text-right hidden sm:table-cell align-middle bg-base-200">Modified</th>
+                <th className="w-16 text-right hidden md:table-cell align-middle bg-base-200">Perms</th>
               </tr>
             </thead>
             <tbody>

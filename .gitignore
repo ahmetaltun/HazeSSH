@@ -84,3 +84,7 @@ desktop.ini
 
 # Graphify Knowledge Graph
 graphify-out/
+
+# Agent Configurations & Scratchpads
+.agents/
+
